@@ -1,0 +1,6 @@
+src/assets/generated/
+build/
+ios/
+android/
+node_modules/
+tools/region-builder/out/
