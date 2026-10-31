@@ -1,0 +1,7 @@
+{
+  "note": "D-4 is undecided; these are Phase 1 test regions. maxZoom caps follow MAP_ARCHITECTURE.md 3.1 (~14-15, overzoom beyond).",
+  "regions": [
+    { "id": "lake-district", "name": "Lake District, UK", "bbox": [-3.45, 54.3, -2.7, 54.75], "maxZoom": 15 },
+    { "id": "ben-nevis", "name": "Ben Nevis, UK", "bbox": [-5.1, 56.74, -4.9, 56.85], "maxZoom": 14 }
+  ]
+}

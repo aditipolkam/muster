@@ -1,0 +1,30 @@
+{
+  "catalogVersion": 1,
+  "generatedAt": "2026-10-30T18:34:14.257Z",
+  "regions": [
+    {
+      "id": "lake-district",
+      "name": "Lake District, UK",
+      "bbox": [-3.45, 54.3, -2.7, 54.75],
+      "minZoom": 0,
+      "maxZoom": 15,
+      "bytes": 27017895,
+      "sha256": "1ae254a480810f231951994426cbb2a3eefddc84175f40372a87045de8d52faf",
+      "url": "http://localhost:8787/lake-district.pmtiles",
+      "osmDataDate": "2026-10-29",
+      "schema": 1
+    },
+    {
+      "id": "ben-nevis",
+      "name": "Ben Nevis, UK",
+      "bbox": [-5.1, 56.74, -4.9, 56.85],
+      "minZoom": 0,
+      "maxZoom": 14,
+      "bytes": 1619872,
+      "sha256": "4249deb777548e380636c2d28c985cca7c132eaa9cf33d3f872ab5ade272573a",
+      "url": "http://localhost:8787/ben-nevis.pmtiles",
+      "osmDataDate": "2026-10-29",
+      "schema": 1
+    }
+  ]
+}
