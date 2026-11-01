@@ -1,6 +1,10 @@
 import { Services } from '../runtime/services';
 import { KvRepo } from '../data/repositories/KvRepo';
 import { EventsRepo } from '../data/repositories/EventsRepo';
+import { GroupsRepo } from '../data/repositories/GroupsRepo';
+import { MeetingPointsRepo } from '../data/repositories/MeetingPointsRepo';
+import { GroupService } from '../features/groups/GroupService';
+import { GROUP_SERVICE_ID } from '../mesh/groupTopics';
 import { PointsRepo } from '../data/repositories/PointsRepo';
 import { PubSub } from '../mesh/PubSub';
 import { FakeMesh, FakeNetwork } from './FakeMesh';
@@ -28,8 +32,22 @@ export class ManualClock implements Clock {
 let idCounter = 0;
 export const testId = () => `01TEST${String(++idCounter).padStart(6, '0')}`;
 
+let randomCounter = 0;
+/** Distinct bytes on every call. Test only; production uses expo-crypto. */
+export const testRandomBytes = (n: number): Uint8Array => {
+  randomCounter++;
+  return Uint8Array.from({ length: n }, (_, i) => (randomCounter * 37 + i * 11) % 256);
+};
+
 export async function makeTestServices(
-  over: { catalog?: unknown; dbPath?: string; fs?: MemoryFs; http?: FakeHttp } = {},
+  over: {
+    catalog?: unknown;
+    dbPath?: string;
+    fs?: MemoryFs;
+    http?: FakeHttp;
+    net?: FakeNetwork;
+    address?: string;
+  } = {},
 ) {
   const db = openNodeSqlite(over.dbPath);
   await runMigrations(db);
@@ -56,8 +74,33 @@ export async function makeTestServices(
   });
   await packs.init();
   const events = new EventsRepo(db);
-  const mesh = new FakeMesh('off1testdevice', new FakeNetwork());
-  const pubsub = new PubSub({ mesh, clock, newId: testId, inbox: events });
+  const mesh = new FakeMesh(over.address ?? 'off1testdevice', over.net ?? new FakeNetwork());
+  const pubsub = new PubSub({
+    mesh,
+    clock,
+    newId: testId,
+    inbox: events,
+    owns: id => id !== GROUP_SERVICE_ID,
+  });
+  const groupPubsub = new PubSub({
+    mesh,
+    clock,
+    newId: testId,
+    inbox: events,
+    owns: id => id === GROUP_SERVICE_ID,
+  });
+  const groupsRepo = new GroupsRepo(db);
+  const meetingPoints = new MeetingPointsRepo(db);
+  const groups = new GroupService({
+    mesh,
+    pubsub: groupPubsub,
+    groups: groupsRepo,
+    points: meetingPoints,
+    clock,
+    newId: testId,
+    randomBytes: testRandomBytes,
+    displayName: async () => (await kv.get('profile.name')) ?? 'Tester',
+  });
   const loc = new FakeLocation();
   const location = new LocationService(loc, clock);
   const services: Services = {
@@ -66,8 +109,12 @@ export async function makeTestServices(
     regions,
     points,
     events,
+    groupsRepo,
+    meetingPoints,
+    groups,
     mesh,
     pubsub,
+    groupPubsub,
     fs,
     packs,
     location,
@@ -87,7 +134,11 @@ export async function makeTestServices(
     points,
     kv,
     events,
+    groupsRepo,
+    meetingPoints,
+    groups,
     mesh,
     pubsub,
+    groupPubsub,
   };
 }
