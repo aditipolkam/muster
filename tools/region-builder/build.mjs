@@ -7,6 +7,9 @@
  *   node tools/region-builder/build.mjs --source https://build.protomaps.com/20261029.pmtiles \
  *        --base-url http://localhost:8787 [--out tools/region-builder/hosted] [--bundle] [--dev-fixtures]
  *
+ * --planet-url   adds `planet` to the catalog: a hosted planet PMTiles (HTTP range requests) that the
+ *                 app cuts custom areas from on the device. Host a Protomaps planet build on your own
+ *                 storage/CDN with Range support; do not hotlink build.protomaps.com in production.
  * --bundle        also writes src/assets/catalog.json (the offline first-run catalog)
  * --dev-fixtures  adds a deliberately corrupt region and a too-large region used by device tests
  */
@@ -64,7 +67,9 @@ for (const r of regions) {
   });
 }
 
-const catalog = { catalogVersion: 1, generatedAt: new Date().toISOString(), regions: entries };
+const planetUrl = opt('planet-url');
+const planet = planetUrl ? { url: planetUrl, osmDataDate } : undefined;
+const catalog = { catalogVersion: 1, generatedAt: new Date().toISOString(), ...(planet ? { planet } : {}), regions: entries };
 writeFileSync(join(out, 'catalog.json'), JSON.stringify(catalog, null, 2) + '\n');
 
 if (flag('bundle')) {
@@ -85,6 +90,7 @@ if (flag('dev-fixtures')) {
   const dev = {
     catalogVersion: 1,
     generatedAt: catalog.generatedAt,
+    ...(planet ? { planet } : {}),
     regions: [
       ...entries,
       { ...good, id: 'test-corrupt', name: 'TEST corrupt file (bad sha256)', url: `${baseUrl}/test-corrupt.pmtiles`, bytes: statSync(corruptFile).size },

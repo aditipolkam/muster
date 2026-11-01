@@ -1,16 +1,16 @@
-import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
 import { Alert, FlatList, StyleSheet, TextInput } from 'react-native';
 import { bearingDeg, distanceM, formatCoord, formatDistance } from '../../domain/geo';
 import { Marker } from '../../domain/markers/marker';
 import { useLocationStore } from '../../platform/locationStore';
 import { useMarkers } from '../../runtime/hooks';
-import { RootTabParamList } from '../../runtime/navigation';
+import { MoreStackParamList } from '../../runtime/navigation';
 import { useServices } from '../../runtime/services';
 import { Button, Card, EmptyState, Row, Screen, Text } from '../../ui/components';
 import { space, useTheme } from '../../ui/theme';
 
-type Props = BottomTabScreenProps<RootTabParamList, 'Saved'>;
+type Props = NativeStackScreenProps<MoreStackParamList, 'Saved'>;
 
 export function SavedScreen({ navigation }: Props) {
   const { c } = useTheme();
@@ -33,7 +33,7 @@ export function SavedScreen({ navigation }: Props) {
   };
 
   return (
-    <Screen title="Saved locations">
+    <Screen title="Saved locations" onBack={() => navigation.goBack()}>
       <FlatList
         data={markers}
         keyExtractor={m => m.id}
@@ -43,7 +43,7 @@ export function SavedScreen({ navigation }: Props) {
             title="No saved locations"
             body="Press and hold anywhere on the map to drop a marker. Markers are stored on this device and work without a connection."
             actionLabel="Open map"
-            onAction={() => navigation.navigate('Map')}
+            onAction={() => navigation.getParent()?.navigate('Map')}
           />
         }
         renderItem={({ item: m }) => (
@@ -90,7 +90,9 @@ export function SavedScreen({ navigation }: Props) {
                 small
                 label="Show on map"
                 onPress={() =>
-                  navigation.navigate('Map', { focusMarkerId: m.id, nonce: Date.now() })
+                  navigation
+                    .getParent()
+                    ?.navigate('Map', { focusMarkerId: m.id, nonce: Date.now() })
                 }
               />
             </Row>

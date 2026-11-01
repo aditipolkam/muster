@@ -68,7 +68,7 @@ module.exports = {
       rules: { 'no-restricted-imports': 'off' },
     },
     {
-      files: ['src/shared/base64.ts', 'src/features/maps-manager/hash.ts', 'src/testing/**', '__tests__/**'],
+      files: ['src/shared/base64.ts', 'src/domain/groups/invite.ts', 'src/features/maps-manager/hash.ts', 'src/testing/**', '__tests__/**'],
       rules: { 'no-bitwise': 'off' },
     },
     {

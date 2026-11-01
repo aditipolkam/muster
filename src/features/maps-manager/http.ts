@@ -16,7 +16,10 @@ export interface HttpClient {
     url: string,
     opts: { headers?: Record<string, string>; signal?: AbortSignal },
   ): Promise<StreamResponse>;
-  getJson(url: string, opts: { signal?: AbortSignal; timeoutMs?: number }): Promise<unknown>;
+  getJson(
+    url: string,
+    opts: { signal?: AbortSignal; timeoutMs?: number; headers?: Record<string, string> },
+  ): Promise<unknown>;
 }
 
 export function createExpoHttpClient(): HttpClient {
@@ -27,8 +30,15 @@ export function createExpoHttpClient(): HttpClient {
       res.headers.forEach((v, k) => {
         out[k.toLowerCase()] = v;
       });
-      const stream = res.body;
       async function* iterate(): AsyncGenerator<Uint8Array> {
+        let stream: ReadableStream<Uint8Array> | null;
+        try {
+          stream = res.body;
+        } catch {
+          // No ReadableStream in this runtime: fall back to the whole body as one chunk.
+          yield new Uint8Array(await res.arrayBuffer());
+          return;
+        }
         if (!stream) {
           return;
         }
@@ -49,7 +59,7 @@ export function createExpoHttpClient(): HttpClient {
       }
       return { status: res.status, headers: out, body: iterate() };
     },
-    getJson: async (url, { signal, timeoutMs = 10_000 }) => {
+    getJson: async (url, { signal, timeoutMs = 10_000, headers }) => {
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), timeoutMs);
       const onAbort = () => ctl.abort();
@@ -57,7 +67,7 @@ export function createExpoHttpClient(): HttpClient {
       try {
         const res = await expoFetch(url, {
           signal: ctl.signal,
-          headers: { accept: 'application/json' },
+          headers: { accept: 'application/json', ...headers },
         });
         if (res.status < 200 || res.status >= 300) {
           throw new Error(`http_${res.status}`);

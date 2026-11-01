@@ -254,3 +254,22 @@ Mechanics:
 | R8 | Old-build member disables group sync for all | Medium | Medium | `minAppVersion` gate |
 | R9 | Privacy expectations vs CRDT history | Medium | High (trust) | Explicit UI copy, retention limits, local deletion |
 | R10 | Library maintenance drift (op-sqlite, expo modules vs RN 0.82) | Medium | Low | Adapters behind ports; lock versions |
+
+
+## Phase 3 addendum: groups and meeting points
+
+```mermaid
+flowchart LR
+  UI[features/groups + features/map] --> GS[GroupService]
+  GS --> DOM[domain/groups: model, merge, authorize, invite]
+  GS --> REPO[GroupsRepo, MeetingPointsRepo]
+  GS --> PS2[PubSub #2: service tm.group.1]
+  PS2 --> MP[MeshPort -> SDK]
+  PS1[PubSub #1: diagnostics] --> MP
+```
+
+- `domain/groups` is pure (zod wire schemas, version ordering, authorization decisions, invite tokens and links) and is where the rules are tested.
+- `features/groups/GroupService` is the only place that publishes group messages or applies inbound ones. Work is serialised on one queue; every inbound message is decoded, authorised against persisted state, then applied idempotently. Persisted state is canonical, messages are hints.
+- The map shows `meeting_points` of active groups from the database (a GeoJSON source `meeting-points`, ids `<groupId>:<pointId>`), independent of tiles, so received coordinates render offline. Only the organizer of an active group gets the "Meeting point" choice on long-press; members get Acknowledge.
+- `runtime/hooks` exposes `useGroups`, `useGroupMembers`, `useGroupPoints`, `useVisibleMeetingPoints`, `useGroupRuntime` (join requests, nearby groups, notices). Features still never import each other.
+- Trust model: group state is accepted only from the organizer recorded at create/join time, member messages only from roster members; see MESH_PROTOCOL.md 2.3. A malicious *organizer* is not defended against.

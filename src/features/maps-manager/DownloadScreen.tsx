@@ -98,10 +98,7 @@ export function DownloadScreen({ navigation }: Props) {
     ]);
 
   return (
-    <Screen
-      title="Download maps"
-      right={<Button small variant="ghost" label="Done" onPress={() => navigation.goBack()} />}
-    >
+    <Screen title="Download maps" onBack={() => navigation.goBack()}>
       <FlatList
         data={entries}
         keyExtractor={e => e.id}

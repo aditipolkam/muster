@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Emitter } from '../data/events';
+import type { Group, GroupMember, MeetingPoint, PointAck } from '../domain/groups/model';
+import type { GroupRuntime } from '../features/groups/GroupService';
 import { Marker } from '../domain/markers/marker';
 import { RegionRecord } from '../domain/maps/region';
 import type { PubSubSnapshot } from '../mesh/PubSub';
@@ -46,4 +48,69 @@ export function useMesh(): MeshSnapshot {
 export function usePubSub(): PubSubSnapshot {
   const { pubsub } = useServices();
   return useSyncExternalStore(pubsub.subscribeChanges, pubsub.getSnapshot);
+}
+
+export function useGroupRuntime(): GroupRuntime {
+  const { groups } = useServices();
+  return useSyncExternalStore(groups.subscribeChanges, groups.getSnapshot);
+}
+
+export function useGroups(): Group[] {
+  const { groupsRepo } = useServices();
+  return useLiveQuery([groupsRepo.changes as Emitter<unknown>], () => groupsRepo.list(), []);
+}
+
+export function useGroup(groupId: string): Group | null {
+  const { groupsRepo } = useServices();
+  return useLiveQuery(
+    [groupsRepo.changes as Emitter<unknown>],
+    () => groupsRepo.get(groupId),
+    null as Group | null,
+  );
+}
+
+export function useGroupMembers(groupId: string): GroupMember[] {
+  const { groupsRepo } = useServices();
+  return useLiveQuery(
+    [groupsRepo.changes as Emitter<unknown>],
+    () => groupsRepo.members(groupId),
+    [],
+  );
+}
+
+export function useGroupPoints(groupId: string): MeetingPoint[] {
+  const { meetingPoints } = useServices();
+  return useLiveQuery(
+    [meetingPoints.changes as Emitter<unknown>],
+    () => meetingPoints.list(groupId),
+    [],
+  );
+}
+
+/** Live meeting points of every active group: what the map draws. */
+export function useVisibleMeetingPoints(): MeetingPoint[] {
+  const { meetingPoints, groupsRepo } = useServices();
+  return useLiveQuery(
+    [meetingPoints.changes as Emitter<unknown>, groupsRepo.changes as Emitter<unknown>],
+    () => meetingPoints.listVisible(),
+    [],
+  );
+}
+
+export function useMeetingPoint(groupId: string, id: string): MeetingPoint | null {
+  const { meetingPoints } = useServices();
+  return useLiveQuery(
+    [meetingPoints.changes as Emitter<unknown>],
+    () => meetingPoints.get(groupId, id),
+    null as MeetingPoint | null,
+  );
+}
+
+export function usePointAcks(groupId: string, id: string): PointAck[] {
+  const { meetingPoints } = useServices();
+  return useLiveQuery(
+    [meetingPoints.changes as Emitter<unknown>],
+    () => meetingPoints.acks(groupId, id),
+    [],
+  );
 }

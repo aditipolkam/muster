@@ -44,6 +44,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>TrailMesh uses the camera only to scan a group invitation QR code. Nothing is recorded or sent.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>TrailMesh uses Bluetooth to find and talk to other TrailMesh phones nearby, with no internet. Nothing is sent to a server.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>

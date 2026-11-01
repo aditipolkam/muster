@@ -188,3 +188,20 @@ If routing is added later, it plugs into `NavigationService` through a `RouterPo
 | M-4 | Background location approvals | Foreground-first; defer to Phase 6 |
 | M-5 | Style/glyph/sprite assets missing offline cause blank labels | CI test that loads the style with the network blocked |
 | M-6 | Attribution omitted | Non-removable attribution control + About screen; checked in acceptance tests |
+
+
+## Custom areas (any region, on the device)
+
+Beyond the catalog's fixed regions, a user can download whatever the map shows. The app does what `pmtiles extract` does, on the phone, using HTTP range requests against a hosted **planet** PMTiles archive (`planet` in `catalog.json`, set with `build.mjs --planet-url`):
+
+1. Read the first 16 KiB (header, root directory), then only the leaf directories that can contain tiles inside the area (`RegionExtractor.planArea`). No tile data is fetched, so the exact download size is known before the user commits.
+2. Group the needed tile blocks into range requests (gaps up to 64 KiB are merged, at most 8 MiB per request) and write a new archive: header, gzipped root and leaf directories, metadata, tiles (`extractArea`). Identical tiles stay deduplicated.
+3. Validate the header and move the file into place like any other region (`source = 'custom'`).
+
+Limits and behaviour: at most 600,000 tiles or 2 GiB per area; detail levels cap at zoom 12 / 14 / 15. Custom areas cannot resume: cancelling or killing the app discards the partial file. The planet host must support `Range` and CORS-free direct access; host your own copy (docs/PROGRESS.md D-3), never hotlink the Protomaps build server or use OSM tile servers. Place-name search is not implemented: users pan the map to the place.
+
+### Online map until something is downloaded, and place search
+
+- While no installed region covers the camera centre, `StyleBuilder` adds the planet archive as a remote `pmtiles://https://…` source (same layers, same style) above zoom 3, and the map shows an "Online map · not saved" pill. Once a downloaded region covers the view the remote source is dropped. Nothing is cached by the app; MapLibre's ambient cache may keep tiles. Needs a planet URL (`planet` in the catalog, or `devPlanet()` in debug builds). [ASSUMPTION A-25: MapLibre Native streams a remote PMTiles archive over HTTPS on iOS and Android; not verified on a device.]
+- Place search (`PlaceSearch`) calls the public Nominatim geocoder only when the user submits a query (policy: identifying User-Agent, at most one request per second, no type-ahead). Choosing a result moves the map there and opens the download sheet for the result's area; point results (a peak, a village) get a 0.1 degree box. Development/testing only: replace the base URL with your own geocoder before shipping.
+- Not used: `Cyclenerd/offline-map-tile-downloader` is a desktop Go tool that bulk-downloads raster tiles from third-party tile servers, which the OSM tile policy prohibits and which does not fit the vector PMTiles pipeline.

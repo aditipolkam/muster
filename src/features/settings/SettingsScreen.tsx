@@ -21,7 +21,7 @@ import { OSM_ATTRIBUTION } from '../../shared/attribution';
 
 const APP_VERSION = '0.1.0 (phase 1)';
 
-export function SettingsScreen() {
+export function SettingsScreen({ navigation }: { navigation?: { goBack: () => void } } = {}) {
   const { c } = useTheme();
   const { location, packs, kv, db } = useServices();
   const regions = useRegions();
@@ -56,7 +56,7 @@ export function SettingsScreen() {
   }, [load, location]);
 
   return (
-    <Screen title="Settings">
+    <Screen title="Settings" onBack={navigation && (() => navigation.goBack())}>
       <ScrollView contentContainerStyle={styles.content}>
         <Card style={{ gap: space.sm }}>
           <Text variant="label" muted>

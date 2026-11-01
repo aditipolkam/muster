@@ -293,3 +293,15 @@ Telemetry is inactive until the app calls `enableTelemetry` [SDK `telemetry.md`]
 ### 13.3 Still unverified (needs two devices, `MESH_VERIFICATION.md`)
 
 Discovery time and range, `Connected` detection, subscription first-contact time (1:1 MLS session), live delivery, behaviour of a consumer that re-subscribes before its provider has re-registered, backgrounding, the Android notification Stop, iOS prompt flow, battery. A-04 (outbox persistence default) is **not** answered: Phase 2 sends no direct messages.
+
+## 14. Phase 3: what the group layer uses
+
+No new SDK calls. Groups reuse the section 13 calls through `PubSub` (a second instance, `owns: tm.group.1`). Findings and assumptions:
+
+- `ServiceSubscriptionChangedEvent.role` is `'consumer' | 'provider'` and the type's doc says "a subscription changed state, on either side" (`bindings/react-native/src/types.ts` ~2439). The provider side learning that a follower is `active` is how the group layer pushes current state and the join `welcome`. **[SDK, typed; not observed on a device: A-19]**.
+- `ServiceSubscribeReceivedEvent` has a `renewal` flag. TrailMesh does not read it; it decides by roster and invite, so a renewal from a roster member is accepted like a first request.
+- The SDK `provider` / `sender` fields are the only identity used for authorization. **[ASSUMPTION A-20: authenticated by the 1:1 MLS session.]**
+- Topics are explicit; no `*` pattern is used by the group layer (no dependence on pattern behaviour). Keys: member address, point id (ULID, 26 bytes), `welcome`, `beacon`, `sync` (limit 256 bytes).
+- Provider limits that shape the design: 16 subscriptions per subscriber, 256 per provider, 64 per consumer: with 12 members the organizer holds 33 follows (3 per member), a member 3. A member of several groups multiplies this by the number of groups.
+- DataStore, MLS groups (`meshCreateGroup`, `meshInviteToGroup`) and group messages are **not used** in Phase 3 (ADR 0007). A-05, A-06, A-07 remain open.
+- Unverified on devices (docs/GROUPS_VERIFICATION.md): A-19 to A-24.
