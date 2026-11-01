@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- INTERNET is used only by the user-initiated map download (MapPackManager). -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -11,6 +12,9 @@
       POST_NOTIFICATIONS (Android 13+) makes the foreground-service notification, and its Stop button, visible.
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- expo-camera (QR scanning of group invitations) declares CAMERA, which is wanted, and RECORD_AUDIO, which is not. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove" />
 
     <application
       android:name=".MainApplication"
