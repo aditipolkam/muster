@@ -1,6 +1,7 @@
 import { RegionsRepo } from '../../data/repositories/RegionsRepo';
 import { KvRepo } from '../../data/repositories/KvRepo';
-import { Catalog, RegionEntry, parseCatalog } from '../../domain/maps/catalog';
+import { Catalog, Planet, RegionEntry, parseCatalog } from '../../domain/maps/catalog';
+import { BBox } from '../../domain/geo';
 import { PMTILES_HEADER_BYTES, PmtilesError, parsePmtilesHeader } from '../../domain/maps/pmtiles';
 import {
   RegionRecord,
@@ -14,7 +15,10 @@ import { Clock } from '../../shared/clock';
 import { createLogger } from '../../shared/logger';
 import { AppError, Result, appError, err, ok } from '../../shared/result';
 import { sha256File } from './hash';
+import { resolveRegionUrl } from '../../shared/config';
 import { HttpClient } from './http';
+import { AreaPlan } from '../../domain/maps/area';
+import { ExtractError, extractArea, planArea } from './RegionExtractor';
 
 const log = createLogger('maps');
 
@@ -46,6 +50,10 @@ export type MapPackDeps = {
   catalogUrl: () => string;
   newId: () => string;
   progress?: ProgressSink;
+  /** Planet archive used when the catalog names none (development only). */
+  fallbackPlanet?: () => Planet | null;
+  /** Older candidates tried in order when the first planet URL cannot be read. */
+  fallbackPlanets?: () => Planet[];
 };
 
 const CATALOG_CACHE_KEY = 'catalog.cache';
@@ -84,6 +92,13 @@ export const errors = {
       { retryable: true },
     ),
   invalid: (e: PmtilesError): AppError => appError('invalid_pmtiles', e.message),
+  noPlanet: (): AppError =>
+    appError(
+      'no_planet',
+      'Custom areas are not available: no map source is configured. You can still download the listed regions or import a file.',
+    ),
+  area: (e: ExtractError): AppError =>
+    appError(e.code, e.message, { retryable: e.code === 'source_unreachable' }),
   disk: (m: string): AppError =>
     appError('disk_error', 'The map file could not be written to storage.', { message: m }),
 };
@@ -115,7 +130,11 @@ export class MapPackManager {
       if (this.jobs.has(r.id)) {
         continue;
       }
-      if (r.state === 'downloading' || r.state === 'verifying') {
+      if (r.source === 'custom' && r.state !== 'installed') {
+        // A custom area is cut on the device and cannot resume: drop the partial work.
+        await this.d.fs.remove(this.partUri(r.id));
+        await this.d.regions.delete(r.id);
+      } else if (r.state === 'downloading' || r.state === 'verifying') {
         // The process died: keep the .part file, offer Resume.
         const have = await this.d.fs.size(this.partUri(r.id));
         await this.d.regions.setState(r.id, 'paused', {
@@ -497,6 +516,153 @@ export class MapPackManager {
       installedAt: clock.now(),
       errorCode: null,
     });
+  }
+
+  // ------------------------------------------------------------ online map
+
+  /**
+   * The planet archive MapLibre may stream directly while no downloaded region covers the view.
+   * Null when no source is known (release builds without `planet` in the catalog).
+   */
+  async onlineSource(): Promise<{ uri: string; osmDataDate: string } | null> {
+    const planet =
+      (await this.loadCatalog({ refresh: false })).catalog.planet ?? this.d.fallbackPlanet?.();
+    return planet ? { uri: resolveRegionUrl(planet.url), osmDataDate: planet.osmDataDate } : null;
+  }
+
+  // ------------------------------------------------------------ custom areas
+
+  /** How big would this area be? Reads directories only; no tile data is downloaded. */
+  async planArea(bbox: BBox, maxZoom: number, signal?: AbortSignal): Promise<Result<AreaPlan>> {
+    // Cached catalog first: a refresh can stall for seconds when the catalog host is unreachable.
+    const fromCatalog =
+      (await this.loadCatalog({ refresh: false })).catalog.planet ??
+      (await this.loadCatalog({ refresh: true })).catalog.planet;
+    const first = this.d.fallbackPlanet?.();
+    const candidates = fromCatalog
+      ? [fromCatalog]
+      : [...(first ? [first] : []), ...(this.d.fallbackPlanets?.() ?? [])].filter(
+          (p, i, all) => all.findIndex(q => q.url === p.url) === i,
+        );
+    if (candidates.length === 0) {
+      return err(errors.noPlanet());
+    }
+    let lastError: ExtractError | null = null;
+    for (const planet of candidates) {
+      try {
+        return ok(
+          await planArea(
+            { http: this.d.http, fs: this.d.fs },
+            { url: resolveRegionUrl(planet.url), osmDataDate: planet.osmDataDate },
+            bbox,
+            maxZoom,
+            signal,
+          ),
+        );
+      } catch (e) {
+        if (signal?.aborted) {
+          return err(appError('cancelled', 'Cancelled.'));
+        }
+        if (!(e instanceof ExtractError)) {
+          return err(errors.network(String(e)));
+        }
+        lastError = e;
+        log.warn(`planet ${planet.url} unusable: ${e.message}`);
+        if (e.code !== 'source_unreachable') {
+          break;
+        }
+      }
+    }
+    return err(errors.area(lastError!));
+  }
+
+  /** Download a planned area as a new region. Resolves once the job is launched. */
+  async startArea(plan: AreaPlan, name: string): Promise<Result<RegionRecord>> {
+    try {
+      return await this.launchArea(plan, name);
+    } catch (e) {
+      log.warn(`startArea failed: ${String(e)}`);
+      return err(
+        appError('start_failed', `Could not start the download (${String(e).slice(0, 120)}).`),
+      );
+    }
+  }
+
+  private async launchArea(plan: AreaPlan, name: string): Promise<Result<RegionRecord>> {
+    const free = await this.d.fs.freeBytes();
+    if (!hasEnoughSpace(free, plan.fileBytes)) {
+      return err(errors.space(requiredFreeBytes(plan.fileBytes), free));
+    }
+    const id = `area-${this.d.newId().toLowerCase()}`;
+    const rec: RegionRecord = {
+      id,
+      name: name.trim().slice(0, 80) || 'Custom area',
+      bbox: plan.bbox,
+      minZoom: plan.minZoom,
+      maxZoom: plan.maxZoom,
+      bytes: plan.fileBytes,
+      sha256: null,
+      osmDataDate: plan.osmDataDate,
+      schemaV: 1,
+      state: 'downloading',
+      progressBytes: 0,
+      filePath: null,
+      installedAt: null,
+      source: 'custom',
+      errorCode: null,
+      sourceUrl: plan.planetUrl,
+    };
+    await this.d.regions.upsert(rec);
+    const ctl = new AbortController();
+    const job: Job = { ctl, reason: null, done: Promise.resolve() };
+    this.jobs.set(id, job);
+    job.done = this.runArea(rec, plan, job).finally(() => {
+      this.jobs.delete(id);
+      this.d.progress?.({ id, phase: 'idle' });
+    });
+    return ok(rec);
+  }
+
+  private async runArea(rec: RegionRecord, plan: AreaPlan, job: Job): Promise<void> {
+    const { fs, regions, clock } = this.d;
+    const part = this.partUri(rec.id);
+    try {
+      const size = await extractArea(
+        { http: this.d.http, fs },
+        plan,
+        part,
+        written =>
+          this.d.progress?.({
+            id: rec.id,
+            phase: 'downloading',
+            receivedBytes: plan.prefix.length + written,
+            totalBytes: plan.fileBytes,
+          }),
+        job.ctl.signal,
+      );
+      if (size !== plan.fileBytes) {
+        await this.fail(rec, errors.incomplete());
+        return;
+      }
+      parsePmtilesHeader(await fs.readRange(part, 0, PMTILES_HEADER_BYTES));
+      const finalUri = this.finalUri(rec.id);
+      await fs.move(part, finalUri);
+      await regions.upsert({
+        ...rec,
+        state: 'installed',
+        bytes: size,
+        progressBytes: size,
+        filePath: finalUri,
+        installedAt: clock.now(),
+        errorCode: null,
+      });
+    } catch (e) {
+      if (job.ctl.signal.aborted) {
+        // cancel() removes the part file and the record.
+        return;
+      }
+      await this.fail(rec, e instanceof ExtractError ? errors.area(e) : errors.network(String(e)));
+    }
   }
 
   // ----------------------------------------------------------------- import

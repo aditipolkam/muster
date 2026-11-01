@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
     bottom: space.md,
     padding: space.lg,
     gap: space.xs,
-    borderRadius: radius.lg,
+    borderRadius: radius.sheet,
     borderWidth: StyleSheet.hairlineWidth,
     shadowColor: '#000',
     shadowOpacity: 0.2,

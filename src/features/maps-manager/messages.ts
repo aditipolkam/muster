@@ -26,6 +26,10 @@ export function describeRegionProblem(r: RegionRecord, freeBytes: number | null)
       return 'The map file is missing from this device. Download it again.';
     case 'disk_error':
       return 'The map file could not be written. Check free storage and retry.';
+    case 'source_unreachable':
+      return 'Could not reach the map server. Check your connection and try the area again.';
+    case 'range_unsupported':
+      return 'The map server does not support custom areas. Choose a listed region instead.';
     default:
       if (r.errorCode.startsWith('http_')) {
         return `The map server returned an error (${r.errorCode.slice(5)}). Try again later.`;

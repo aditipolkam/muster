@@ -18,25 +18,43 @@ export type Palette = {
   infoBg: string;
   dangerBg: string;
   overlay: string;
+  primaryPressed: string;
+  primarySoft: string;
+  deep: string;
+  textSecondary: string;
+  connected: string;
+  mapSelf: string;
+  mapMember: string;
+  mapMeeting: string;
+  mapTrail: string;
 };
 
 const light: Palette = {
-  bg: '#F5F3EC',
+  bg: '#FAFAF7',
   surface: '#FFFFFF',
-  surfaceAlt: '#ECE9DF',
-  border: '#D9D5C7',
-  text: '#16201A',
-  textMuted: '#5C665F',
-  primary: '#2D6A4F',
+  surfaceAlt: '#F2F5EF',
+  border: '#E2E8E1',
+  text: '#18231D',
+  textMuted: '#66716B',
+  primary: '#176438',
   onPrimary: '#FFFFFF',
-  accent: '#D98E04',
-  danger: '#B3261E',
+  accent: '#B7771C',
+  danger: '#BE4C45',
   onDanger: '#FFFFFF',
-  warning: '#8A5A00',
+  warning: '#B7771C',
   warningBg: '#FFF1D0',
-  infoBg: '#E3EFE8',
+  infoBg: '#E7F2E8',
   dangerBg: '#FBE4E1',
-  overlay: 'rgba(22,32,26,0.45)',
+  overlay: 'rgba(24,35,29,0.45)',
+  primaryPressed: '#104D2B',
+  primarySoft: '#E7F2E8',
+  deep: '#103F29',
+  textSecondary: '#66716B',
+  connected: '#248B43',
+  mapSelf: '#3989F5',
+  mapMember: '#236B42',
+  mapMeeting: '#9858CA',
+  mapTrail: '#2A9C9A',
 };
 
 const dark: Palette = {
@@ -56,10 +74,28 @@ const dark: Palette = {
   infoBg: '#1D2D25',
   dangerBg: '#3A1B18',
   overlay: 'rgba(0,0,0,0.6)',
+  primaryPressed: '#7FCBA6',
+  primarySoft: '#1D2D25',
+  deep: '#EAF0EC',
+  textSecondary: '#9AA79F',
+  connected: '#5CC27A',
+  mapSelf: '#6AA5F8',
+  mapMember: '#58B58A',
+  mapMeeting: '#B88BDD',
+  mapTrail: '#4FBFBC',
 };
 
-export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
-export const radius = { sm: 8, md: 12, lg: 20, pill: 999 } as const;
+export const space = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  gutter: 20,
+  xl: 24,
+  xxl: 32,
+  huge: 40,
+} as const;
+export const radius = { sm: 8, input: 12, md: 14, card: 16, lg: 20, sheet: 24, pill: 999 } as const;
 
 export type Theme = { dark: boolean; c: Palette };
 

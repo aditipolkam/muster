@@ -100,13 +100,13 @@ const styles = StyleSheet.create({
   card: {
     padding: space.lg,
     gap: space.sm,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
     borderWidth: StyleSheet.hairlineWidth,
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radius.sm,
+    borderRadius: radius.input,
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
     fontSize: 16,

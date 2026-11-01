@@ -96,9 +96,15 @@ describe('AC8: no network outside the user-initiated map download', () => {
         importers.push(relative(SRC, f));
       }
     }
-    // FakeHttp and MapPackManager import only the HttpClient *type*.
+    // FakeHttp, MapPackManager, PlaceSearch and RegionExtractor import only the HttpClient *type*.
     expect(importers.sort()).toEqual(
-      ['app/bootstrap.ts', 'features/maps-manager/MapPackManager.ts', 'testing/FakeHttp.ts'].sort(),
+      [
+        'app/bootstrap.ts',
+        'features/maps-manager/MapPackManager.ts',
+        'features/maps-manager/PlaceSearch.ts',
+        'features/maps-manager/RegionExtractor.ts',
+        'testing/FakeHttp.ts',
+      ].sort(),
     );
     const manager = readFileSync(join(SRC, 'features/maps-manager/MapPackManager.ts'), 'utf8');
     expect(manager).toMatch(/import \{ HttpClient \} from '\.\/http'/);

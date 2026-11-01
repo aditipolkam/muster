@@ -1,9 +1,16 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
-export type MapsStackParamList = {
+export type MoreStackParamList = {
+  MoreList: undefined;
   Downloaded: undefined;
   Download: undefined;
+  Saved: undefined;
+  Mesh: undefined;
+  Settings: undefined;
 };
+
+/** The offline-maps screens live inside the More stack. */
+export type MapsStackParamList = MoreStackParamList;
 
 export type GroupsStackParamList = {
   GroupsList: undefined;
@@ -26,8 +33,6 @@ export type RootTabParamList = {
       }
     | undefined;
   Groups: NavigatorScreenParams<GroupsStackParamList> | undefined;
-  Maps: NavigatorScreenParams<MapsStackParamList> | undefined;
-  Saved: undefined;
-  Mesh: undefined;
-  Settings: undefined;
+  Navigate: { groupId?: string; pointId?: string; markerId?: string } | undefined;
+  More: NavigatorScreenParams<MoreStackParamList> | undefined;
 };

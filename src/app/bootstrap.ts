@@ -11,6 +11,7 @@ import { PointsRepo } from '../data/repositories/PointsRepo';
 import { RegionsRepo } from '../data/repositories/RegionsRepo';
 import { parseCatalog } from '../domain/maps/catalog';
 import { ensureStyleAssets } from '../features/map/styleAssets';
+import { PlaceSearch } from '../features/maps-manager/PlaceSearch';
 import { MapPackManager } from '../features/maps-manager/MapPackManager';
 import { createExpoHttpClient } from '../features/maps-manager/http';
 import { PubSub } from '../mesh/PubSub';
@@ -25,7 +26,7 @@ import { Platform } from 'react-native';
 import { Services } from '../runtime/services';
 import { usePackStore } from '../runtime/packStore';
 import { systemClock } from '../shared/clock';
-import { config, resolveRegionUrl } from '../shared/config';
+import { config, devPlanet, devPlanets, resolveRegionUrl } from '../shared/config';
 import { newId } from '../shared/ids';
 import { createLogger, setDebugPositions } from '../shared/logger';
 
@@ -48,15 +49,18 @@ export async function bootstrap(): Promise<Services> {
     ...bundled,
     regions: bundled.regions.map(r => ({ ...r, url: resolveRegionUrl(r.url) })),
   };
+  const http = createExpoHttpClient();
   const packs = new MapPackManager({
     fs,
-    http: createExpoHttpClient(),
+    http,
     regions,
     kv,
     clock: systemClock,
     bundledCatalog,
     newId,
     catalogUrl: () => kvCatalogUrl,
+    fallbackPlanet: () => devPlanet(),
+    fallbackPlanets: () => devPlanets(),
     progress: e => {
       const store = usePackStore.getState();
       if (e.phase === 'idle') {
@@ -133,6 +137,7 @@ export async function bootstrap(): Promise<Services> {
     groupPubsub,
     fs,
     packs,
+    places: new PlaceSearch(http),
     location,
     style,
     clock: systemClock,

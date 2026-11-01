@@ -1,0 +1,195 @@
+# TrailMesh Design System
+
+Version 1.0 · Reference: approved eight-screen TrailMesh concept (onboarding, map, group, meeting point, compass, offline maps, updates, settings).
+
+## 1. Design direction
+
+TrailMesh is a calm, trustworthy outdoor utility: **topographic landscapes, forest-green actions, warm off-white surfaces, and clear location status**. The map is the hero; controls should feel lightweight and immediately understandable. Prioritize legibility outdoors, offline confidence, and one obvious primary action per screen.
+
+Principles:
+- **Map first.** On map screens, use compact floating controls and a bottom group sheet; avoid large persistent headers.
+- **Clarity over decoration.** Icons communicate a function; color communicates meaning.
+- **Consistent hierarchy.** Same heading scale, icon treatment, buttons, paddings and cards across tabs.
+- **Trustworthy state.** Distinguish offline availability, mesh connection, GPS availability, and stale peer locations.
+- **Accessible in sunlight.** Keep text and controls high-contrast; don't rely on color alone.
+
+## 2. Color tokens
+
+The values below are implementation targets sampled conceptually from the mockup, not exact pixel samples. Define tokens centrally; do not use one-off hex colors in screens.
+
+| Token | Hex | Usage |
+|---|---|---|
+| `brand.primary` | `#176438` | Primary buttons, selected tabs, main accents |
+| `brand.primaryPressed` | `#104D2B` | Pressed primary actions |
+| `brand.primarySoft` | `#E7F2E8` | Subtle green cards, icon surfaces |
+| `brand.deep` | `#103F29` | Brand text and strong headings |
+| `surface.base` | `#FAFAF7` | App background |
+| `surface.card` | `#FFFFFF` | Sheets, cards, inputs |
+| `surface.subtle` | `#F2F5EF` | Secondary buttons and grouped rows |
+| `text.primary` | `#18231D` | Main text |
+| `text.secondary` | `#66716B` | Supporting text |
+| `text.muted` | `#87918A` | Metadata and disabled text |
+| `border.default` | `#E2E8E1` | Dividers and input outlines |
+| `status.connected` | `#248B43` | Confirmed connected / available |
+| `status.warning` | `#B7771C` | Limited GPS, pending sync |
+| `status.error` | `#BE4C45` | Failures, destructive actions |
+| `map.self` | `#3989F5` | Own location and accuracy halo |
+| `map.member` | `#236B42` | Group-member markers |
+| `map.meeting` | `#9858CA` | Meeting point pin and icon |
+| `map.trail` | `#2A9C9A` | Highlighted trail line |
+
+Never use green to imply an internet connection. Prefer explicit labels such as `Offline · 4 nearby` and `Mesh connected`.
+
+## 3. Typography
+
+Use **Inter** where bundled/licensed; otherwise use the native system sans-serif consistently. Do not mix unrelated typefaces across tabs. Respect dynamic text sizing.
+
+| Role | Size | Weight | Line height |
+|---|---:|---:|---:|
+| Hero / onboarding | 30 | 700 | 36 |
+| Screen title | 22 | 700 | 28 |
+| Section title | 18 | 650/700 | 24 |
+| Card title | 16 | 600 | 22 |
+| Body | 15 | 400 | 22 |
+| Button | 15 | 600 | 20 |
+| Supporting | 13 | 400 | 18 |
+| Caption / metadata | 12 | 400/500 | 16 |
+| Navigation metric | 34 | 700 | 40 |
+
+Use sentence case for UI copy. Prefer short, concrete labels: `Share meeting point`, `Download region`, `Location sharing on`.
+
+## 4. Spacing, sizing and shape
+
+- Spacing scale: `4, 8, 12, 16, 20, 24, 32, 40` dp.
+- Screen horizontal gutter: **20 dp**; card-to-card gap: **12 dp**; section gap: **24 dp**.
+- Minimum interactive target: **44 × 44 dp** (prefer 48 × 48).
+- Primary button: **52 dp** tall, radius **14 dp**, horizontal padding **20 dp**.
+- Secondary button: **48–52 dp** tall, radius **14 dp**, subtle fill or border.
+- Text input: **52 dp** minimum height, radius **12 dp**, border 1 dp.
+- Cards: radius **16 dp**, padding **16 dp**; large map sheets: radius **24 dp** at top corners.
+- Pills / status chips: radius **999 dp**, vertical padding **8 dp**, horizontal **12 dp**.
+- Icon-only map controls: **48 × 48 dp**, radius **14 dp** with white surface.
+- Avatar: **36 dp** in lists; map peer marker **40–44 dp** including label treatment.
+- Dividers: 1 dp `border.default`, inset to content when appropriate.
+- Shadows: subtle only on floating map elements and sheets; prefer borders on standard cards.
+
+## 5. Icons
+
+Use one icon family throughout (Lucide or a single consistent outlined icon set). Standard sizes: **20 dp** inline, **24 dp** actions/navigation, **18 dp** compact metadata. Default stroke width: **2**.
+
+Rules:
+- No arbitrary circular border around some icons while others are bare.
+- Use a soft-green rounded-square icon background **only** for feature rows or special actions; never randomly.
+- Active bottom-tab icon and label use `brand.primary`; inactive use `text.secondary`.
+- Reserve purple exclusively for meeting-point identity; blue for current GPS position.
+- Do not rely on an icon alone when the action is unfamiliar.
+
+## 6. Core components
+
+### PrimaryButton
+Solid `brand.primary`, white label, 52 dp height, 14 dp radius, optional leading icon. Disabled state uses muted surface and text; loading state preserves width and height.
+
+### SecondaryButton
+`surface.subtle` background with `text.primary` label. Same geometry as primary button.
+
+### IconButton
+48 × 48 dp; white surface on map; outline icon centered. Consistent radius and shadow across all map controls.
+
+### StatusPill
+White or near-white pill with a small colored dot, concise text, and optional count. Examples: `Offline · 4 nearby`, `GPS unavailable`, `Sync pending`.
+
+### ListRow
+Minimum 60 dp, leading 36 dp icon/avatar, title and one optional supporting line, trailing status or chevron, optional inset divider.
+
+### BottomSheet
+White, top radius 24 dp, safe-area aware, draggable when appropriate. Used for active group summary and meeting-point composition.
+
+### MapMarker
+- Self: blue circle, white stroke, translucent accuracy ring.
+- Member: forest-green person/avatar marker with name label.
+- Meeting point: purple flag pin with clear touch target.
+- Stale member: subdued marker plus timestamp; never imply live presence.
+
+### GroupCard
+Leading group icon, group name, member count and connection state, trailing chevron. Tappable as a single 64–76 dp row.
+
+### FormField
+Label above input, helper/error below. Do not use placeholder as the only label. Use keyboard-aware layouts.
+
+## 7. Navigation and screen templates
+
+Bottom tabs: **Map · Group · Navigate · More**. Use the same tab bar height, icon size, text size, spacing and selected state on every main screen. Detail screens use a consistent top bar with back arrow, centered/left title according to one chosen convention, and optional trailing action.
+
+**Onboarding:** brand mark, simple headline, scenic illustration, three concise benefits, single `Get started` CTA. Avoid unnecessary permission requests before users understand the feature.
+
+**Map:** full-bleed topographic map, top-left connectivity pill, top-right layers/location controls, markers, lower group card, bottom navigation. The map should remain usable with no peers connected.
+
+**Group:** landscape header image (optional), group name, member count, mesh status, segmented tabs (`Members`, `Updates`, `Meeting point`), member rows, single contextual CTA.
+
+**Share meeting point:** map preview, place name, optional note, primary `Share with group` CTA. Show coordinates as secondary information.
+
+**Navigate:** destination summary, large compass arrow, distance as primary metric, bearing and estimated walking time as supporting metrics. Label guidance as straight-line, not turn-by-turn.
+
+**Offline maps:** storage usage bar, downloaded region rows, `Download new region` CTA, progress/cancel/retry states.
+
+**Updates:** chronological activity feed with recognizable event icons and relative timestamps. Indicate queued/unsynced events.
+
+**More:** grouped settings rows, location sharing toggle, downloaded maps, GPX trails, mesh diagnostics, settings and help.
+
+## 8. Map visual style
+
+Use a soft, natural topographic basemap: muted sage land, pale-blue water, subtle contour lines, legible trails and restrained road labels. Map styling must be packaged/downloadable for offline use. Avoid saturated terrain imagery that competes with markers.
+
+Marker and trail contrast must remain sufficient across light and dark terrain. Provide a scale indicator and recenter control. Never assume downloaded map coverage exists outside the saved region.
+
+## 9. Interaction and motion
+
+- Press feedback: subtle opacity/scale, 100–160 ms.
+- Sheet enter/exit: 220–300 ms, gentle easing.
+- Marker updates: smooth transitions where reasonable, but do not animate stale data as live movement.
+- Loading: skeletons for lists; determinate progress for map downloads.
+- Respect reduced-motion settings.
+- Never block critical navigation behind decorative animation.
+
+## 10. States that every screen must handle
+
+- Initial loading, empty, success, error, permission denied, and offline/mesh-disconnected states.
+- Map not downloaded; GPS fix unavailable or low accuracy.
+- Bluetooth off, no nearby peers, peer reconnecting.
+- Location sharing off, last-known location stale.
+- Message queued, sent, acknowledged (only if supported), failed.
+
+Do not conflate `published locally` with `received by every group member`.
+
+## 11. Accessibility
+
+- Minimum 44 × 44 dp hit targets; use 48 dp for primary touch controls.
+- Maintain WCAG AA contrast targets (4.5:1 normal text, 3:1 large text and meaningful UI boundaries).
+- Support font scaling and screen readers with descriptive labels.
+- Announce important connectivity and meeting-point changes without excessive interruptions.
+- Use text/icons alongside status colors.
+- Keep map actions usable one-handed and with gloves where feasible.
+
+## 12. Implementation rules for Claude / contributors
+
+1. Define all tokens in a centralized theme module (`src/theme/` or equivalent). Do not scatter raw values through screens.
+2. Create shared `Button`, `IconButton`, `StatusPill`, `ListRow`, `Card`, `BottomSheet`, `ScreenHeader`, and `MapMarker` components.
+3. All four main tabs must use the same layout, font scale, icon style and bottom navigation.
+4. Reuse shared components before introducing a new variant.
+5. Do not introduce new colors, radii, shadows, or font sizes without updating this file and the theme tokens.
+6. Use safe-area insets and responsive layouts; test small screens and large text.
+7. Screenshot-review every screen against the approved mockup, including empty/error states.
+8. Treat this document as the visual source of truth. Where the mockup conflicts with accessibility or technical reality, preserve usability and document the deviation.
+
+## 13. Visual QA checklist
+
+- [ ] All screen headers use the same type scale and placement rules.
+- [ ] All primary buttons match in height, radius, fill, font and icon spacing.
+- [ ] Icons share one family, stroke weight and background convention.
+- [ ] Cards use consistent padding, radius, border and shadow treatment.
+- [ ] Main tabs share identical navigation geometry and typography.
+- [ ] Map markers are visually distinct and correctly labeled.
+- [ ] Offline, mesh, GPS and sync statuses are independently understandable.
+- [ ] Text remains readable at accessibility sizes and in sunlight.
+- [ ] No hard-coded style values duplicate existing tokens.
+- [ ] iOS and Android screens are visually consistent without violating native interaction conventions.

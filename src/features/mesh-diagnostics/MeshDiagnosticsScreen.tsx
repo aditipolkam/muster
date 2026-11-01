@@ -12,7 +12,9 @@ import { ago, lifecycleLabel, peerStatus, shortAddress } from './format';
 import { ScanPulse } from './ScanPulse';
 
 /** Development screen (Phase 2). No SDK imports: everything goes through MeshPort and PubSub. */
-export function MeshDiagnosticsScreen() {
+export function MeshDiagnosticsScreen({
+  navigation,
+}: { navigation?: { goBack: () => void } } = {}) {
   const { c } = useTheme();
   const { mesh, pubsub } = useServices();
   const m = useMesh();
@@ -49,7 +51,7 @@ export function MeshDiagnosticsScreen() {
     );
 
   return (
-    <Screen title="Mesh">
+    <Screen title="Mesh diagnostics" onBack={navigation && (() => navigation.goBack())}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Banner
           tone="info"

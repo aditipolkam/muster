@@ -4,6 +4,7 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BBox } from '../../domain/geo';
 import { fixToLatLon, gpsStatus, GpsStatus, describeAccuracy } from '../../domain/location/fix';
 import {
   PERMISSION_COPY,
@@ -12,7 +13,7 @@ import {
   permissionAction,
 } from '../../domain/location/permission';
 import { defaultMarkerName } from '../../domain/markers/marker';
-import { needsRegionBanner, selectActiveRegions } from '../../domain/maps/coverage';
+import { covers, needsRegionBanner, selectActiveRegions } from '../../domain/maps/coverage';
 import { useLocationStore } from '../../platform/locationStore';
 import {
   useGroups,
@@ -27,9 +28,11 @@ import { createLogger } from '../../shared/logger';
 import { OSM_ATTRIBUTION } from '../../shared/attribution';
 import { perf } from '../../shared/perf';
 import { useNow } from '../../ui/useNow';
-import { Badge, Banner, IconButton, Text } from '../../ui/components';
-import { space, useTheme } from '../../ui/theme';
+import { Banner, Card, IconButton, IconTile, ListRow, StatusPill, Text } from '../../ui/components';
+import { radius, space, useTheme } from '../../ui/theme';
 import { MapCanvas } from './MapCanvas';
+import { AreaDownloadSheet } from './AreaDownloadSheet';
+import { PlaceSearchSheet } from './PlaceSearchSheet';
 import { MarkerSheet } from './MarkerSheet';
 import { MeetingDraft, MeetingPointEditor } from './MeetingPointEditor';
 import { MeetingPointSheet } from './MeetingPointSheet';
@@ -73,7 +76,7 @@ function gpsLabel(
 export function MapScreen({ navigation, route }: Props) {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
-  const { style, points, location, groups: groupService } = useServices();
+  const { style, points, location, packs, groups: groupService } = useServices();
   const markers = useMarkers();
   const meetingPoints = useVisibleMeetingPoints();
   const groupList = useGroups();
@@ -99,7 +102,12 @@ export function MapScreen({ navigation, route }: Props) {
     center: [number, number];
     zoom: number;
     bearing: number;
+    bounds: BBox | null;
   } | null>(null);
+  const [areaOpen, setAreaOpen] = useState(false);
+  const [areaBbox, setAreaBbox] = useState<BBox | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [onlineUri, setOnlineUri] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [selectedMeeting, setSelectedMeeting] = useState<string | null>(null);
@@ -122,15 +130,30 @@ export function MapScreen({ navigation, route }: Props) {
   const activeKey = selectActiveRegions(installed, center, MAX_ACTIVE_REGIONS)
     .map(r => r.id)
     .join(',');
+  // Until a downloaded map covers the view, stream the planet archive so there is something to see.
+  useEffect(() => {
+    void packs.onlineSource().then(src => setOnlineUri(src?.uri ?? null));
+  }, [packs, allRegions.length]);
+  // Snapshot the bounds on open so the size check is not restarted by later camera updates.
+  const openArea = useCallback(() => {
+    setAreaBbox(view?.bounds ?? null);
+    setAreaOpen(true);
+  }, [view?.bounds]);
+  const useOnline = !!onlineUri && !covers(installed, center);
   const mapStyle = useMemo(() => {
     const ids = activeKey ? activeKey.split(',') : [];
     const regions = ids
       .map(id => installed.find(r => r.id === id))
       .filter((r): r is NonNullable<typeof r> => !!r && !!r.filePath)
       .map(r => ({ id: r.id, uri: r.filePath as string }));
-    return buildStyle({ styleRoot: style.styleRoot, worldBaseUri: style.worldBaseUri, regions });
+    return buildStyle({
+      styleRoot: style.styleRoot,
+      worldBaseUri: style.worldBaseUri,
+      regions,
+      onlineUri: useOnline ? onlineUri ?? undefined : undefined,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKey, installed.length, style.styleRoot, style.worldBaseUri]);
+  }, [activeKey, installed.length, style.styleRoot, style.worldBaseUri, useOnline, onlineUri]);
 
   // Initial camera: last fix, else first installed region, else world.
   const initial = useMemo(() => {
@@ -265,7 +288,19 @@ export function MapScreen({ navigation, route }: Props) {
   }, [selectedMeeting, selectedPoint]);
 
   const onRegionChange = useCallback((e: ViewStateChangeEvent) => {
-    setView({ center: [e.center[0], e.center[1]], zoom: e.zoom, bearing: e.bearing });
+    setView({
+      center: [e.center[0], e.center[1]],
+      zoom: e.zoom,
+      bearing: e.bearing,
+      bounds: e.bounds
+        ? [
+            Math.max(-180, e.bounds[0]),
+            Math.max(-85, e.bounds[1]),
+            Math.min(180, e.bounds[2]),
+            Math.min(85, e.bounds[3]),
+          ]
+        : null,
+    });
     if (e.userInteraction) {
       userMoved.current = true;
     }
@@ -446,6 +481,9 @@ export function MapScreen({ navigation, route }: Props) {
   const markerData = useMemo(() => markersCollection(markers), [markers]);
   const meetingData = useMemo(() => meetingPointsCollection(meetingPoints), [meetingPoints]);
 
+  const activeGroup = groupList.find(g => g.status === 'active') ?? null;
+  const meshSnap = useMesh();
+  const sheetOpen = !!(selected || selectedPoint || moving || movingMeeting);
   const ageS = fix ? Math.max(0, Math.round((now - fix.fixAt) / 1000)) : null;
   const label = gpsLabel(gps, fix?.accM ?? null, ageS);
   const permAction = permissionAction(permission);
@@ -492,7 +530,10 @@ export function MapScreen({ navigation, route }: Props) {
       />
 
       <View style={[styles.top, { top: insets.top + space.sm }]} pointerEvents="box-none">
-        <Badge label={label.text} tone={label.tone} />
+        <StatusPill label={label.text} tone={label.tone} />
+        {useOnline ? (
+          <StatusPill label="Online map · not saved" tone="warn" testID="online-pill" />
+        ) : null}
         {permAction !== 'none' ? (
           <Banner
             tone={permission === 'approximate' ? 'warn' : 'info'}
@@ -518,8 +559,8 @@ export function MapScreen({ navigation, route }: Props) {
             tone="warn"
             title="No offline map for this area"
             body="Your markers and location still work. Download or import a map for this area."
-            actionLabel="Get maps"
-            onAction={() => navigation.navigate('Maps', { screen: 'Download' })}
+            actionLabel="Download this area"
+            onAction={openArea}
             onDismiss={() => setBannerDismissed(true)}
           />
         ) : null}
@@ -527,8 +568,8 @@ export function MapScreen({ navigation, route }: Props) {
           <Banner
             title="No offline maps yet"
             body="Download a region while you have a connection so the map works without one."
-            actionLabel="Get maps"
-            onAction={() => navigation.navigate('Maps', { screen: 'Download' })}
+            actionLabel="Download this area"
+            onAction={openArea}
             onDismiss={() => setBannerDismissed(true)}
           />
         ) : null}
@@ -557,12 +598,24 @@ export function MapScreen({ navigation, route }: Props) {
       ) : null}
 
       <View
-        style={[styles.controls, { bottom: selected || selectedPoint ? 250 : space.xl + 60 }]}
+        style={[styles.controls, { bottom: sheetOpen ? 250 : activeGroup ? 112 : space.xl }]}
         pointerEvents="box-none"
       >
         <IconButton
+          testID="map-search-button"
+          icon="search"
+          label="Search for a place"
+          onPress={() => setSearchOpen(true)}
+        />
+        <IconButton
+          testID="map-download-button"
+          icon="download"
+          label="Download offline maps"
+          onPress={openArea}
+        />
+        <IconButton
           testID="locate-button"
-          glyph={mode === 'follow-heading' ? '➤' : '◎'}
+          icon={mode === 'follow-heading' ? 'follow' : 'locate'}
           label={
             mode === 'free'
               ? 'Center on my location'
@@ -576,7 +629,7 @@ export function MapScreen({ navigation, route }: Props) {
       </View>
 
       <View
-        style={[styles.attribution, { bottom: selected || selectedPoint ? 244 : space.sm }]}
+        style={[styles.attribution, { bottom: sheetOpen ? 244 : activeGroup ? 92 : space.sm }]}
         pointerEvents="none"
         testID="attribution"
       >
@@ -584,6 +637,26 @@ export function MapScreen({ navigation, route }: Props) {
           {OSM_ATTRIBUTION}
         </Text>
       </View>
+
+      {activeGroup && !sheetOpen ? (
+        <Card style={styles.groupCard} testID="map-group-card">
+          <ListRow
+            title={activeGroup.name}
+            subtitle={`${meshSnap.lifecycle === 'running' ? 'Connected' : 'Mesh off'}${
+              meshSnap.blePeerCount !== null ? ` · ${meshSnap.blePeerCount} nearby` : ''
+            }`}
+            leading={<IconTile name="group" />}
+            chevron
+            divider={false}
+            onPress={() =>
+              navigation.navigate('Groups', {
+                screen: 'GroupDetails',
+                params: { groupId: activeGroup.id },
+              })
+            }
+          />
+        </Card>
+      ) : null}
 
       {selected && !moving ? (
         <MarkerSheet
@@ -641,10 +714,10 @@ export function MapScreen({ navigation, route }: Props) {
       {selectedPoint && movingMeeting ? (
         <View style={[styles.moveBar, { backgroundColor: c.surface, borderColor: c.border }]}>
           <View style={{ flexDirection: 'row', gap: space.sm }}>
-            <IconButton glyph="✕" label="Cancel move" onPress={() => setMovingMeeting(false)} />
+            <IconButton icon="close" label="Cancel move" onPress={() => setMovingMeeting(false)} />
             <View style={{ flex: 1 }} />
             <IconButton
-              glyph="✓"
+              icon="check"
               label="Set meeting point here"
               onPress={() => void confirmMoveMeeting()}
               active
@@ -652,6 +725,33 @@ export function MapScreen({ navigation, route }: Props) {
           </View>
         </View>
       ) : null}
+      <PlaceSearchSheet
+        visible={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onPick={place => {
+          setSearchOpen(false);
+          cameraRef.current?.fitBounds(place.bbox, { duration: 800 });
+          setAreaBbox(place.bbox);
+          setAreaOpen(true);
+        }}
+      />
+      <AreaDownloadSheet
+        visible={areaOpen}
+        bbox={areaBbox}
+        onClose={() => {
+          setAreaOpen(false);
+          setAreaBbox(null);
+        }}
+        onBrowse={() => {
+          setAreaOpen(false);
+          navigation.navigate('More', { screen: 'Download' });
+        }}
+        onStarted={name => {
+          setAreaOpen(false);
+          setAreaBbox(null);
+          setInfo(`Downloading "${name}". Follow progress in More > Offline maps.`);
+        }}
+      />
       <MeetingPointEditor
         draft={draft}
         busy={draftBusy}
@@ -662,10 +762,10 @@ export function MapScreen({ navigation, route }: Props) {
       {selected && moving ? (
         <View style={[styles.moveBar, { backgroundColor: c.surface, borderColor: c.border }]}>
           <View style={{ flexDirection: 'row', gap: space.sm }}>
-            <IconButton glyph="✕" label="Cancel move" onPress={() => setMoving(false)} />
+            <IconButton icon="close" label="Cancel move" onPress={() => setMoving(false)} />
             <View style={{ flex: 1 }} />
             <IconButton
-              glyph="✓"
+              icon="check"
               label="Set marker here"
               onPress={() => void confirmMove()}
               active
@@ -687,6 +787,18 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
   },
   controls: { position: 'absolute', right: space.md, gap: space.sm },
+  groupCard: {
+    position: 'absolute',
+    left: space.md,
+    right: space.md,
+    bottom: space.md,
+    paddingVertical: space.xs,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
   attribution: { position: 'absolute', right: space.sm },
   attributionText: {
     backgroundColor: 'rgba(255,255,255,0.8)',
@@ -708,7 +820,7 @@ const styles = StyleSheet.create({
     right: space.md,
     bottom: space.xl,
     padding: space.md,
-    borderRadius: 20,
+    borderRadius: radius.sheet,
     borderWidth: StyleSheet.hairlineWidth,
   },
 });

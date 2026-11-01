@@ -109,12 +109,31 @@ describe('MapScreen', () => {
 
   it('shows the first-run banner with no regions, linking to the download screen', async () => {
     const t = await makeTestServices();
-    const { calls } = await renderMap(t);
+    await renderMap(t);
     expect(screen.getByText('No offline maps yet')).toBeTruthy();
-    fireEvent.press(screen.getByText('Get maps'));
-    expect(calls[0]).toEqual(['Maps', { screen: 'Download' }]);
+    fireEvent.press(screen.getByText('Download this area'));
+    expect(await screen.findByTestId('area-sheet')).toBeTruthy();
     fireEvent.press(screen.getByText('Hide'));
     expect(screen.queryByText('No offline maps yet')).toBeNull();
+  });
+
+  it('streams the online map, and says so, until a downloaded map covers the view', async () => {
+    const t = await makeTestServices();
+    await t.kv.setJson('catalog.cache', {
+      catalogVersion: 1,
+      generatedAt: 'x',
+      planet: { url: 'https://example.test/planet.pmtiles', osmDataDate: '2026-10-29' },
+      regions: [],
+    });
+    await renderMap(t);
+    expect(await screen.findByTestId('online-pill')).toBeTruthy();
+    expect(mockMap.props!.mapStyle.sources['src-online']).toBeTruthy();
+  });
+
+  it('shows no online map when no source is known', async () => {
+    const t = await makeTestServices();
+    await renderMap(t);
+    expect(screen.queryByTestId('online-pill')).toBeNull();
   });
 
   it('outside installed coverage: banner appears, yet location and markers still render (AC6)', async () => {
@@ -497,5 +516,49 @@ describe('SettingsScreen', () => {
     expect(screen.getByText('Open system Settings')).toBeTruthy();
     expect(screen.getByText('© OpenStreetMap contributors')).toBeTruthy();
     expect(await screen.findByText(/schema v3 \/ v3/)).toBeTruthy();
+  });
+});
+
+describe('NavigateScreen', () => {
+  it('shows distance and bearing to a saved place, and an empty state without one', async () => {
+    const { NavigateScreen } = require('../src/features/navigate/NavigateScreen');
+    const t = await makeTestServices();
+    useLocationStore.setState({
+      permission: 'granted',
+      fix: { lat: 54.5, lon: -3.0, accM: 5, fixAt: Date.now() },
+    });
+    const { nav } = fakeNav();
+    const m = await t.points.create({ name: 'Hut', lat: 54.51, lon: -3.0 });
+    const ui = (params?: object) => (
+      <Harness services={t.services}>
+        <NavigateScreen
+          navigation={nav as never}
+          route={{ key: 'n', name: 'Navigate', params } as never}
+        />
+      </Harness>
+    );
+    const { unmount } = render(ui({ markerId: m.id }));
+    expect(await screen.findByTestId('nav-distance')).toBeTruthy();
+    expect(screen.getByText('Hut')).toBeTruthy();
+    expect(screen.getByText(/Bearing 0°/)).toBeTruthy();
+    unmount();
+    render(ui());
+    expect(await screen.findByText('Nothing to navigate to')).toBeTruthy();
+  });
+});
+
+describe('OnboardingScreen', () => {
+  it('lists the benefits and continues on Get started', () => {
+    const { OnboardingScreen } = require('../src/features/onboarding/OnboardingScreen');
+    const done = jest.fn();
+    render(
+      <Harness services={{} as never}>
+        <OnboardingScreen onDone={done} />
+      </Harness>,
+    );
+    expect(screen.getByText('Offline maps')).toBeTruthy();
+    expect(screen.getByText('Group sync')).toBeTruthy();
+    fireEvent.press(screen.getByText('Get started'));
+    expect(done).toHaveBeenCalled();
   });
 });

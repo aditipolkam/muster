@@ -38,7 +38,7 @@ workspace/
 3. **Single writer per replicated key.** A member writes only its own `m.<addr>` document. Never write another member's doc. Never split lat/lon into separate keys.
 4. **Persist in the handler.** The SDK ACKs before it emits `message_received`; persist inbound data keyed by id before doing anything else. Handlers are idempotent.
 5. **SDK lifecycle:** register listeners before `start()`; call `DataStore.setInterest` before `start()` every launch; feed `setBatteryState`; never reuse a destroyed instance; reconcile `getState()` on foreground.
-6. **No network in core paths.** No fetch in map render, navigation, location, mesh, or storage code. Only `MapPackManager` may use the network, and only on user action.
+6. **No network in core paths.** No fetch in navigation, location, mesh, or storage code, and none in app code that renders the map. Only code under `features/maps-manager` (`MapPackManager`, `RegionExtractor`, `PlaceSearch`) may use the network, and only on user action. One owner-approved exception (development/testing): while no downloaded region covers the view, MapLibre streams the planet PMTiles directly (`StyleBuilder` `onlineUri`), shown to the user as "Online map · not saved". Core features still work with no internet.
 7. **Never use public OSM tile servers for offline tiles** (policy forbids bulk/offline download). Attribution "© OpenStreetMap contributors" must be visible on every map.
 8. **Never log coordinates** at info level or above. Positions are redacted unless the debug flag is set.
 9. **No telemetry.** Never call the SDK's `enableTelemetry`.

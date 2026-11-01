@@ -15,6 +15,34 @@ export const config = {
   dbName: 'trailmesh.db',
 } as const;
 
+/**
+ * Development/testing only: the public Protomaps daily planet build (supports Range requests).
+ * Protomaps asks production apps to host their own copy, so release builds return null and rely on
+ * `planet` in the catalog. Builds are dated and eventually removed, so use one from two days ago.
+ */
+export function devPlanet(now: Date = new Date()): { url: string; osmDataDate: string } | null {
+  if (!__DEV__) {
+    return null;
+  }
+  const d = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+  const iso = d.toISOString().slice(0, 10);
+  return { url: `https://build.protomaps.com/${iso.replace(/-/g, '')}.pmtiles`, osmDataDate: iso };
+}
+
+/** Same build, then older ones, in case the newest is not published (or cached) yet. */
+export function devPlanets(now: Date = new Date()): { url: string; osmDataDate: string }[] {
+  if (!__DEV__) {
+    return [];
+  }
+  return [2, 3, 4, 5, 6].map(days => {
+    const iso = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    return {
+      url: `https://build.protomaps.com/${iso.replace(/-/g, '')}.pmtiles`,
+      osmDataDate: iso,
+    };
+  });
+}
+
 export function resolveRegionUrl(url: string): string {
   return __DEV__ && url.startsWith(config.bundledCatalogBase)
     ? url.replace(config.bundledCatalogBase, `http://${config.devHost}:8787`)

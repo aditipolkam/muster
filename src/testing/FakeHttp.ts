@@ -41,14 +41,18 @@ export class FakeHttp implements HttpClient {
     let start = 0;
     let status = 200;
     const headers: Record<string, string> = {};
-    const m = range ? /^bytes=(\d+)-/.exec(range) : null;
+    const m = range ? /^bytes=(\d+)-(\d*)/.exec(range) : null;
+    let stop = f.bytes.length;
     if (m && !f.ignoreRange) {
       start = Number(m[1]);
       if (start >= f.bytes.length) {
         return { status: 416, headers: {}, body: (async function* () {})() };
       }
+      if (m[2]) {
+        stop = Math.min(f.bytes.length, Number(m[2]) + 1);
+      }
       status = 206;
-      headers['content-range'] = `bytes ${start}-${f.bytes.length - 1}/${f.bytes.length}`;
+      headers['content-range'] = `bytes ${start}-${stop - 1}/${f.bytes.length}`;
     }
     const failAfter = this.failNextAfter;
     const stallAfter = this.stallNextAfter;
@@ -57,7 +61,7 @@ export class FakeHttp implements HttpClient {
     const chunk = this.chunk;
     async function* body() {
       let sent = 0;
-      for (let o = start; o < f!.bytes.length; o += chunk) {
+      for (let o = start; o < stop; o += chunk) {
         if (opts.signal?.aborted) {
           throw new Error('aborted');
         }
@@ -69,7 +73,7 @@ export class FakeHttp implements HttpClient {
             opts.signal?.addEventListener('abort', () => rej(new Error('aborted')));
           });
         }
-        const piece = f!.bytes.slice(o, Math.min(o + chunk, f!.bytes.length));
+        const piece = f!.bytes.slice(o, Math.min(o + chunk, stop));
         sent += piece.length;
         yield piece;
         await Promise.resolve();

@@ -9,6 +9,7 @@ import type { MeetingPointsRepo } from '../data/repositories/MeetingPointsRepo';
 import type { GroupService } from '../features/groups/GroupService';
 import type { MeshPort } from '../mesh/types';
 import type { PubSub } from '../mesh/PubSub';
+import type { PlaceSearch } from '../features/maps-manager/PlaceSearch';
 import type { MapPackManager } from '../features/maps-manager/MapPackManager';
 import type { InstalledStyleAssets } from '../features/map/styleAssets';
 import type { FilePort } from '../platform/FilePort';
@@ -33,6 +34,8 @@ export type Services = {
   groupPubsub: PubSub;
   fs: FilePort;
   packs: MapPackManager;
+  /** Online place search for picking a region to download. */
+  places: PlaceSearch;
   location: LocationService;
   style: InstalledStyleAssets;
   clock: Clock;

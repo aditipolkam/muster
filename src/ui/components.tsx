@@ -12,16 +12,81 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { radius, space, useTheme } from './theme';
 
-type TextVariant = 'title' | 'heading' | 'body' | 'caption' | 'mono' | 'label';
+type TextVariant =
+  | 'hero'
+  | 'title'
+  | 'heading'
+  | 'cardTitle'
+  | 'body'
+  | 'caption'
+  | 'mono'
+  | 'label'
+  | 'metric';
 
 const textStyles: Record<TextVariant, TextStyle> = {
-  title: { fontSize: 28, fontWeight: '700', letterSpacing: -0.3 },
-  heading: { fontSize: 18, fontWeight: '600' },
-  body: { fontSize: 16, lineHeight: 22 },
+  hero: { fontSize: 30, lineHeight: 36, fontWeight: '700' },
+  title: { fontSize: 22, lineHeight: 28, fontWeight: '700' },
+  heading: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
+  cardTitle: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
+  body: { fontSize: 15, lineHeight: 22 },
   caption: { fontSize: 13, lineHeight: 18 },
-  label: { fontSize: 12, fontWeight: '600', letterSpacing: 0.6, textTransform: 'uppercase' },
-  mono: { fontSize: 14, fontVariant: ['tabular-nums'] },
+  label: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
+  mono: { fontSize: 13, lineHeight: 18, fontVariant: ['tabular-nums'] },
+  metric: { fontSize: 34, lineHeight: 40, fontWeight: '700', fontVariant: ['tabular-nums'] },
 };
+
+/**
+ * Icon glyphs live here so there is one place to swap for a vector icon family (the design
+ * system asks for Lucide; it needs react-native-svg, a native dependency).
+ */
+const GLYPHS = {
+  map: '▤',
+  group: '☺',
+  navigate: '➤',
+  more: '⋯',
+  back: '‹',
+  chevron: '›',
+  layers: '≋',
+  locate: '◎',
+  follow: '➤',
+  plus: '+',
+  check: '✓',
+  close: '✕',
+  flag: '⚑',
+  mesh: '⌁',
+  settings: '⚙',
+  pin: '⌖',
+  trail: '〰',
+  walk: '⇢',
+  help: '?',
+  share: '➤',
+  bearing: '⌀',
+  download: '⇩',
+  search: '⌕',
+  bluetooth: 'ᛒ',
+} as const;
+export type IconName = keyof typeof GLYPHS;
+
+export function Icon({
+  name,
+  size = 20,
+  color,
+}: {
+  name: IconName;
+  size?: number;
+  color?: string;
+}) {
+  const { c } = useTheme();
+  return (
+    <RNText
+      accessibilityElementsHidden
+      importantForAccessibility="no"
+      style={{ fontSize: size, lineHeight: size + 4, color: color ?? c.text, fontWeight: '600' }}
+    >
+      {GLYPHS[name]}
+    </RNText>
+  );
+}
 
 export function Text({
   variant = 'body',
@@ -43,15 +108,48 @@ export function Text({
   );
 }
 
+export function ScreenHeader({
+  title,
+  right,
+  onBack,
+}: {
+  title: string;
+  right?: React.ReactNode;
+  onBack?: () => void;
+}) {
+  return (
+    <View style={styles.header}>
+      {onBack ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          onPress={onBack}
+          hitSlop={8}
+          style={styles.back}
+        >
+          <Icon name="back" size={30} />
+        </Pressable>
+      ) : null}
+      <Text variant="title" style={{ flex: 1 }} accessibilityRole="header" numberOfLines={1}>
+        {title}
+      </Text>
+      {right}
+    </View>
+  );
+}
+
+/** Detail screens pass `onBack`; main tabs omit it. */
 export function Screen({
   title,
   right,
+  onBack,
   children,
   scroll: _scroll,
   edges = ['top'],
 }: {
   title?: string;
   right?: React.ReactNode;
+  onBack?: () => void;
   children: React.ReactNode;
   scroll?: boolean;
   edges?: ('top' | 'bottom' | 'left' | 'right')[];
@@ -59,14 +157,7 @@ export function Screen({
   const { c } = useTheme();
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }} edges={edges}>
-      {title ? (
-        <View style={styles.header}>
-          <Text variant="title" style={{ flex: 1 }} accessibilityRole="header">
-            {title}
-          </Text>
-          {right}
-        </View>
-      ) : null}
+      {title ? <ScreenHeader title={title} right={right} onBack={onBack} /> : null}
       {children}
     </SafeAreaView>
   );
@@ -79,6 +170,7 @@ export function Button({
   disabled,
   loading,
   small,
+  icon,
   style,
   testID,
 }: {
@@ -88,6 +180,7 @@ export function Button({
   disabled?: boolean;
   loading?: boolean;
   small?: boolean;
+  icon?: IconName;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }) {
@@ -98,7 +191,7 @@ export function Button({
       : variant === 'danger'
       ? c.danger
       : variant === 'secondary'
-      ? c.surfaceAlt
+      ? c.primarySoft
       : 'transparent';
   const fg =
     variant === 'primary'
@@ -106,7 +199,7 @@ export function Button({
       : variant === 'danger'
       ? c.onDanger
       : variant === 'secondary'
-      ? c.text
+      ? c.deep
       : c.primary;
   const off = disabled || loading;
   return (
@@ -119,16 +212,22 @@ export function Button({
       style={({ pressed }) => [
         styles.button,
         small && styles.buttonSmall,
-        { backgroundColor: bg, opacity: off ? 0.45 : pressed ? 0.8 : 1 },
+        {
+          backgroundColor: pressed && variant === 'primary' ? c.primaryPressed : bg,
+          opacity: off ? 0.45 : pressed ? 0.9 : 1,
+        },
         style,
       ]}
     >
       {loading ? (
         <ActivityIndicator color={fg} />
       ) : (
-        <Text variant="body" color={fg} style={{ fontWeight: '600' }}>
-          {label}
-        </Text>
+        <View style={styles.buttonInner}>
+          {icon ? <Icon name={icon} size={18} color={fg} /> : null}
+          <Text variant="body" color={fg} style={{ fontWeight: '600', lineHeight: 20 }}>
+            {label}
+          </Text>
+        </View>
       )}
     </Pressable>
   );
@@ -183,6 +282,141 @@ export function Badge({
       <Text variant="caption" color={fg} style={{ fontWeight: '600' }}>
         {label}
       </Text>
+    </View>
+  );
+}
+
+export function StatusPill({
+  label,
+  tone = 'neutral',
+  style,
+  testID,
+}: {
+  label: string;
+  tone?: 'neutral' | 'good' | 'warn' | 'bad';
+  style?: StyleProp<ViewStyle>;
+  testID?: string;
+}) {
+  const { c } = useTheme();
+  const dot =
+    tone === 'good'
+      ? c.connected
+      : tone === 'warn'
+      ? c.warning
+      : tone === 'bad'
+      ? c.danger
+      : c.textMuted;
+  return (
+    <View
+      testID={testID}
+      accessibilityLabel={label}
+      style={[styles.pill, { backgroundColor: c.surface, borderColor: c.border }, style]}
+    >
+      <View style={[styles.dot, { backgroundColor: dot }]} />
+      <Text variant="caption" style={{ fontWeight: '500' }}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+/** Soft-green rounded square for feature rows and special actions only. */
+export function IconTile({ name, color, bg }: { name: IconName; color?: string; bg?: string }) {
+  const { c } = useTheme();
+  return (
+    <View style={[styles.tile, { backgroundColor: bg ?? c.primarySoft }]}>
+      <Icon name={name} size={20} color={color ?? c.primary} />
+    </View>
+  );
+}
+
+export function ListRow({
+  title,
+  subtitle,
+  leading,
+  trailing,
+  onPress,
+  chevron,
+  divider = true,
+  testID,
+}: {
+  title: string;
+  subtitle?: string;
+  leading?: React.ReactNode;
+  trailing?: React.ReactNode;
+  onPress?: () => void;
+  chevron?: boolean;
+  divider?: boolean;
+  testID?: string;
+}) {
+  const { c } = useTheme();
+  const body = (
+    <>
+      {leading ? <View style={styles.rowLeading}>{leading}</View> : null}
+      <View style={{ flex: 1 }}>
+        <Text variant="cardTitle">{title}</Text>
+        {subtitle ? (
+          <Text variant="caption" muted>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      {trailing}
+      {chevron ? <Icon name="chevron" size={22} color={c.textMuted} /> : null}
+    </>
+  );
+  const rowStyle = [
+    styles.listRow,
+    divider && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: c.border },
+  ];
+  return onPress ? (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={subtitle ? `${title}, ${subtitle}` : title}
+      onPress={onPress}
+      style={({ pressed }) => [rowStyle, { opacity: pressed ? 0.7 : 1 }]}
+    >
+      {body}
+    </Pressable>
+  ) : (
+    <View testID={testID} style={rowStyle}>
+      {body}
+    </View>
+  );
+}
+
+export function SegmentedTabs<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  const { c } = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', gap: space.sm }} accessibilityRole="tablist">
+      {options.map(o => {
+        const on = o.value === value;
+        return (
+          <Pressable
+            key={o.value}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+            onPress={() => onChange(o.value)}
+            style={[
+              styles.segment,
+              { backgroundColor: on ? c.primary : c.surfaceAlt, borderColor: c.border },
+            ]}
+          >
+            <Text variant="caption" color={on ? c.onPrimary : c.text} style={{ fontWeight: '600' }}>
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -296,12 +530,14 @@ export function Divider() {
 
 export function IconButton({
   glyph,
+  icon,
   label,
   onPress,
   active,
   testID,
 }: {
-  glyph: string;
+  glyph?: string;
+  icon?: IconName;
   label: string;
   onPress: () => void;
   active?: boolean;
@@ -323,9 +559,13 @@ export function IconButton({
         },
       ]}
     >
-      <Text variant="heading" color={active ? c.onPrimary : c.text}>
-        {glyph}
-      </Text>
+      {icon ? (
+        <Icon name={icon} size={22} color={active ? c.onPrimary : c.text} />
+      ) : (
+        <Text variant="heading" color={active ? c.onPrimary : c.text}>
+          {glyph}
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -334,26 +574,68 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: space.lg,
+    paddingHorizontal: space.gutter,
     paddingTop: space.md,
-    paddingBottom: space.sm,
+    paddingBottom: space.md,
+    minHeight: 56,
+    gap: space.sm,
+  },
+  back: {
+    width: 44,
+    height: 44,
+    marginLeft: -space.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   button: {
-    minHeight: 48,
-    paddingHorizontal: space.lg,
+    minHeight: 52,
+    paddingHorizontal: space.gutter,
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  buttonSmall: { minHeight: 36, paddingHorizontal: space.md, borderRadius: radius.sm },
-  card: { borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, padding: space.lg },
+  buttonInner: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  buttonSmall: { minHeight: 44, paddingHorizontal: space.lg },
+  card: { borderRadius: radius.card, borderWidth: 1, padding: space.lg },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: space.sm,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  tile: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  rowLeading: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    minHeight: 60,
+    paddingVertical: space.sm,
+  },
+  segment: {
+    paddingHorizontal: space.lg,
+    minHeight: 40,
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   badge: {
     paddingHorizontal: space.sm,
     paddingVertical: 2,
     borderRadius: radius.pill,
     alignSelf: 'flex-start',
   },
-  track: { height: 8, borderRadius: radius.pill, overflow: 'hidden' },
+  track: { height: 10, borderRadius: radius.pill, overflow: 'hidden' },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -372,7 +654,7 @@ const styles = StyleSheet.create({
   iconButton: {
     width: 48,
     height: 48,
-    borderRadius: radius.pill,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,

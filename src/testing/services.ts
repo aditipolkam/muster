@@ -11,6 +11,7 @@ import { FakeMesh, FakeNetwork } from './FakeMesh';
 import { RegionsRepo } from '../data/repositories/RegionsRepo';
 import { runMigrations } from '../data/migrations';
 import { parseCatalog } from '../domain/maps/catalog';
+import { PlaceSearch } from '../features/maps-manager/PlaceSearch';
 import { MapPackManager } from '../features/maps-manager/MapPackManager';
 import { LocationService } from '../platform/LocationService';
 import { Clock } from '../shared/clock';
@@ -101,6 +102,7 @@ export async function makeTestServices(
     randomBytes: testRandomBytes,
     displayName: async () => (await kv.get('profile.name')) ?? 'Tester',
   });
+  const places = new PlaceSearch(http, () => clock.now());
   const loc = new FakeLocation();
   const location = new LocationService(loc, clock);
   const services: Services = {
@@ -117,6 +119,7 @@ export async function makeTestServices(
     groupPubsub,
     fs,
     packs,
+    places,
     location,
     style: { styleRoot: `${fs.root}style/`, worldBaseUri: `${fs.root}style/world-base.pmtiles` },
     clock,

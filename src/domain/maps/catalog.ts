@@ -19,12 +19,20 @@ export const RegionEntrySchema = z.object({
   schema: z.number().int().min(1),
 });
 
+/** A planet-wide PMTiles archive (HTTP range requests) that custom areas are cut from. */
+export const PlanetSchema = z.object({
+  url: z.string().url(),
+  osmDataDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
 export const CatalogSchema = z.object({
   catalogVersion: z.literal(1),
   generatedAt: z.string(),
+  planet: PlanetSchema.optional(),
   regions: z.array(RegionEntrySchema).max(500),
 });
 
+export type Planet = z.infer<typeof PlanetSchema>;
 export type RegionEntry = z.infer<typeof RegionEntrySchema>;
 export type Catalog = z.infer<typeof CatalogSchema>;
 

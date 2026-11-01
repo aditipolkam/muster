@@ -14,6 +14,8 @@ export type StyleInput = {
   styleRoot: string;
   worldBaseUri: string;
   regions: StyleRegion[];
+  /** Remote planet archive streamed over HTTP when nothing downloaded covers the view. */
+  onlineUri?: string;
   flavor?: 'light' | 'dark' | 'white' | 'grayscale' | 'black';
   lang?: string;
 };
@@ -95,6 +97,20 @@ export function buildStyle(
       }
     }
   });
+
+  if (input.onlineUri) {
+    // Only above the zooms the bundled world base answers, and below any installed region's layers.
+    sources[sourceId('online')] = {
+      type: 'vector',
+      url: strategy.sourceUrl(input.onlineUri),
+      attribution: ATTRIBUTION_HTML,
+    };
+    for (const l of protomapsLayers(sourceId('online'), flavor, { lang }) as LayerSpecification[]) {
+      if (l.type !== 'background') {
+        layers.push(prefixed(l, 'online', sourceId('online'), WORLD_BASE_MAX_ZOOM + 1));
+      }
+    }
+  }
 
   return {
     version: 8,

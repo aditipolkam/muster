@@ -8,7 +8,8 @@ export type RegionState =
   | 'installed'
   | 'failed';
 
-export type RegionSource = 'catalog' | 'import';
+/** `custom`: an area the user picked, extracted from the planet archive on the device. */
+export type RegionSource = 'catalog' | 'import' | 'custom';
 
 export type RegionRecord = {
   id: string;
