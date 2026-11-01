@@ -1,6 +1,7 @@
 import type { Feature, FeatureCollection, Point, Polygon } from 'geojson';
 import { circleRing, sectorRing } from '../../domain/geo';
 import { Fix, usableHeading } from '../../domain/location/fix';
+import type { MeetingPoint } from '../../domain/groups/model';
 import { Marker } from '../../domain/markers/marker';
 
 const empty = (): FeatureCollection => ({ type: 'FeatureCollection', features: [] });
@@ -60,6 +61,23 @@ export function markersCollection(markers: Marker[]): FeatureCollection {
       properties: { id: m.id, name: m.name },
       geometry: { type: 'Point', coordinates: [m.lon, m.lat] },
     })),
+  };
+}
+
+/** Shared meeting points. The feature id is `<groupId>:<pointId>` so the same ULID in two groups cannot collide. */
+export const meetingPointKey = (p: Pick<MeetingPoint, 'groupId' | 'id'>) => `${p.groupId}:${p.id}`;
+
+export function meetingPointsCollection(points: MeetingPoint[]): FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: points
+      .filter(p => !p.deleted)
+      .map(p => ({
+        type: 'Feature',
+        id: meetingPointKey(p),
+        properties: { id: meetingPointKey(p), name: p.name, acked: p.ackedRev >= p.rev },
+        geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+      })),
   };
 }
 
