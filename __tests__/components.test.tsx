@@ -496,6 +496,6 @@ describe('SettingsScreen', () => {
     expect(await screen.findByText('Location blocked in Settings')).toBeTruthy();
     expect(screen.getByText('Open system Settings')).toBeTruthy();
     expect(screen.getByText('© OpenStreetMap contributors')).toBeTruthy();
-    expect(await screen.findByText(/schema v2 \/ v2/)).toBeTruthy();
+    expect(await screen.findByText(/schema v3 \/ v3/)).toBeTruthy();
   });
 });

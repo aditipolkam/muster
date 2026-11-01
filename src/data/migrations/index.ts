@@ -73,6 +73,70 @@ export const MIGRATIONS: Migration[] = [
       await tx.run('CREATE INDEX IF NOT EXISTS events_group_time ON events(group_id, received_at)');
     },
   },
+  {
+    version: 3,
+    name: 'phase3_groups',
+    up: async tx => {
+      await tx.run(`CREATE TABLE IF NOT EXISTS groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        organizer TEXT NOT NULL,
+        role TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        joined_at INTEGER,
+        member_rev INTEGER NOT NULL DEFAULT 0
+      )`);
+      await tx.run(`CREATE TABLE IF NOT EXISTS group_members (
+        group_id TEXT NOT NULL,
+        address TEXT NOT NULL,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        state TEXT NOT NULL,
+        rev INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (group_id, address)
+      )`);
+      // Organizer only. Only the token hash is stored (the token is a bearer secret).
+      await tx.run(`CREATE TABLE IF NOT EXISTS group_invites (
+        token_hash TEXT PRIMARY KEY,
+        group_id TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        auto_approve INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'open',
+        used_by TEXT,
+        created_at INTEGER NOT NULL
+      )`);
+      // The winning version per point; a removed point stays as a tombstone (deleted = 1) so an
+      // older update that arrives late cannot bring it back.
+      await tx.run(`CREATE TABLE IF NOT EXISTS meeting_points (
+        group_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        rev INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        note TEXT,
+        lat REAL NOT NULL,
+        lon REAL NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        created_by TEXT NOT NULL,
+        updated_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        received_at INTEGER NOT NULL,
+        acked_rev INTEGER NOT NULL DEFAULT 0,
+        ack_published INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (group_id, id)
+      )`);
+      await tx.run(`CREATE TABLE IF NOT EXISTS point_acks (
+        group_id TEXT NOT NULL,
+        point_id TEXT NOT NULL,
+        address TEXT NOT NULL,
+        rev INTEGER NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (group_id, point_id, address)
+      )`);
+    },
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;
