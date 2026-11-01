@@ -5,8 +5,27 @@ export type MapsStackParamList = {
   Download: undefined;
 };
 
+export type GroupsStackParamList = {
+  GroupsList: undefined;
+  CreateGroup: undefined;
+  JoinGroup:
+    | { link?: string; v?: string; g?: string; o?: string; t?: string; n?: string }
+    | undefined;
+  GroupDetails: { groupId: string };
+  MeetingPoint: { groupId: string; pointId: string };
+};
+
 export type RootTabParamList = {
-  Map: { focusMarkerId?: string; focusRegionId?: string; nonce?: number } | undefined;
+  Map:
+    | {
+        focusMarkerId?: string;
+        focusRegionId?: string;
+        /** `<groupId>:<pointId>` */
+        focusMeetingPoint?: string;
+        nonce?: number;
+      }
+    | undefined;
+  Groups: NavigatorScreenParams<GroupsStackParamList> | undefined;
   Maps: NavigatorScreenParams<MapsStackParamList> | undefined;
   Saved: undefined;
   Mesh: undefined;

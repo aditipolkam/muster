@@ -4,6 +4,9 @@ import type { PointsRepo } from '../data/repositories/PointsRepo';
 import type { RegionsRepo } from '../data/repositories/RegionsRepo';
 import type { DbPort } from '../data/DbPort';
 import type { EventsRepo } from '../data/repositories/EventsRepo';
+import type { GroupsRepo } from '../data/repositories/GroupsRepo';
+import type { MeetingPointsRepo } from '../data/repositories/MeetingPointsRepo';
+import type { GroupService } from '../features/groups/GroupService';
 import type { MeshPort } from '../mesh/types';
 import type { PubSub } from '../mesh/PubSub';
 import type { MapPackManager } from '../features/maps-manager/MapPackManager';
@@ -19,9 +22,15 @@ export type Services = {
   regions: RegionsRepo;
   points: PointsRepo;
   events: EventsRepo;
+  groupsRepo: GroupsRepo;
+  meetingPoints: MeetingPointsRepo;
+  /** Group membership and meeting point sharing over `groupPubsub`. */
+  groups: GroupService;
   /** The only door to the SDK. Real adapter in the app, FakeMesh in tests. */
   mesh: MeshPort;
   pubsub: PubSub;
+  /** Second PubSub instance, scoped to the group service (`tm.group.*`). */
+  groupPubsub: PubSub;
   fs: FilePort;
   packs: MapPackManager;
   location: LocationService;

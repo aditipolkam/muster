@@ -2,6 +2,11 @@ import { openOpSqlite } from '../data/opSqliteAdapter';
 import { runMigrations } from '../data/migrations';
 import { KvRepo } from '../data/repositories/KvRepo';
 import { EventsRepo } from '../data/repositories/EventsRepo';
+import { GroupsRepo } from '../data/repositories/GroupsRepo';
+import { MeetingPointsRepo } from '../data/repositories/MeetingPointsRepo';
+import { GroupService } from '../features/groups/GroupService';
+import { GROUP_SERVICE_ID } from '../mesh/groupTopics';
+import { getRandomBytes } from 'expo-crypto';
 import { PointsRepo } from '../data/repositories/PointsRepo';
 import { RegionsRepo } from '../data/repositories/RegionsRepo';
 import { parseCatalog } from '../domain/maps/catalog';
@@ -84,7 +89,34 @@ export async function bootstrap(): Promise<Services> {
     platform: Platform.OS === 'android' ? 'android' : 'ios',
     battery: createExpoBatteryPort(),
   });
-  const pubsub = new PubSub({ mesh, clock: systemClock, newId, inbox: events });
+  const isGroupService = (id: string) => id === GROUP_SERVICE_ID;
+  const pubsub = new PubSub({
+    mesh,
+    clock: systemClock,
+    newId,
+    inbox: events,
+    owns: id => !isGroupService(id),
+  });
+  const groupPubsub = new PubSub({
+    mesh,
+    clock: systemClock,
+    newId,
+    inbox: events,
+    owns: isGroupService,
+  });
+  const groupsRepo = new GroupsRepo(db);
+  const meetingPoints = new MeetingPointsRepo(db);
+  const groups = new GroupService({
+    mesh,
+    pubsub: groupPubsub,
+    groups: groupsRepo,
+    points: meetingPoints,
+    clock: systemClock,
+    newId,
+    randomBytes: getRandomBytes,
+    displayName: async () => (await kv.get('profile.name')) ?? 'Hiker',
+  });
+  await groups.start();
 
   log.info(`bootstrap ${Date.now() - t0} ms`);
   return {
@@ -93,8 +125,12 @@ export async function bootstrap(): Promise<Services> {
     regions,
     points,
     events,
+    groupsRepo,
+    meetingPoints,
+    groups,
     mesh,
     pubsub,
+    groupPubsub,
     fs,
     packs,
     location,

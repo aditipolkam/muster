@@ -9,13 +9,20 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StatusBar, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  CreateGroupScreen,
+  GroupDetailsScreen,
+  GroupsScreen,
+  JoinGroupScreen,
+  MeetingPointScreen,
+} from '../features/groups/GroupsScreens';
 import { DownloadScreen } from '../features/maps-manager/DownloadScreen';
 import { RegionsScreen } from '../features/maps-manager/RegionsScreen';
 import { MeshDiagnosticsScreen } from '../features/mesh-diagnostics/MeshDiagnosticsScreen';
 import { MapScreen } from '../features/map/MapScreen';
 import { SavedScreen } from '../features/markers/SavedScreen';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
-import { MapsStackParamList, RootTabParamList } from '../runtime/navigation';
+import { GroupsStackParamList, MapsStackParamList, RootTabParamList } from '../runtime/navigation';
 import { bindMeshToAppState } from '../runtime/meshLifecycle';
 import { Services, ServicesProvider, useServices } from '../runtime/services';
 import { createLogger } from '../shared/logger';
@@ -27,6 +34,19 @@ import { bootstrap } from './bootstrap';
 const log = createLogger('app');
 const Tab = createBottomTabNavigator<RootTabParamList>();
 const MapsStack = createNativeStackNavigator<MapsStackParamList>();
+const GroupsStack = createNativeStackNavigator<GroupsStackParamList>();
+
+function GroupsNavigator() {
+  return (
+    <GroupsStack.Navigator screenOptions={{ headerShown: false }}>
+      <GroupsStack.Screen name="GroupsList" component={GroupsScreen} />
+      <GroupsStack.Screen name="CreateGroup" component={CreateGroupScreen} />
+      <GroupsStack.Screen name="JoinGroup" component={JoinGroupScreen} />
+      <GroupsStack.Screen name="GroupDetails" component={GroupDetailsScreen} />
+      <GroupsStack.Screen name="MeetingPoint" component={MeetingPointScreen} />
+    </GroupsStack.Navigator>
+  );
+}
 
 function MapsNavigator() {
   return (
@@ -52,6 +72,13 @@ const linking: LinkingOptions<RootTabParamList> = {
     screens: {
       Map: 'map',
       Maps: { screens: { Downloaded: 'maps', Download: 'maps/download' } },
+      Groups: {
+        screens: {
+          GroupsList: 'groups',
+          CreateGroup: 'groups/new',
+          JoinGroup: 'join',
+        },
+      },
       Saved: 'saved',
       Mesh: 'mesh',
       Settings: 'settings',
@@ -97,6 +124,11 @@ function Shell() {
           name="Maps"
           component={MapsNavigator}
           options={{ title: 'Maps', tabBarIcon: glyph('▤'), tabBarButtonTestID: 'tab-maps' }}
+        />
+        <Tab.Screen
+          name="Groups"
+          component={GroupsNavigator}
+          options={{ tabBarIcon: glyph('☺'), tabBarButtonTestID: 'tab-groups' }}
         />
         <Tab.Screen
           name="Saved"
