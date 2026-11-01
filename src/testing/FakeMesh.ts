@@ -31,7 +31,7 @@ type Sub = {
   serviceId: string;
   topic: string;
   mode: SubscriptionMode;
-  state: 'pending' | 'active';
+  state: 'pending' | 'active' | 'ended';
 };
 
 export class FakeMesh implements MeshPort {
@@ -223,10 +223,18 @@ export class FakeMesh implements MeshPort {
         }
       },
       rejectSubscriber: async subId => {
+        const sub = this.held.get(subId);
         this.held.delete(subId);
+        if (sub) {
+          this.end(sub, 'rejected');
+        }
       },
       endSubscriber: async subId => {
+        const sub = this.held.get(subId);
         this.held.delete(subId);
+        if (sub) {
+          this.end(sub, 'revoked');
+        }
       },
       listSubscriptions: async () =>
         [...this.mine.values()].map<SubscriptionInfo>(s => ({
@@ -244,8 +252,42 @@ export class FakeMesh implements MeshPort {
     };
   }
 
+  /** The SDK reports a subscription ending to both sides (`service_subscription_changed`). */
+  private end(sub: Sub, reason: string): void {
+    sub.state = 'ended';
+    const consumer = this.net.nodes.get(sub.subscriber);
+    consumer?.subChanges.emit({
+      subId: sub.subId,
+      role: 'consumer',
+      serviceId: sub.serviceId,
+      topic: sub.topic,
+      peer: sub.provider,
+      state: 'ended',
+      reason,
+    });
+    this.subChanges.emit({
+      subId: sub.subId,
+      role: 'provider',
+      serviceId: sub.serviceId,
+      topic: sub.topic,
+      peer: sub.subscriber,
+      state: 'ended',
+      reason,
+    });
+  }
+
   private activate(sub: Sub): void {
     sub.state = 'active';
+    // The SDK reports the change on both sides: the provider learns its follower is live.
+    this.net.nodes.get(sub.provider)?.subChanges.emit({
+      subId: sub.subId,
+      role: 'provider',
+      serviceId: sub.serviceId,
+      topic: sub.topic,
+      peer: sub.subscriber,
+      state: 'active',
+      reason: 'accepted',
+    });
     this.subChanges.emit({
       subId: sub.subId,
       role: 'consumer',

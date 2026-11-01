@@ -16,6 +16,7 @@ import type {
   MeshPort,
   PublishReport,
   SubscribeRequest,
+  SubscriptionChange,
   SubscriptionInfo,
   SubscriptionMode,
   SubscriptionPolicy,
@@ -98,7 +99,16 @@ export type PubSubDeps = {
   clock: Clock;
   newId: () => string;
   inbox?: InboxPort;
+  /**
+   * Which provided/followed services belong to this instance. The SDK reports every update and
+   * request for the whole device, so two instances (diagnostics, groups) each filter their own.
+   * Default: everything.
+   */
+  owns?: (serviceId: string) => boolean;
 };
+
+export type RequestHandler = (r: SubscribeRequest) => void;
+export type SubscriptionEventHandler = (c: SubscriptionChange) => void;
 
 /**
  * TrailMesh's reusable pub/sub layer over the SDK's service subscriptions (ADR 0035).
@@ -113,6 +123,8 @@ export class PubSub {
   private readonly seen = new SeenIds();
   private readonly handlers = new Map<number, { pattern: string; fn: MessageHandler }>();
   private nextHandler = 1;
+  private readonly requestHandlers = new Set<RequestHandler>();
+  private readonly eventHandlers = new Set<SubscriptionEventHandler>();
   private desired = new Map<string, Desired & { subId: string | null }>();
   private snap: PubSubSnapshot = {
     providing: null,
@@ -135,9 +147,19 @@ export class PubSub {
       s.onUpdate(u => void this.handleUpdate(u)),
       s.onSubscriptionChanged(c => this.handleChange(c)),
       s.onSubscribeRequest(r => {
+        if (!this.owned(r.serviceId)) {
+          return;
+        }
         this.set({
           pendingRequests: [...this.snap.pendingRequests.filter(p => p.subId !== r.subId), r],
         });
+        for (const h of [...this.requestHandlers]) {
+          try {
+            h(r);
+          } catch (e) {
+            log.error(`request handler threw: ${String(e)}`);
+          }
+        }
       }),
       s.onStarted(() => void this.restore()),
     );
@@ -151,6 +173,28 @@ export class PubSub {
   dispose(): void {
     this.unsubs.splice(0).forEach(u => u());
     this.handlers.clear();
+    this.requestHandlers.clear();
+    this.eventHandlers.clear();
+  }
+
+  /** Called for each subscription request to a service this instance provides. */
+  onRequest(fn: RequestHandler): Unsubscribe {
+    this.requestHandlers.add(fn);
+    return () => {
+      this.requestHandlers.delete(fn);
+    };
+  }
+
+  /** Called for each subscription lifecycle change (consumer and provider role) of an owned service. */
+  onSubscriptionEvent(fn: SubscriptionEventHandler): Unsubscribe {
+    this.eventHandlers.add(fn);
+    return () => {
+      this.eventHandlers.delete(fn);
+    };
+  }
+
+  private owned(serviceId: string): boolean {
+    return this.deps.owns ? this.deps.owns(serviceId) : true;
   }
 
   // ---- consumer side -------------------------------------------------------------------------
@@ -351,6 +395,7 @@ export class PubSub {
   // ---- inbound -------------------------------------------------------------------------------
 
   private async handleUpdate(u: {
+    serviceId: string;
     subId: string;
     topic: string;
     key: string | null;
@@ -359,6 +404,9 @@ export class PubSub {
     snapshot: boolean;
     provider: string;
   }): Promise<void> {
+    if (!this.owned(u.serviceId)) {
+      return;
+    }
     const at = this.deps.clock.now();
     const decoded = decodeEnvelope(u.body);
     if (!decoded.ok) {
@@ -421,13 +469,11 @@ export class PubSub {
     }
   }
 
-  private handleChange(c: {
-    subId: string;
-    role: 'consumer' | 'provider';
-    topic: string;
-    peer: string;
-    state: SubscriptionState;
-  }): void {
+  private handleChange(c: SubscriptionChange): void {
+    if (!this.owned(c.serviceId)) {
+      return;
+    }
+    this.notifyEvent(c);
     if (c.role === 'consumer') {
       this.set({
         subscriptions: this.snap.subscriptions
@@ -447,6 +493,16 @@ export class PubSub {
           ? this.snap.pendingRequests
           : this.snap.pendingRequests.filter(r => r.subId !== c.subId),
     });
+  }
+
+  private notifyEvent(c: SubscriptionChange): void {
+    for (const h of [...this.eventHandlers]) {
+      try {
+        h(c);
+      } catch (e) {
+        log.error(`subscription handler threw: ${String(e)}`);
+      }
+    }
   }
 
   /** The SDK does not persist registrations or subscriptions across a restart: redo them. */
