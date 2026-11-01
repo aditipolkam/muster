@@ -207,3 +207,26 @@ Projection is a pure function `(currentRows, docJson) -> mutations`, unit-tested
 | `group` | < 1 KB | |
 
 Handle `data_doc_size_warning` and `data_doc_unsyncable` (surface in Diagnostics). A member with > 200 authored points is blocked from adding more with an explanation.
+
+
+## Phase 3 as implemented (migration 3, `phase3_groups`)
+
+The tables above were the plan for `DataStore`-backed groups. Phase 3 is built on service subscriptions (ADR 0007), so the shipped schema is smaller. Where the two differ, this section wins.
+
+```sql
+groups(id PK, name, organizer, role 'organizer'|'member', status 'joining'|'active'|'closed',
+       created_at, joined_at, member_rev)
+group_members(group_id, address, name, role, state 'active'|'left'|'removed', rev, updated_at,
+              PK(group_id, address))
+group_invites(token_hash PK, group_id, expires_at, auto_approve, status 'open'|'used'|'revoked',
+              used_by, created_at)                 -- organizer only; hash, never the token
+meeting_points(group_id, id, rev, name, note, lat, lon, deleted, created_by, updated_by,
+               created_at, updated_at, received_at, acked_rev, ack_published, PK(group_id, id))
+point_acks(group_id, point_id, address, rev, at, PK(group_id, point_id, address))
+```
+
+- `group.id` is a ULID created by the organizer (not an SDK group id). `member_rev` is the highest roster revision seen (organizer: issued).
+- `meeting_points` holds only the **winning version** of each point, tombstones included (`deleted = 1`). Older versions are not kept: with a single writer they carry no information the winner lacks. `point_versions` and `outbox_ops` were not needed.
+- `acked_rev` / `ack_published` record this device's acknowledgment and whether it reached the organizer; a newer revision of the point makes it un-acknowledged again.
+- Received envelopes go to the existing `events` table (`group_id` = the group id), which is what rejects duplicates across restarts.
+- Leaving or removal deletes the group's rows from `groups`, `group_members`, `group_invites`, `meeting_points`, `point_acks` in one transaction. `local_points` (personal markers) are untouched and are **not** migrated into groups: they stay personal (a deliberate change from PHASE_3.md, so nothing private is shared by accident).

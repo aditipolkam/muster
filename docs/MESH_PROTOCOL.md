@@ -60,6 +60,65 @@ The pub/sub model being demonstrated: **a person publishes their live state; int
 
 Groups arrive in Phase 3, so the `<groupShort>` position carries the reserved scope `diag` for the developer screen: provider service `tm.live.1.diag`; SDK topics `tm/1/diag/event` (mode `log`, publish without a key) and `tm/1/diag/state` (mode `latest`, key `state`); a consumer subscribes with pattern `tm/1/diag/*` in one mode. The logical topic string is used verbatim as the SDK topic (charset `A-Z a-z 0-9 . _ - /`). Bodies are the section 4 event envelope (`tm:1`, ULID `id`, `t`, `a`, `ts`, `p`, at most 2048 bytes); the default admission policy is `restricted` (the provider approves each follower). Received envelopes are stored in the `events` table (`group_id` = `diag`) before being handed to handlers, and deduplicated by envelope `id` in memory and by that primary key across restarts. Implemented in `src/mesh/` (`envelope.ts`, `topics.ts`, `PubSub.ts`).
 
+### 2.3 Group pub/sub (Phase 3, implemented)
+
+Phase 3 carries groups and meeting points on the same service-subscription layer as Phase 2 (`PubSub`, ADR 0035), **not** on `DataStore` or MLS groups (ADR 0007). Sections 1, 3 and 6 describe the earlier plan; where they differ from this section, this section is what the app does.
+
+**Roles and shape.** A group has one *organizer* (its creator) and members. The topology is a star: every member follows the organizer, and the organizer follows every member. Members do not follow each other.
+
+**Service.** Every device provides one service, `tm.group.1`, for all its groups (policy `restricted`; the app answers each `service_subscribe_received` itself, see "Admission"). The group id is the scope inside the topic. A second `PubSub` instance (`owns: serviceId === 'tm.group.1'`) keeps it separate from the diagnostics service.
+
+**Topics.** `tm/1/<groupId>/<channel>[/<detail>]`, each explicit. No `*` pattern, retained message or replay is used or assumed. All group topics are `latest` mode with a key, so the SDK *may* also send a snapshot to a late subscriber, but nothing depends on that: the provider pushes current state itself when a follower becomes `active`, and members can ask (`sync`).
+
+| Topic | Publisher | Key | Types | Payload |
+|---|---|---|---|---|
+| `tm/1/<g>/member` | organizer | member address | `joined`, `left`, `removed`, `closed` | `{addr, name, role, rev}`; `closed`: `{rev}` under key `_group` |
+| `tm/1/<g>/point` | organizer | point id | `point` | `{id, rev, name, note?, lat, lon, by, createdBy, createdAt, ts}` |
+| `tm/1/<g>/point-removed` | organizer | point id | `point_removed` | `{id, rev, by, ts}` |
+| `tm/1/<g>/member` | member | own address | `hello`, `leave` | `{name, appV}`; `leave`: `{addr}` |
+| `tm/1/<g>/ack` | member | point id | `ack` | `{pointId, rev}` |
+| `tm/1/<g>/sync` | member | `sync` | `sync_request` | `{mrev, points: [{id, rev}] (<= 15)}` |
+| `tm/1/<g>/j/<token>` | organizer (reply) | `welcome` | `welcome` | `{g, name, o, mrev}` |
+| `tm/1/beacon` | organizer | `beacon` | `beacon` | `{g, n, o, until}` |
+
+`member` is one topic name used in both directions; direction is decided by the receiver's role for that group (an organizer reads `hello`/`leave`, a member reads `joined`/`left`/`removed`/`closed`). All envelopes are the section 4 envelope (<= 2 KB). A meeting point name is <= 60 characters and its note <= 280, so a worst-case multi-byte point still fits (tested).
+
+**Authorization (the rule that makes an update "accepted").** The only identity trusted is the SDK's `provider` (the 1:1 session peer, [ASSUMPTION A-20: authenticated by the session]). The envelope's `a` must equal it. Then:
+
+- `member` (organizer to member), `point`, `point_removed`, `welcome` are accepted only if the sender is the **organizer recorded locally** when this device created or joined the group, the group is `active` (`joining` for `welcome`), and any author field in the payload (`by`, `createdBy`, `addr` for the organizer entry) names the sender. A member can therefore never publish an accepted meeting point or roster change, and an organizer ignores such messages about its own group.
+- `member` (member to organizer), `ack`, `sync` are accepted only by the organizer, only from an **active roster member**, and `hello`/`leave` may only name the sender.
+- Everything else is dropped and logged without coordinates. Payloads are schema-validated (zod) with bounds on size, ranges and counts before anything is stored.
+- The same rules gate **subscription requests**: the organizer accepts `member`/`point`/`point-removed` follows only from active members; a member accepts `member`/`ack`/`sync` follows only from its organizer. Anyone else is rejected, so a non-member never receives group state either.
+
+**Versioning and ordering (meeting points).** Only the organizer edits, so `rev` is a simple counter (`max seen + 1`). The documented section 3.3 winner rule is kept anyway: highest `rev` wins, a tie goes to the greatest `updatedBy`. A removal is a version with a higher `rev` (a tombstone row is kept), so an older update arriving late cannot bring the point back and a removal that arrives first is not undone. Merge is idempotent and independent of arrival order (property-tested over all permutations). Roster entries are ordered per address by the organizer's `rev`.
+
+**Duplicates.** `PubSub` drops a repeated envelope id (memory and the `events` table, so also after a restart). A re-sent identical version under a new envelope id is a no-op in the merge.
+
+**Joining.** The join request *is* a subscription request, so no extra primitive is needed.
+
+```mermaid
+sequenceDiagram
+  participant J as Joiner
+  participant O as Organizer
+  O->>O: invitation QR: trailmesh://join?v=1&g=GROUP&o=ADDR&t=TOKEN&n=NAME
+  J->>J: scan (or paste) the link; enter name
+  J->>O: subscribeService(O, tm.group.1, tm/1/GROUP/j/TOKEN)
+  O->>O: service_subscribe_received: check token hash, expiry, single use, capacity
+  O->>O: ask "wants to join" (skipped if the invitation was created with auto-approve)
+  O->>J: acceptServiceSubscription; roster entry added (rev n)
+  O-->>J: welcome on that topic (when the provider-side subscription turns active)
+  J->>O: subscribe to member, point, point-removed
+  O->>J: subscribe to member, ack, sync (joiner accepts only its organizer)
+  O-->>J: current roster and points; J sends hello (name) and, on activation, sync_request
+```
+
+- Token: 128 random bits (base32, 26 characters), single use, 24 h. Only its SHA-256 is stored. A used token admits only the device that used it (retry). The default is organizer approval; the organizer can choose auto-approve per invitation (the QR is shown face to face).
+- Capacity: 12 active members (each costs the organizer 3 subscriptions; ADR 0035 limits).
+- **Nearby discovery.** The organizer can open the group for 10 minutes. While open, a device that subscribes to the organizer's `tm/1/beacon` is accepted and receives `{g, n, o, until}`. A joiner that scans nearby peers lists such groups and can ask to join with the reserved token `open`; this **always needs approval**. When the window closes the organizer publishes a beacon with `until` in the past and rejects further beacon and `open` requests.
+- Leaving: a member sends `leave` and deletes the group locally; the organizer marks it `left`, drops its follows and tells the others. The organizer "leaving" ends the group (`closed`); members keep the group read-only, its points leave the map. The organizer can remove a member (`removed`); the removed device purges the group.
+
+**Reconnection.** Subscriptions are not persisted by the SDK, so on every mesh start, on mesh state changes and every 30 s the app re-checks that each group has its subscriptions (retries per provider limited to once a minute because a pending subscription times out after 120 s). When a follower becomes active the provider re-publishes current state for that topic; a member also sends `sync_request` when it becomes active. An acknowledgment that could not be delivered is kept (`ack_published = 0`) and sent when the organizer follows the member again.
+
 ### Scoping: who can read a topic?
 
 - State/Event lanes: only MLS group members; the SDK seals them. Non-members cannot decrypt even if they relay the ciphertext.
