@@ -273,3 +273,12 @@ flowchart LR
 - The map shows `meeting_points` of active groups from the database (a GeoJSON source `meeting-points`, ids `<groupId>:<pointId>`), independent of tiles, so received coordinates render offline. Only the organizer of an active group gets the "Meeting point" choice on long-press; members get Acknowledge.
 - `runtime/hooks` exposes `useGroups`, `useGroupMembers`, `useGroupPoints`, `useVisibleMeetingPoints`, `useGroupRuntime` (join requests, nearby groups, notices). Features still never import each other.
 - Trust model: group state is accepted only from the organizer recorded at create/join time, member messages only from roster members; see MESH_PROTOCOL.md 2.3. A malicious *organizer* is not defended against.
+
+
+## Phase 7 addendum: adventures and achievements
+
+Adventures are a feature slice (`features/adventures`) over a pure domain (`domain/adventures`) and migration 4. They add no layer and no dependency: group adventures use one extra channel on the existing group service, solo adventures never touch the mesh. Full description: `GAMIFICATION_ARCHITECTURE.md`; protocol: `MESH_PROTOCOL.md` section 10; schema: `DATA_MODELS.md` Phase 7; decision record: `adr/0009`.
+
+- `Services` gains `adventuresRepo`, `achievementsRepo`, `adventures` (service), `adventureTracker` and `achievements` (engine). `bootstrap` wires the tracker to the existing location store and wraps the HTTP client so any network use is noted on running adventures.
+- The same rules apply as everywhere: state is canonical and events are hints; one writer per replicated key (the organizer for shared state, each member for their own arrivals); persist in the handler; handlers idempotent; no coordinates in logs; no telemetry.
+- Existing behaviour is unchanged: the `member`, `point`, `point-removed`, `ack`, `sync` channels, the meeting point flow and `PubSub` are untouched. Two tests asserted a hard-coded schema version (`3`) and now read `LATEST_VERSION`.

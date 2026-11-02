@@ -1,6 +1,7 @@
 import React from 'react';
 import { Alert } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { LATEST_VERSION } from '../src/data/migrations';
 import { Harness, fakeNav } from '../src/testing/componentHarness';
 import { makeTestServices } from '../src/testing/services';
 import { useLocationStore } from '../src/platform/locationStore';
@@ -515,7 +516,9 @@ describe('SettingsScreen', () => {
     expect(await screen.findByText('Location blocked in Settings')).toBeTruthy();
     expect(screen.getByText('Open system Settings')).toBeTruthy();
     expect(screen.getByText('© OpenStreetMap contributors')).toBeTruthy();
-    expect(await screen.findByText(/schema v3 \/ v3/)).toBeTruthy();
+    expect(
+      await screen.findByText(new RegExp(`schema v${LATEST_VERSION} / v${LATEST_VERSION}`)),
+    ).toBeTruthy();
   });
 });
 

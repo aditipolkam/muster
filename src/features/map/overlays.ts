@@ -81,6 +81,44 @@ export function meetingPointsCollection(points: MeetingPoint[]): FeatureCollecti
   };
 }
 
+export type CheckpointPin = {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  reached: boolean;
+};
+
+/** Checkpoints of the adventure being shown; `reached` is this person's own record. */
+export function checkpointsCollection(pins: CheckpointPin[]): FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: pins.map(p => ({
+      type: 'Feature',
+      id: p.id,
+      properties: { id: p.id, name: p.name, reached: p.reached },
+      geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+    })),
+  };
+}
+
+/** The recorded route as one line (nothing when fewer than two points were recorded). */
+export function routeCollection(points: { lat: number; lon: number }[]): FeatureCollection {
+  if (points.length < 2) {
+    return empty();
+  }
+  return {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'LineString', coordinates: points.map(p => [p.lon, p.lat]) },
+      },
+    ],
+  };
+}
+
 /** Rough on-screen metres-per-pixel at a latitude/zoom, used to size the heading cone. */
 export function metresPerPixel(lat: number, zoom: number): number {
   return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;

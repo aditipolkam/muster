@@ -4,6 +4,12 @@ import { KvRepo } from '../data/repositories/KvRepo';
 import { EventsRepo } from '../data/repositories/EventsRepo';
 import { GroupsRepo } from '../data/repositories/GroupsRepo';
 import { MeetingPointsRepo } from '../data/repositories/MeetingPointsRepo';
+import { AchievementsRepo, AdventuresRepo } from '../data/repositories/AdventuresRepo';
+import { clampRadius, DEFAULT_RADIUS_M } from '../domain/adventures/arrival';
+import { AchievementEngine } from '../features/adventures/AchievementEngine';
+import { AdventureService } from '../features/adventures/AdventureService';
+import { AdventureTracker } from '../features/adventures/AdventureTracker';
+import { RADIUS_KEY } from '../features/adventures/settings';
 import { GroupService } from '../features/groups/GroupService';
 import { GROUP_SERVICE_ID } from '../mesh/groupTopics';
 import { getRandomBytes } from 'expo-crypto';
@@ -13,7 +19,8 @@ import { parseCatalog } from '../domain/maps/catalog';
 import { ensureStyleAssets } from '../features/map/styleAssets';
 import { PlaceSearch } from '../features/maps-manager/PlaceSearch';
 import { MapPackManager } from '../features/maps-manager/MapPackManager';
-import { createExpoHttpClient } from '../features/maps-manager/http';
+import { createExpoHttpClient, HttpClient } from '../features/maps-manager/http';
+import { useLocationStore } from '../platform/locationStore';
 import { PubSub } from '../mesh/PubSub';
 import { nativePermissions } from '../mesh/permissions';
 import { realSdk } from '../mesh/sdk';
@@ -49,7 +56,10 @@ export async function bootstrap(): Promise<Services> {
     ...bundled,
     regions: bundled.regions.map(r => ({ ...r, url: resolveRegionUrl(r.url) })),
   };
-  const http = createExpoHttpClient();
+  // Any use of the network is noted on the adventures running at that moment (it decides whether an
+  // adventure counts as "off the grid"). The client itself is unchanged.
+  let onNetwork: () => void = () => undefined;
+  const http = noteNetworkUse(createExpoHttpClient(), () => onNetwork());
   const packs = new MapPackManager({
     fs,
     http,
@@ -122,6 +132,50 @@ export async function bootstrap(): Promise<Services> {
   });
   await groups.start();
 
+  const adventuresRepo = new AdventuresRepo(db);
+  const achievementsRepo = new AchievementsRepo(db);
+  const adventures = new AdventureService({
+    repo: adventuresRepo,
+    groups: groupsRepo,
+    mesh,
+    pubsub: groupPubsub,
+    clock: systemClock,
+    newId,
+    displayName: async () => (await kv.get('profile.name')) ?? 'Hiker',
+    installedRegions: async () =>
+      (await regions.list())
+        .filter(r => r.state === 'installed')
+        .map(r => ({ id: r.id, bbox: r.bbox, minZoom: r.minZoom, maxZoom: r.maxZoom })),
+    tzOffsetMin: () => new Date().getTimezoneOffset(),
+  });
+  adventures.start();
+  onNetwork = () => void adventures.noteNetworkUse();
+  const adventureTracker = new AdventureTracker({
+    service: adventures,
+    repo: adventuresRepo,
+    clock: systemClock,
+    fixes: fn =>
+      useLocationStore.subscribe((state, prev) => {
+        if (state.fix !== prev.fix) {
+          fn(state.fix);
+        }
+      }),
+    radiusM: async () => {
+      const v = Number(await kv.get(RADIUS_KEY));
+      return Number.isFinite(v) && v > 0 ? clampRadius(v) : DEFAULT_RADIUS_M;
+    },
+    onRadiusChange: fn => kv.changes.subscribe(k => k === RADIUS_KEY && fn()),
+  });
+  adventureTracker.start();
+  const achievements = new AchievementEngine({
+    repo: adventuresRepo,
+    unlocks: achievementsRepo,
+    clock: systemClock,
+    address: () => mesh.getSnapshot().localAddress,
+    sources: [meetingPoints.changes as never],
+  });
+  achievements.start();
+
   log.info(`bootstrap ${Date.now() - t0} ms`);
   return {
     db,
@@ -132,6 +186,11 @@ export async function bootstrap(): Promise<Services> {
     groupsRepo,
     meetingPoints,
     groups,
+    adventuresRepo,
+    achievementsRepo,
+    adventures,
+    adventureTracker,
+    achievements,
     mesh,
     pubsub,
     groupPubsub,
@@ -141,5 +200,18 @@ export async function bootstrap(): Promise<Services> {
     location,
     style,
     clock: systemClock,
+  };
+}
+
+function noteNetworkUse(inner: HttpClient, note: () => void): HttpClient {
+  return {
+    stream: (url, opts) => {
+      note();
+      return inner.stream(url, opts);
+    },
+    getJson: (url, opts) => {
+      note();
+      return inner.getJson(url, opts);
+    },
   };
 }

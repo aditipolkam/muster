@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-11-02 (Phase 3 + UX pass)
+Last updated: 2026-11-02 (Phase 3 + UX pass + Adventures)
 
 ## Status
 
@@ -10,6 +10,7 @@ Last updated: 2026-11-02 (Phase 3 + UX pass)
 | 1. Offline Maps and GPS | **Implemented, NOT accepted** | Code, automated tests and iOS-simulator evidence done. Acceptance needs the physical-device checklist below. See Phase 1 report |
 | 2. Mesh SDK Integration and Peer Discovery | **Implemented, NOT accepted** | Local SDK built and linked, mesh adapter, pub/sub layer, diagnostics screen, tests. **No Bluetooth behaviour verified: needs two physical devices.** See Phase 2 report |
 | 3. Groups and Meeting Point Sharing | **Implemented, NOT accepted** | Organizer-led groups, QR / nearby join, group pub/sub, meeting points on the map, acknowledgments, persistence, tests, docs. **No Bluetooth, camera scan or two-device behaviour verified.** See Phase 3 report |
+| Extension: Adventures and achievements | **Implemented, NOT accepted** | Adventures, checkpoints with arrival detection, 13 badges, group adventures on the `adv` channel, recap and journal, small celebrations. 125 new tests. **Nothing verified on a device.** See `GAMIFICATION_PROGRESS.md` |
 | 4. Live Location and Group Coordination | Not started | |
 | 5. Offline Navigation and GPX Trails | Not started | |
 | 6. Reliability, Synchronization and Production Hardening | Not started | |
@@ -46,6 +47,7 @@ Last updated: 2026-11-02 (Phase 3 + UX pass)
 | A-24 | ~200-character QR scans reliably (expo-camera, both OSes) | 3 | Pending (G2, G7) |
 | S4-1 / A-02 | Validate service subscriptions as the live lane (run right after Phase 2) | 4 | Pending. Phase 2 provides the harness (Mesh tab, `MESH_VERIFICATION.md`); no device run yet |
 | A-18 | `memberIds` from group info are the `off1…` addresses needed for `subscribeService` | 3 | Not applicable: the roster is TrailMesh's own (member addresses come from subscription requests) |
+| A-26 to A-30 | Adventure assumptions: service key charset, relay echo to originator, GPS thresholds, reduced-motion API, MapLibre expressions | Ext. | Pending. Listed with their device tests in `GAMIFICATION_PROGRESS.md` and `GAMIFICATION_TEST_REPORT.md` (D1 to D12) |
 | F-1 / A-03 | Trail partitioning and convergence | 6 | Pending |
 | B-1 / A-16 | Battery budget | 6 | Pending |
 
@@ -235,6 +237,7 @@ Run `docs/GROUPS_VERIFICATION.md`, record A-19 to A-24 and fill the device log. 
 | 2026-10-30 | Phase 0 complete. Inspected `offline-protocol-sdk` 0.31.0 (read-only). Key findings: no group-scoped pub/sub in the SDK (ADR 0036 unimplemented), service subscriptions exist but ADR 0035 is "Proposed", DataStore CRDT documents are the best fit for shared state, SDK licence is AGPL-3.0/commercial. Researched MapLibre RN v11.5.1, PMTiles, OSM tile policies. Nothing built or installed. `offline-protocol-sdk` not modified |
 
 | 2026-11-01 | Online map while no downloaded region covers the view (remote planet PMTiles, assumption A-25 **unverified on device**) and online place search (Nominatim, dev only) feeding the download sheet. CLAUDE.md rule 6 amended with this exception |
+| 2026-11-02 | Adventures and achievements (gamification) implemented: migration 4, `adv` channel on the group service (ADR 0009), 13 badges, arrival detection, route and distance, recap and journal, map overlay, reduced-motion-aware celebration. Not accepted: no device verification. No change to existing mesh contracts; SDK untouched. Docs: `GAMIFICATION_*.md` |
 | 2026-11-01 | Custom map areas: download whatever the map shows by extracting from a hosted planet PMTiles with range requests (`RegionExtractor`, `AreaDownloadSheet`, `fflate` for directory gzip). Debug builds fall back to the public Protomaps daily build (`devPlanet()`, dated 2 days back); release builds need D-3: a self-hosted planet file with Range support and `--planet-url` in the catalog. Verified in Node against the real 2026-10-30 build (Ben Nevis z14 = 1,619,870 B vs 1,619,872 B from the `pmtiles` CLI); **not run on a device**. Onboarding screen added |
 | 2026-11-01 | UI restyled to `DESIGN_SYSTEM.md`: new tokens/components (Button, Card, StatusPill, ListRow, SegmentedTabs, Icon), four tabs (Map, Group, Navigate, More), new Navigate and More screens, group details split into Members / Updates / Meeting point. Glyph icons pending a Lucide + react-native-svg decision. Not checked on a device |
 | 2026-11-01 | Phase 3 implemented (see Phase 3 report). Not accepted: no device verification. Groups built on service subscriptions (ADR 0007); expo-camera + qrcode-generator added (ADR 0008). SDK untouched |

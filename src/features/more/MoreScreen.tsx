@@ -1,7 +1,7 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { useMarkers, useMesh, useRegions } from '../../runtime/hooks';
+import { useAdventures, useMarkers, useMesh, useRegions } from '../../runtime/hooks';
 import { MoreStackParamList } from '../../runtime/navigation';
 import { Card, IconName, IconTile, ListRow, Screen, Text } from '../../ui/components';
 import { space } from '../../ui/theme';
@@ -12,6 +12,8 @@ export function MoreScreen({ navigation }: Props) {
   const regions = useRegions();
   const markers = useMarkers();
   const mesh = useMesh();
+  const adventures = useAdventures();
+  const open = adventures.filter(a => a.status === 'active' || a.status === 'paused').length;
   const installed = regions.filter(r => r.state === 'installed').length;
   const peers = mesh.blePeerCount ?? mesh.peers.length;
 
@@ -43,6 +45,15 @@ export function MoreScreen({ navigation }: Props) {
   return (
     <Screen title="More">
       <ScrollView contentContainerStyle={styles.content}>
+        <Card style={styles.group}>
+          {row(
+            'trail',
+            'Adventures',
+            open > 0 ? `${open} in progress` : `${adventures.length} total`,
+            'Adventures',
+            false,
+          )}
+        </Card>
         <Card style={styles.group}>
           {row(
             'map',

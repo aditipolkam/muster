@@ -16,6 +16,16 @@ import {
   JoinGroupScreen,
   MeetingPointScreen,
 } from '../features/groups/GroupsScreens';
+import {
+  AdventureDetailsScreen,
+  AdventureEditorScreen,
+  AdventuresScreen,
+} from '../features/adventures/AdventuresScreens';
+import {
+  CheckpointDetailsScreen,
+  CheckpointEditorScreen,
+} from '../features/adventures/CheckpointScreens';
+import { AchievementsScreen, AdventureSummaryScreen } from '../features/adventures/RecapScreens';
 import { DownloadScreen } from '../features/maps-manager/DownloadScreen';
 import { RegionsScreen } from '../features/maps-manager/RegionsScreen';
 import { MeshDiagnosticsScreen } from '../features/mesh-diagnostics/MeshDiagnosticsScreen';
@@ -60,6 +70,13 @@ function MoreNavigator() {
       <MoreStack.Screen name="Saved" component={SavedScreen} />
       <MoreStack.Screen name="Mesh" component={MeshDiagnosticsScreen} />
       <MoreStack.Screen name="Settings" component={SettingsScreen} />
+      <MoreStack.Screen name="Adventures" component={AdventuresScreen} />
+      <MoreStack.Screen name="AdventureEditor" component={AdventureEditorScreen} />
+      <MoreStack.Screen name="AdventureDetails" component={AdventureDetailsScreen} />
+      <MoreStack.Screen name="CheckpointEditor" component={CheckpointEditorScreen} />
+      <MoreStack.Screen name="CheckpointDetails" component={CheckpointDetailsScreen} />
+      <MoreStack.Screen name="AdventureSummary" component={AdventureSummaryScreen} />
+      <MoreStack.Screen name="Achievements" component={AchievementsScreen} />
     </MoreStack.Navigator>
   );
 }
@@ -90,6 +107,8 @@ const linking: LinkingOptions<RootTabParamList> = {
           Saved: 'saved',
           Mesh: 'mesh',
           Settings: 'settings',
+          Adventures: 'adventures',
+          Achievements: 'achievements',
         },
       },
     },

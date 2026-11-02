@@ -4,7 +4,13 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { bearingDeg, distanceM, formatCoord } from '../../domain/geo';
 import { cardinalOf, etaMinutes, formatDistanceIn, formatEta } from '../../domain/geo/pace';
 import { useLocationStore } from '../../platform/locationStore';
-import { useMarkers, useNavPrefs, useVisibleMeetingPoints } from '../../runtime/hooks';
+import {
+  useAdventures,
+  useMarkers,
+  useNavPrefs,
+  useVisibleMeetingPoints,
+} from '../../runtime/hooks';
+import { useServices } from '../../runtime/services';
 import { RootTabParamList } from '../../runtime/navigation';
 import { Badge, Card, EmptyState, Icon, IconTile, Screen, Text } from '../../ui/components';
 import { space, useTheme } from '../../ui/theme';
@@ -19,10 +25,29 @@ export function NavigateScreen({ navigation, route }: Props) {
   const fix = useLocationStore(s => s.fix);
   const heading = useLocationStore(s => s.headingDeg);
   const p = route.params;
+  const { adventuresRepo } = useServices();
+  const adventureList = useAdventures();
+  const [checkpoint, setCheckpoint] = React.useState<{
+    name: string;
+    lat: number;
+    lon: number;
+  } | null>(null);
+  React.useEffect(() => {
+    if (!p?.adventureId || !p.checkpointId) {
+      setCheckpoint(null);
+      return;
+    }
+    void adventuresRepo.checkpoint(p.adventureId, p.checkpointId).then(cp => {
+      setCheckpoint(cp && !cp.deleted ? { name: cp.name, lat: cp.lat, lon: cp.lon } : null);
+    });
+  }, [adventuresRepo, p?.adventureId, p?.checkpointId, adventureList]);
   const { paceKmh, units } = useNavPrefs();
   const fmt = (m: number) => formatDistanceIn(m, units);
 
   const target = useMemo(() => {
+    if (checkpoint) {
+      return { kind: 'checkpoint' as const, ...checkpoint };
+    }
     const live = points.filter(x => !x.deleted);
     const meeting = p?.pointId
       ? live.find(x => x.id === p.pointId && (!p.groupId || x.groupId === p.groupId))
@@ -34,7 +59,7 @@ export function NavigateScreen({ navigation, route }: Props) {
     return marker
       ? { kind: 'marker' as const, name: marker.name, lat: marker.lat, lon: marker.lon }
       : null;
-  }, [markers, p?.groupId, p?.markerId, p?.pointId, points]);
+  }, [checkpoint, markers, p?.groupId, p?.markerId, p?.pointId, points]);
 
   if (!target) {
     return (

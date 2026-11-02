@@ -23,6 +23,13 @@ export const GroupChannel = {
   sync: 'sync',
   /** joiner subscribes to `j/<token>` as its join request; the organizer answers on it. */
   join: 'j',
+  /**
+   * Adventures. organizer -> members: adventure header, checkpoints, relayed arrivals and
+   * participation, group milestones. member -> organizer: own arrivals, own participation, sync.
+   * One topic per direction, several keys (`a-`, `c-`, `r-`, `p-`, `m-`, `sync`). Additive:
+   * builds without adventures refuse the subscription and nothing else changes.
+   */
+  adv: 'adv',
 } as const;
 
 export type GroupChannelName = (typeof GroupChannel)[keyof typeof GroupChannel];
@@ -32,10 +39,16 @@ export const ORGANIZER_CHANNELS = [
   GroupChannel.member,
   GroupChannel.point,
   GroupChannel.pointRemoved,
+  GroupChannel.adv,
 ] as const;
 
 /** Channels a member publishes and the organizer follows. */
-export const MEMBER_CHANNELS = [GroupChannel.member, GroupChannel.ack, GroupChannel.sync] as const;
+export const MEMBER_CHANNELS = [
+  GroupChannel.member,
+  GroupChannel.ack,
+  GroupChannel.sync,
+  GroupChannel.adv,
+] as const;
 
 /** Nearby discovery: not group scoped, so it uses the reserved scope `beacon`. */
 export const BEACON_TOPIC = 'tm/1/beacon';

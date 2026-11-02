@@ -230,3 +230,30 @@ point_acks(group_id, point_id, address, rev, at, PK(group_id, point_id, address)
 - `acked_rev` / `ack_published` record this device's acknowledgment and whether it reached the organizer; a newer revision of the point makes it un-acknowledged again.
 - Received envelopes go to the existing `events` table (`group_id` = the group id), which is what rejects duplicates across restarts.
 - Leaving or removal deletes the group's rows from `groups`, `group_members`, `group_invites`, `meeting_points`, `point_acks` in one transaction. `local_points` (personal markers) are untouched and are **not** migrated into groups: they stay personal (a deliberate change from PHASE_3.md, so nothing private is shared by accident).
+
+
+## Phase 7: adventures (migration 4, `phase7_adventures`)
+
+```sql
+adventures(id PK, group_id NULL, owner NULL, name, description, status 'planned'|'active'|'paused'|'completed'|'cancelled',
+           rev, start_lat, start_lon, start_label, created_at, started_at, ended_at, tz_offset_min,
+           -- personal progress, never published:
+           resumed_at, active_ms, distance_m, offline_maps_covered NULL, network_used, mesh_exchange_at NULL)
+adventure_checkpoints(adventure_id, id, rev, ord, name, description, kind, lat, lon, deleted, PK(adventure_id, id))
+checkpoint_completions(adventure_id, checkpoint_id, address, id, at, method 'auto'|'manual',
+                       published, received_at, PK(adventure_id, checkpoint_id, address))
+adventure_participants(adventure_id, address, name, state 'joined'|'left', seq, pid, updated_at,
+                       published, PK(adventure_id, address))
+adventure_status_log(adventure_id, rev, status, at, PK(adventure_id, rev))
+adventure_track(adventure_id, seq, lat, lon, at, acc, PK(adventure_id, seq))       -- this device only
+achievement_unlocks(id PK, unlocked_at, adventure_id NULL)
+```
+
+- **Shared versus personal.** `name`, `status`, `rev`, `start_*`, `started_at`, `ended_at` and the checkpoints are the owner's shared state. Everything under "personal progress", the route, the notes (kv `adventure.note.<id>`) and the unlocks are this device's own and are never published.
+- **Solo adventures** have `group_id NULL` and use the fixed address `local` in completions, so a solo record stays valid whether or not the mesh has ever started. Group adventures use the real `off1...` address.
+- **Time** is `active_ms` (closed segments) plus `now - resumed_at` while running. A running adventure therefore needs no timer to survive a restart.
+- **Completions** are a grow-only set; `published` means the group owner's relay of it came back (members) or is true by construction (the owner).
+- **Achievement definitions** are code constants (`domain/adventures/achievements.ts`), versioned with the app, not rows. Only unlocks are stored. `adventure_id` on an unlock is the evidence and is cleared (the badge is kept) when that adventure is deleted.
+- **Statistics and history** are derived: the recap is computed from these tables when opened (`buildRecap`), the journal is `adventures` with a final status. Nothing is estimated; a missing route or distance stays missing.
+- **Retention.** Adventures, routes and notes stay until the user deletes the adventure ("Delete from journal"). Deleting removes every row above for it. "Delete all data" in Settings is unchanged. Route points are capped at 20,000 per adventure.
+- Migration 4 is additive: no existing table is altered; applying it to a version-3 database keeps all data (tested).

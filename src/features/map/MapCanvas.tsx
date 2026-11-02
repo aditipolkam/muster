@@ -24,6 +24,12 @@ type Props = {
   meetingPoints: FeatureCollection;
   selectedMeetingKey: string | null;
   onMeetingPointPress: (key: string) => void;
+  /** Checkpoints of the adventure being shown, and its recorded route. */
+  checkpoints: FeatureCollection;
+  route: FeatureCollection;
+  /** One checkpoint gently swells for a moment when it is reached; `step` is 0..2. */
+  pulse: { id: string; step: number } | null;
+  onCheckpointPress: (id: string) => void;
   selectedMarkerId: string | null;
   mapRef: React.Ref<MapRef>;
   cameraRef: React.Ref<CameraRef>;
@@ -37,6 +43,8 @@ type Props = {
 
 const PRIMARY = '#2D6A4F';
 const MEETING = '#1D5FD6';
+/** DESIGN_SYSTEM.md `map.trail`. */
+const TRAIL = '#2A9C9A';
 
 /** All MapLibre-specific rendering. Kept separate so MapScreen can be tested with a mocked module. */
 export function MapCanvas(p: Props) {
@@ -108,6 +116,72 @@ export function MapCanvas(p: Props) {
             'circle-radius': 7,
             'circle-color': ['case', ['get', 'stale'], '#8A8F8C', '#2F80ED'],
           }}
+        />
+      </GeoJSONSource>
+
+      <GeoJSONSource id="adventure-route" data={p.route}>
+        <Layer
+          id="adventure-route-casing"
+          type="line"
+          layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+          paint={{ 'line-color': '#FFFFFF', 'line-width': 7, 'line-opacity': 0.8 }}
+        />
+        <Layer
+          id="adventure-route-line"
+          type="line"
+          layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+          paint={{ 'line-color': TRAIL, 'line-width': 4 }}
+        />
+      </GeoJSONSource>
+
+      <GeoJSONSource
+        id="checkpoints"
+        data={p.checkpoints}
+        hitbox={{ top: 20, bottom: 20, left: 20, right: 20 }}
+        onPress={e => {
+          const id = e.nativeEvent.features[0]?.properties?.id;
+          if (typeof id === 'string') {
+            p.onCheckpointPress(id);
+          }
+        }}
+      >
+        <Layer
+          id="checkpoint-pulse"
+          type="circle"
+          paint={{
+            'circle-radius': [
+              'case',
+              ['==', ['get', 'id'], p.pulse?.id ?? ''],
+              14 + (p.pulse?.step ?? 0) * 7,
+              0,
+            ],
+            'circle-color': PRIMARY,
+            'circle-opacity': 0.32 - (p.pulse?.step ?? 0) * 0.1,
+          }}
+        />
+        <Layer
+          id="checkpoint-dot"
+          type="circle"
+          paint={{
+            'circle-radius': 10,
+            'circle-color': ['case', ['get', 'reached'], PRIMARY, '#FFFFFF'],
+            'circle-stroke-color': PRIMARY,
+            'circle-stroke-width': 3,
+          }}
+        />
+        <Layer
+          id="checkpoint-label"
+          type="symbol"
+          layout={{
+            'text-field': ['get', 'name'],
+            'text-font': [OVERLAY_FONT],
+            'text-size': 13,
+            'text-offset': [0, 1.5],
+            'text-anchor': 'top',
+            'text-allow-overlap': false,
+            'text-optional': true,
+          }}
+          paint={{ 'text-color': '#103F29', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.8 }}
         />
       </GeoJSONSource>
 

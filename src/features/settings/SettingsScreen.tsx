@@ -9,7 +9,8 @@ import {
 } from '../../domain/location/permission';
 import { LATEST_VERSION, currentVersion } from '../../data/migrations';
 import { useLocationStore } from '../../platform/locationStore';
-import { useMarkers, useNavPrefs, useRegions } from '../../runtime/hooks';
+import { MAX_RADIUS_M, MIN_RADIUS_M } from '../../domain/adventures/arrival';
+import { useCheckpointRadius, useMarkers, useNavPrefs, useRegions } from '../../runtime/hooks';
 import { useServices } from '../../runtime/services';
 import { config } from '../../shared/config';
 import { setDebugPositions } from '../../shared/logger';
@@ -45,6 +46,7 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
   const gps = gpsStatus(now, fix, permission, watchingSince);
   const action = permissionAction(permission);
   const { paceKmh, units, setPace, setUnits } = useNavPrefs();
+  const { radiusM, setRadius } = useCheckpointRadius();
 
   const [usage, setUsage] = useState<Awaited<ReturnType<typeof packs.storageUsage>> | null>(null);
   const [dbVersion, setDbVersion] = useState<number | null>(null);
@@ -132,6 +134,35 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
           </Row>
           <Text variant="caption" muted>
             Used for the time estimate on the Navigate screen. It assumes flat ground.
+          </Text>
+        </Card>
+
+        <Card style={{ gap: space.sm }} testID="adventure-prefs">
+          <Text variant="label" muted>
+            Adventures
+          </Text>
+          <Row>
+            <Text style={{ flex: 1 }}>{`Arrival radius: ${radiusM} m`}</Text>
+            <Button
+              small
+              variant="secondary"
+              label="−"
+              disabled={radiusM <= MIN_RADIUS_M}
+              onPress={() => setRadius(radiusM - 5)}
+              testID="radius-down"
+            />
+            <Button
+              small
+              variant="secondary"
+              label="+"
+              disabled={radiusM >= MAX_RADIUS_M}
+              onPress={() => setRadius(radiusM + 5)}
+              testID="radius-up"
+            />
+          </Row>
+          <Text variant="caption" muted>
+            How close you must be to a checkpoint to be marked as arrived. A GPS fix less precise
+            than this never marks an arrival; you can always mark it yourself.
           </Text>
         </Card>
 

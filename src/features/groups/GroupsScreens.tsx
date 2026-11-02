@@ -21,6 +21,7 @@ import {
   shortAddress,
 } from '../../domain/groups/model';
 import {
+  useAdventures,
   useGroup,
   useGroupMembers,
   useGroupPoints,
@@ -527,6 +528,12 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
   const [tab, setTab] = useState<'members' | 'updates' | 'meeting'>('members');
   const now = useNow();
   const presence = useGroupPresence(group, members, now);
+  const groupAdventures = useAdventures().filter(a => a.groupId === groupId);
+  const openMore = (screen: string, params?: object) =>
+    (navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined)?.navigate(
+      'More',
+      { screen, params },
+    );
 
   if (!group) {
     return (
@@ -608,6 +615,33 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
           {group.status === 'joining' ? <Badge label="Waiting for approval" tone="warn" /> : null}
         </Row>
         {error ? <Banner tone="error" title={error} /> : null}
+        {group.status === 'active' ? (
+          <Card style={{ paddingVertical: space.xs }} testID="group-adventures">
+            <ListRow
+              title="Adventures"
+              subtitle={
+                groupAdventures.length === 0
+                  ? organizer
+                    ? 'Plan a day out with checkpoints for the group'
+                    : 'None planned by the organizer yet'
+                  : `${groupAdventures.length} for this group`
+              }
+              leading={<IconTile name="trail" />}
+              chevron
+              divider={false}
+              onPress={() => openMore('Adventures')}
+            />
+            {organizer ? (
+              <Button
+                small
+                variant="ghost"
+                label="Plan a group adventure"
+                testID="plan-group-adventure"
+                onPress={() => openMore('AdventureEditor', { groupId: group.id })}
+              />
+            ) : null}
+          </Card>
+        ) : null}
 
         {tab === 'members' ? (
           <>
