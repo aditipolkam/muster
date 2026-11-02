@@ -28,7 +28,8 @@ export function derivePermissionState(raw: RawPermission): PermissionState {
 }
 
 export function canTrackLocation(s: PermissionState): boolean {
-  return s === 'granted' || s === 'approximate';
+  // services_off is advisory: Android can report it wrongly, so still try and let a fix clear it.
+  return s === 'granted' || s === 'approximate' || s === 'services_off';
 }
 
 export type PermissionAction = 'request' | 'open_settings' | 'none';
@@ -78,6 +79,9 @@ export function effectivePermission(
   state: PermissionState,
   lastAccuracyM: number | null,
 ): PermissionState {
+  if (state === 'services_off' && lastAccuracyM !== null) {
+    return lastAccuracyM >= APPROXIMATE_FIX_ACCURACY_M ? 'approximate' : 'granted';
+  }
   if (
     state === 'granted' &&
     lastAccuracyM !== null &&

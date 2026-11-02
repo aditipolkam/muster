@@ -50,7 +50,11 @@ describe('gpsStatus', () => {
   const fix = (o: Partial<Fix> = {}): Fix => ({ lat: 1, lon: 1, accM: 10, fixAt: 1_000_000, ...o });
   it('is unavailable without permission', () => {
     expect(gpsStatus(0, null, 'denied', null)).toBe('unavailable');
-    expect(gpsStatus(0, fix(), 'services_off', null)).toBe('unavailable');
+  });
+  it('keeps trying while the OS reports services off, and a fix clears it', () => {
+    expect(gpsStatus(0, null, 'services_off', 0)).toBe('acquiring');
+    expect(effectivePermission('services_off', 10)).toBe('granted');
+    expect(effectivePermission('services_off', null)).toBe('services_off');
   });
   it('acquires, then ok', () => {
     expect(gpsStatus(1, null, 'granted', 0)).toBe('acquiring');

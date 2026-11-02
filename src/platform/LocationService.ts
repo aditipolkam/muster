@@ -65,10 +65,6 @@ export class LocationService {
     }
     this.set({ watchingSince: this.clock.now(), lastError: null });
     try {
-      const last = await this.port.getCurrentFix();
-      if (last && !useLocationStore.getState().fix) {
-        this.set({ fix: last });
-      }
       this.stopFix = await this.port.watch(
         { minIntervalMs: 2000, minDistanceM: 1 },
         (f: Fix) => this.set({ fix: f }),
@@ -77,6 +73,15 @@ export class LocationService {
           this.set({ lastError: String(e) });
         },
       );
+      // Seed after the watch is live so a slow or failing one-shot read never blocks it.
+      void this.port
+        .getCurrentFix()
+        .then(last => {
+          if (last && !useLocationStore.getState().fix) {
+            this.set({ fix: last });
+          }
+        })
+        .catch(() => undefined);
     } catch (e) {
       log.warn(`could not start location watch: ${String(e)}`);
       this.set({ lastError: String(e), watchingSince: null });

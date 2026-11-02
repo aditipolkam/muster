@@ -93,6 +93,7 @@ export function MapScreen({ navigation, route }: Props) {
   const watchingSince = useLocationStore(s => s.watchingSince);
   const permission = effectivePermission(rawPermission, fix?.accM ?? null);
   const now = useNow();
+  const permAction = permissionAction(permission);
   const gps = gpsStatus(now, fix, permission, watchingSince);
 
   const mapRef = useRef<MapRef>(null);
@@ -423,6 +424,14 @@ export function MapScreen({ navigation, route }: Props) {
 
   const cycleMode = useCallback(() => {
     if (!canTrackLocation(permission) || !fix) {
+      // No usable position yet: ask for permission or send the user to Settings.
+      if (permAction === 'request') {
+        void location.requestPermission();
+      } else if (permAction === 'open_settings') {
+        void location.openSettings();
+      } else {
+        void location.start();
+      }
       return;
     }
     if (mode === 'free') {
@@ -438,7 +447,7 @@ export function MapScreen({ navigation, route }: Props) {
       setMode('free');
       cameraRef.current?.easeTo({ center: [fix.lon, fix.lat], bearing: 0, duration: 400 });
     }
-  }, [fix, mode, permission, view?.zoom]);
+  }, [fix, mode, permission, permAction, location, view?.zoom]);
 
   const confirmMove = useCallback(async () => {
     if (!selected) {
@@ -486,7 +495,6 @@ export function MapScreen({ navigation, route }: Props) {
   const sheetOpen = !!(selected || selectedPoint || moving || movingMeeting);
   const ageS = fix ? Math.max(0, Math.round((now - fix.fixAt) / 1000)) : null;
   const label = gpsLabel(gps, fix?.accM ?? null, ageS);
-  const permAction = permissionAction(permission);
   const showCoverageBanner =
     !bannerDismissed && !!view && needsRegionBanner(installed, center, view.zoom);
   const showFirstRun = !bannerDismissed && installed.length === 0 && !showCoverageBanner;

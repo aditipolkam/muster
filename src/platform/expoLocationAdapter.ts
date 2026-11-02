@@ -32,8 +32,15 @@ export function createExpoLocationPort(): LocationPort {
       readPermission(await Location.requestForegroundPermissionsAsync()),
     openSettings: () => Linking.openSettings(),
     getCurrentFix: async () => {
-      const last = await Location.getLastKnownPositionAsync();
-      return last ? toFix(last) : null;
+      const last = await Location.getLastKnownPositionAsync().catch(() => null);
+      if (last) {
+        return toFix(last);
+      }
+      // Fresh devices/emulators have no cached position; ask for one reading.
+      const now = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      }).catch(() => null);
+      return now ? toFix(now) : null;
     },
     watch: async (opts, onFix, onError) => {
       const sub = await Location.watchPositionAsync(
