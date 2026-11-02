@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { buildInviteLink, parseInviteLink } from '../../domain/groups/invite';
+import { presenceText, sortByPresence } from '../../domain/groups/presence';
 import {
   Group,
   GroupMember,
@@ -26,7 +27,7 @@ import {
   useGroupRuntime,
   useGroups,
   useMesh,
-  usePubSub,
+  useGroupPresence,
 } from '../../runtime/hooks';
 import { GroupsStackParamList } from '../../runtime/navigation';
 import { useServices } from '../../runtime/services';
@@ -518,7 +519,6 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
   const members = useGroupMembers(groupId);
   const points = useGroupPoints(groupId);
   const rt = useGroupRuntime();
-  const ps = usePubSub();
   const me = useMesh().localAddress;
   const [invite, setInvite] = useState<{ link: string; expiresAt: number } | null>(null);
   const [autoApprove, setAutoApprove] = useState(false);
@@ -526,7 +526,7 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
   const { c } = useTheme();
   const [tab, setTab] = useState<'members' | 'updates' | 'meeting'>('members');
   const now = useNow();
-  const meshOn = useMesh().lifecycle === 'running';
+  const presence = useGroupPresence(group, members, now);
 
   if (!group) {
     return (
@@ -544,10 +544,16 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
   const active = members.filter(m => m.state === 'active');
   const feed = buildFeed(members, points, me, now);
   const nearbyUntil = rt.nearbyUntil[group.id] ?? 0;
-  const connected = (addr: string) =>
-    ps.subscriptions.some(
-      s => s.provider === addr && s.topic.startsWith(`tm/1/${group.id}/`) && s.state === 'active',
-    );
+  const presenceOfMember = new Map(presence.members.map(x => [x.member.address, x.presence]));
+  const sortedMembers = [
+    ...members.filter(m => m.address === me),
+    ...sortByPresence(
+      members
+        .filter(m => m.state === 'active' && m.address !== me)
+        .map(m => ({ m, presence: presenceOfMember.get(m.address)! })),
+    ).map(x => x.m),
+    ...members.filter(m => m.state !== 'active'),
+  ];
 
   const createInvite = async () => {
     const r = await service.createInvite(group.id, { autoApprove });
@@ -581,10 +587,11 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
       <ScrollView contentContainerStyle={styles.list}>
         <MeshBanner />
         <StatusPill
-          tone={meshOn ? 'good' : 'warn'}
+          tone={presence.status.tone}
           label={`${active.length} ${active.length === 1 ? 'member' : 'members'} · ${
-            meshOn ? 'Mesh connected' : 'Mesh off'
+            presence.status.label
           }`}
+          testID="group-status"
         />
         <SegmentedTabs
           value={tab}
@@ -606,25 +613,39 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
           <>
             <Text variant="heading">Members ({active.length})</Text>
             <Card style={{ paddingVertical: space.xs }}>
-              {members.map((m, i) => (
+              {sortedMembers.map((m, i) => (
                 <ListRow
                   key={m.address}
                   testID={`member-${m.address}`}
-                  divider={i < members.length - 1}
-                  leading={<Avatar name={m.name} dim={m.state !== 'active'} />}
+                  divider={i < sortedMembers.length - 1}
+                  leading={
+                    <Avatar
+                      name={m.name}
+                      dim={
+                        m.state !== 'active' ||
+                        presenceOfMember.get(m.address)?.freshness === 'last_seen'
+                      }
+                    />
+                  }
                   title={`${m.name}${m.address === me ? ' (you)' : ''}`}
                   subtitle={
                     m.state !== 'active'
                       ? m.state === 'left'
                         ? 'Left the group'
                         : 'Removed'
-                      : m.role === 'organizer'
-                      ? `Organizer · ${shortAddress(m.address)}`
-                      : shortAddress(m.address)
+                      : m.address === me
+                      ? m.role === 'organizer'
+                        ? 'Organizer'
+                        : 'This phone'
+                      : `${m.role === 'organizer' ? 'Organizer · ' : ''}${presenceText(
+                          presenceOfMember.get(m.address)!,
+                        )}`
                   }
                   trailing={
-                    m.state === 'active' && m.address !== me && connected(m.address) ? (
-                      <StatusPill tone="good" label="Connected" style={styles.flat} />
+                    m.state === 'active' &&
+                    m.address !== me &&
+                    presenceOfMember.get(m.address)?.reachable ? (
+                      <StatusPill tone="good" label="In range" style={styles.flat} />
                     ) : organizer && m.state === 'active' && m.address !== me ? (
                       <Button
                         small

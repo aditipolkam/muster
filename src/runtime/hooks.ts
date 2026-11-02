@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Emitter } from '../data/events';
 import type { Group, GroupMember, MeetingPoint, PointAck } from '../domain/groups/model';
+import { Presence, meshStatus, MeshStatus, presenceOf } from '../domain/groups/presence';
 import type { GroupRuntime } from '../features/groups/GroupService';
 import { Marker } from '../domain/markers/marker';
 import { RegionRecord } from '../domain/maps/region';
@@ -113,4 +114,57 @@ export function usePointAcks(groupId: string, id: string): PointAck[] {
     () => meetingPoints.acks(groupId, id),
     [],
   );
+}
+
+export type MemberPresence = { member: GroupMember; presence: Presence };
+
+/**
+ * Who in the group is reachable, and how recently each was heard. Reachable means a nearby peer
+ * or an active group subscription; last heard is the later of the last sighting and the last
+ * group message from that address.
+ */
+export function useGroupPresence(
+  group: Group | null,
+  members: GroupMember[],
+  now: number,
+): { members: MemberPresence[]; reachable: number; status: MeshStatus } {
+  const mesh = useMesh();
+  const ps = usePubSub();
+  const others = members.filter(m => m.state === 'active' && m.address !== mesh.localAddress);
+  const withPresence = others.map(member => {
+    const peer = mesh.peers.find(p => p.address === member.address);
+    const sub = ps.subscriptions.some(
+      s =>
+        s.provider === member.address &&
+        s.state === 'active' &&
+        !!group &&
+        s.topic.startsWith(`tm/1/${group.id}/`),
+    );
+    const msgAt = ps.received.reduce(
+      (t, r) => (r.from === member.address && !r.duplicate && r.at > t ? r.at : t),
+      0,
+    );
+    const heard = Math.max(peer?.lastSeenAt ?? 0, msgAt);
+    const reachable = peer?.state === 'nearby' || sub;
+    return {
+      member,
+      presence: presenceOf(now, {
+        address: member.address,
+        reachable,
+        lastHeardAt: heard > 0 ? heard : null,
+      }),
+    };
+  });
+  const reachable = withPresence.filter(x => x.presence.reachable).length;
+  return {
+    members: withPresence,
+    reachable,
+    status: meshStatus({
+      running: mesh.lifecycle === 'running',
+      bluetoothOn: mesh.bluetooth !== 'off',
+      hasGroup: !!group,
+      total: withPresence.length,
+      reachable,
+    }),
+  };
 }
