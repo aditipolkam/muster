@@ -2,7 +2,7 @@ import type { CameraRef, MapRef, ViewStateChangeEvent } from '@maplibre/maplibre
 import { useFocusEffect } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, StyleSheet, View } from 'react-native';
+import { Alert, AppState, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BBox } from '../../domain/geo';
 import { fixToLatLon, gpsStatus, GpsStatus, describeAccuracy } from '../../domain/location/fix';
@@ -16,6 +16,8 @@ import { defaultMarkerName } from '../../domain/markers/marker';
 import { covers, needsRegionBanner, selectActiveRegions } from '../../domain/maps/coverage';
 import { useLocationStore } from '../../platform/locationStore';
 import {
+  useGroupMembers,
+  useGroupPresence,
   useGroups,
   useMarkers,
   useMesh,
@@ -28,6 +30,7 @@ import { createLogger } from '../../shared/logger';
 import { OSM_ATTRIBUTION } from '../../shared/attribution';
 import { perf } from '../../shared/perf';
 import { useNow } from '../../ui/useNow';
+import { MeshStatusSheet } from './MeshStatusSheet';
 import { Banner, Card, IconButton, IconTile, ListRow, StatusPill, Text } from '../../ui/components';
 import { radius, space, useTheme } from '../../ui/theme';
 import { MapCanvas } from './MapCanvas';
@@ -491,7 +494,9 @@ export function MapScreen({ navigation, route }: Props) {
   const meetingData = useMemo(() => meetingPointsCollection(meetingPoints), [meetingPoints]);
 
   const activeGroup = groupList.find(g => g.status === 'active') ?? null;
-  const meshSnap = useMesh();
+  const activeMembers = useGroupMembers(activeGroup?.id ?? '');
+  const presence = useGroupPresence(activeGroup, activeMembers, now);
+  const [meshSheet, setMeshSheet] = useState(false);
   const sheetOpen = !!(selected || selectedPoint || moving || movingMeeting);
   const ageS = fix ? Math.max(0, Math.round((now - fix.fixAt) / 1000)) : null;
   const label = gpsLabel(gps, fix?.accM ?? null, ageS);
@@ -539,6 +544,15 @@ export function MapScreen({ navigation, route }: Props) {
 
       <View style={[styles.top, { top: insets.top + space.sm }]} pointerEvents="box-none">
         <StatusPill label={label.text} tone={label.tone} />
+        <Pressable
+          onPress={() => setMeshSheet(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`${presence.status.label}. Tap for details`}
+          testID="mesh-pill"
+          hitSlop={8}
+        >
+          <StatusPill label={presence.status.label} tone={presence.status.tone} />
+        </Pressable>
         {useOnline ? (
           <StatusPill label="Online map · not saved" tone="warn" testID="online-pill" />
         ) : null}
@@ -646,13 +660,24 @@ export function MapScreen({ navigation, route }: Props) {
         </Text>
       </View>
 
-      {activeGroup && !sheetOpen ? (
+      {meshSheet && !sheetOpen ? (
+        <MeshStatusSheet
+          status={presence.status}
+          groupName={activeGroup?.name ?? null}
+          members={presence.members}
+          onClose={() => setMeshSheet(false)}
+          onDiagnostics={() => {
+            setMeshSheet(false);
+            navigation.navigate('More', { screen: 'Mesh' });
+          }}
+        />
+      ) : null}
+
+      {activeGroup && !sheetOpen && !meshSheet ? (
         <Card style={styles.groupCard} testID="map-group-card">
           <ListRow
             title={activeGroup.name}
-            subtitle={`${meshSnap.lifecycle === 'running' ? 'Connected' : 'Mesh off'}${
-              meshSnap.blePeerCount !== null ? ` · ${meshSnap.blePeerCount} nearby` : ''
-            }`}
+            subtitle={presence.status.label}
             leading={<IconTile name="group" />}
             chevron
             divider={false}

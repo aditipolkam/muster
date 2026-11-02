@@ -380,6 +380,18 @@ describe('Map: meeting point controls', () => {
       });
     });
 
+  it('shows an honest mesh pill and explains it when tapped', async () => {
+    const { t, g, all } = await twoDevices('organizer');
+    await settle(all);
+    await renderMap(t);
+    const pill = await screen.findByTestId('mesh-pill');
+    expect(pill.props.accessibilityLabel).not.toMatch(/connected/i);
+    fireEvent.press(pill);
+    expect(await screen.findByTestId('mesh-status-sheet')).toBeTruthy();
+    expect(screen.getByTestId('mesh-status-diagnostics')).toBeTruthy();
+    expect(g.id).toBeTruthy();
+  });
+
   it('long-press without a group still drops a personal marker', async () => {
     const t = await makeTestServices();
     await renderMap(t);
