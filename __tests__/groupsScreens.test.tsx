@@ -380,6 +380,18 @@ describe('Map: meeting point controls', () => {
       });
     });
 
+  it('shows an honest mesh pill and explains it when tapped', async () => {
+    const { t, g, all } = await twoDevices('organizer');
+    await settle(all);
+    await renderMap(t);
+    const pill = await screen.findByTestId('mesh-pill');
+    expect(pill.props.accessibilityLabel).not.toMatch(/connected/i);
+    fireEvent.press(pill);
+    expect(await screen.findByTestId('mesh-status-sheet')).toBeTruthy();
+    expect(screen.getByTestId('mesh-status-diagnostics')).toBeTruthy();
+    expect(g.id).toBeTruthy();
+  });
+
   it('long-press without a group still drops a personal marker', async () => {
     const t = await makeTestServices();
     await renderMap(t);
@@ -434,7 +446,7 @@ describe('Map: meeting point controls', () => {
     const { t, other, g, all } = await twoDevices('member');
     const p = await other.groups.publishPoint(g.id, { name: 'Hut', lat: 56.8, lon: -5.1 });
     await settle(all);
-    await renderMap(t);
+    const { calls } = await renderMap(t);
     await waitFor(() => expect(mockMap.sources['meeting-points']?.data.features).toHaveLength(1));
     expect(mockMap.sources['meeting-points']!.data.features[0].geometry.coordinates).toEqual([
       -5.1, 56.8,
@@ -444,6 +456,12 @@ describe('Map: meeting point controls', () => {
     expect(await screen.findByTestId('meeting-sheet')).toBeTruthy();
     expect(screen.getByTestId('meeting-name').props.children).toBe('Hut');
     expect(screen.queryByTestId('meeting-edit')).toBeNull();
+    fireEvent.press(screen.getByTestId('meeting-navigate'));
+    expect(calls.at(-1)).toEqual([
+      'navigate',
+      'Navigate',
+      { groupId: g.id, pointId: p.ok ? p.value.point.id : '' },
+    ]);
     await act(async () => {
       fireEvent.press(screen.getByTestId('meeting-ack'));
       await settle(all);

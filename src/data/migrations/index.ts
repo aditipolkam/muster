@@ -137,6 +137,97 @@ export const MIGRATIONS: Migration[] = [
       )`);
     },
   },
+  {
+    version: 4,
+    name: 'phase7_adventures',
+    up: async tx => {
+      // Shared fields (name, status, rev, start) come from the owner; `progress` columns are
+      // this device's own record and are never published.
+      await tx.run(`CREATE TABLE IF NOT EXISTS adventures (
+        id TEXT PRIMARY KEY,
+        group_id TEXT,
+        owner TEXT,
+        name TEXT NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL,
+        rev INTEGER NOT NULL DEFAULT 1,
+        start_lat REAL, start_lon REAL, start_label TEXT,
+        created_at INTEGER NOT NULL,
+        started_at INTEGER,
+        ended_at INTEGER,
+        tz_offset_min INTEGER NOT NULL DEFAULT 0,
+        resumed_at INTEGER,
+        active_ms INTEGER NOT NULL DEFAULT 0,
+        distance_m REAL NOT NULL DEFAULT 0,
+        offline_maps_covered INTEGER,
+        network_used INTEGER NOT NULL DEFAULT 0,
+        mesh_exchange_at INTEGER
+      )`);
+      await tx.run(
+        'CREATE INDEX IF NOT EXISTS adventures_status ON adventures(status, created_at)',
+      );
+      await tx.run('CREATE INDEX IF NOT EXISTS adventures_group ON adventures(group_id)');
+      await tx.run(`CREATE TABLE IF NOT EXISTS adventure_checkpoints (
+        adventure_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        rev INTEGER NOT NULL,
+        ord INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        kind TEXT NOT NULL,
+        lat REAL NOT NULL,
+        lon REAL NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (adventure_id, id)
+      )`);
+      // One row per (adventure, checkpoint, person); grows only. `published` matters for this
+      // device's own rows: 0 until the group owner was handed the arrival.
+      await tx.run(`CREATE TABLE IF NOT EXISTS checkpoint_completions (
+        adventure_id TEXT NOT NULL,
+        checkpoint_id TEXT NOT NULL,
+        address TEXT NOT NULL,
+        id TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        method TEXT NOT NULL,
+        published INTEGER NOT NULL DEFAULT 0,
+        received_at INTEGER NOT NULL,
+        PRIMARY KEY (adventure_id, checkpoint_id, address)
+      )`);
+      await tx.run(`CREATE TABLE IF NOT EXISTS adventure_participants (
+        adventure_id TEXT NOT NULL,
+        address TEXT NOT NULL,
+        name TEXT NOT NULL,
+        state TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        pid TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        published INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (adventure_id, address)
+      )`);
+      await tx.run(`CREATE TABLE IF NOT EXISTS adventure_status_log (
+        adventure_id TEXT NOT NULL,
+        rev INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (adventure_id, rev)
+      )`);
+      // This device's own route. Never leaves the device.
+      await tx.run(`CREATE TABLE IF NOT EXISTS adventure_track (
+        adventure_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        lat REAL NOT NULL,
+        lon REAL NOT NULL,
+        at INTEGER NOT NULL,
+        acc REAL NOT NULL,
+        PRIMARY KEY (adventure_id, seq)
+      )`);
+      await tx.run(`CREATE TABLE IF NOT EXISTS achievement_unlocks (
+        id TEXT PRIMARY KEY,
+        unlocked_at INTEGER NOT NULL,
+        adventure_id TEXT
+      )`);
+    },
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;

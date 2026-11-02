@@ -1,7 +1,22 @@
-import { Directory, File, Paths } from 'expo-file-system';
+import { Directory as ExpoDirectory, File as ExpoFile, Paths } from 'expo-file-system';
 import { FilePort, FileWriter } from './FilePort';
 
 const withSlash = (u: string) => (u.endsWith('/') ? u : `${u}/`);
+
+/** Android builds a java.net.URI from the path, which rejects raw spaces (e.g. "Noto Sans Regular"). Idempotent. */
+const encodeUri = (u: string) => u.replace(/ /g, '%20');
+
+class File extends ExpoFile {
+  constructor(uri: string) {
+    super(encodeUri(uri));
+  }
+}
+
+class Directory extends ExpoDirectory {
+  constructor(uri: string) {
+    super(encodeUri(uri));
+  }
+}
 
 function parentOf(uri: string): string {
   return uri.slice(0, uri.lastIndexOf('/'));

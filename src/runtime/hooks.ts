@@ -1,6 +1,26 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Emitter } from '../data/events';
+import {
+  AchievementDef,
+  AchievementProgress,
+  ACHIEVEMENTS,
+} from '../domain/adventures/achievements';
+import { clampRadius, DEFAULT_RADIUS_M } from '../domain/adventures/arrival';
+import type {
+  Adventure,
+  Checkpoint,
+  Completion,
+  Participant,
+  StatusLogEntry,
+  TrackPoint,
+} from '../domain/adventures/model';
+import { SOLO_ADDRESS } from '../domain/adventures/model';
 import type { Group, GroupMember, MeetingPoint, PointAck } from '../domain/groups/model';
+import { DEFAULT_PACE_KMH, Units, clampPace } from '../domain/geo/pace';
+import { Presence, meshStatus, MeshStatus, presenceOf } from '../domain/groups/presence';
+import type { AchievementRuntime } from '../features/adventures/AchievementEngine';
+import type { AdventureRuntime } from '../features/adventures/AdventureService';
+import { RADIUS_KEY } from '../features/adventures/settings';
 import type { GroupRuntime } from '../features/groups/GroupService';
 import { Marker } from '../domain/markers/marker';
 import { RegionRecord } from '../domain/maps/region';
@@ -13,6 +33,8 @@ export function useLiveQuery<T>(
   emitters: Emitter<unknown>[],
   load: () => Promise<T>,
   initial: T,
+  /** Re-load (and re-subscribe) when these change, e.g. the id a screen is showing. */
+  deps: unknown[] = [],
 ): T {
   const [value, setValue] = useState<T>(initial);
   const loadRef = useRef(load);
@@ -25,7 +47,7 @@ export function useLiveQuery<T>(
     const unsubs = emitters.map(e => e.subscribe(refresh));
     return () => unsubs.forEach(u => u());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, deps);
   return value;
 }
 
@@ -114,3 +136,215 @@ export function usePointAcks(groupId: string, id: string): PointAck[] {
     [],
   );
 }
+
+export type MemberPresence = { member: GroupMember; presence: Presence };
+
+/**
+ * Who in the group is reachable, and how recently each was heard. Reachable means a nearby peer
+ * or an active group subscription; last heard is the later of the last sighting and the last
+ * group message from that address.
+ */
+export function useGroupPresence(
+  group: Group | null,
+  members: GroupMember[],
+  now: number,
+): { members: MemberPresence[]; reachable: number; status: MeshStatus } {
+  const mesh = useMesh();
+  const ps = usePubSub();
+  const others = members.filter(m => m.state === 'active' && m.address !== mesh.localAddress);
+  const withPresence = others.map(member => {
+    const peer = mesh.peers.find(p => p.address === member.address);
+    const sub = ps.subscriptions.some(
+      s =>
+        s.provider === member.address &&
+        s.state === 'active' &&
+        !!group &&
+        s.topic.startsWith(`tm/1/${group.id}/`),
+    );
+    const msgAt = ps.received.reduce(
+      (t, r) => (r.from === member.address && !r.duplicate && r.at > t ? r.at : t),
+      0,
+    );
+    const heard = Math.max(peer?.lastSeenAt ?? 0, msgAt);
+    const reachable = peer?.state === 'nearby' || sub;
+    return {
+      member,
+      presence: presenceOf(now, {
+        address: member.address,
+        reachable,
+        lastHeardAt: heard > 0 ? heard : null,
+      }),
+    };
+  });
+  const reachable = withPresence.filter(x => x.presence.reachable).length;
+  return {
+    members: withPresence,
+    reachable,
+    status: meshStatus({
+      running: mesh.lifecycle === 'running',
+      bluetoothOn: mesh.bluetooth !== 'off',
+      hasGroup: !!group,
+      total: withPresence.length,
+      reachable,
+    }),
+  };
+}
+
+export type NavPrefs = { paceKmh: number; units: Units };
+
+/** Walking pace and display units, stored locally in the kv table. */
+export function useNavPrefs(): NavPrefs & {
+  setPace: (kmh: number) => void;
+  setUnits: (u: Units) => void;
+} {
+  const { kv } = useServices();
+  const prefs = useLiveQuery<NavPrefs>(
+    [kv.changes as Emitter<unknown>],
+    async () => {
+      const pace = Number(await kv.get('pref.paceKmh'));
+      const units = await kv.get('pref.units');
+      return {
+        paceKmh: Number.isFinite(pace) && pace > 0 ? clampPace(pace) : DEFAULT_PACE_KMH,
+        units: units === 'imperial' ? 'imperial' : 'metric',
+      };
+    },
+    { paceKmh: DEFAULT_PACE_KMH, units: 'metric' },
+  );
+  return {
+    ...prefs,
+    setPace: kmh => void kv.set('pref.paceKmh', String(clampPace(kmh))),
+    setUnits: u => void kv.set('pref.units', u),
+  };
+}
+
+// ---- adventures --------------------------------------------------------------------------------
+
+export function useAdventures(): Adventure[] {
+  const { adventuresRepo } = useServices();
+  return useLiveQuery(
+    [adventuresRepo.changes as Emitter<unknown>],
+    () => adventuresRepo.list(),
+    [],
+  );
+}
+
+export function useAdventureRuntime(): AdventureRuntime {
+  const { adventures } = useServices();
+  return useSyncExternalStore(adventures.subscribeChanges, adventures.getSnapshot);
+}
+
+export type AdventureDetail = {
+  adventure: Adventure;
+  /** Address standing for this device inside the adventure (`local` for solo ones). */
+  self: string | null;
+  checkpoints: Checkpoint[];
+  completions: Completion[];
+  participants: Participant[];
+  log: StatusLogEntry[];
+  /** Whether this person's clock can run (always true for solo adventures). */
+  joined: boolean;
+};
+
+/** Everything one screen needs about an adventure, refreshed when anything stored changes. */
+export function useAdventureDetail(id: string): AdventureDetail | null {
+  const { adventuresRepo, adventures } = useServices();
+  const myAddress = useMesh().localAddress;
+  return useLiveQuery<AdventureDetail | null>(
+    [adventuresRepo.changes as Emitter<unknown>],
+    async () => {
+      const adventure = await adventuresRepo.get(id);
+      if (!adventure) {
+        return null;
+      }
+      const self = adventures.selfFor(adventure);
+      const participants = await adventuresRepo.participants(id);
+      return {
+        adventure,
+        self,
+        checkpoints: await adventuresRepo.checkpoints(id),
+        completions: await adventuresRepo.completions(id),
+        participants,
+        log: await adventuresRepo.log(id),
+        joined:
+          adventure.groupId === null ||
+          participants.some(p => p.address === self && p.state === 'joined'),
+      };
+    },
+    null,
+    [id, myAddress],
+  );
+}
+
+export function useAdventureRoute(id: string): TrackPoint[] {
+  const { adventuresRepo } = useServices();
+  return useLiveQuery(
+    [adventuresRepo.changes as Emitter<unknown>],
+    () => adventuresRepo.track(id),
+    [],
+    [id],
+  );
+}
+
+/** The adventure the person is on now: the running one, else a paused one. */
+export function useCurrentAdventure(): AdventureDetail | null {
+  const all = useAdventures();
+  const cur = all.find(a => a.status === 'active') ?? all.find(a => a.status === 'paused') ?? null;
+  const detail = useAdventureDetail(cur?.id ?? '');
+  return cur && detail?.adventure.id === cur.id ? detail : null;
+}
+
+/** Checkpoints of the current adventure, for the map. */
+export function useCheckpointRadius(): { radiusM: number; setRadius: (m: number) => void } {
+  const { kv } = useServices();
+  const radiusM = useLiveQuery(
+    [kv.changes as Emitter<unknown>],
+    async () => {
+      const v = Number(await kv.get(RADIUS_KEY));
+      return Number.isFinite(v) && v > 0 ? clampRadius(v) : DEFAULT_RADIUS_M;
+    },
+    DEFAULT_RADIUS_M,
+  );
+  return { radiusM, setRadius: m => void kv.set(RADIUS_KEY, String(clampRadius(m))) };
+}
+
+export type AchievementView = {
+  def: AchievementDef;
+  progress: AchievementProgress;
+  unlockedAt: number | null;
+};
+
+export function useAchievements(): AchievementView[] {
+  const { achievements, achievementsRepo, adventuresRepo } = useServices();
+  return useLiveQuery<AchievementView[]>(
+    [achievementsRepo.changes as Emitter<unknown>, adventuresRepo.changes as Emitter<unknown>],
+    async () => {
+      const progress = await achievements.progress();
+      const unlocks = await achievementsRepo.list();
+      return ACHIEVEMENTS.map(def => ({
+        def,
+        progress: progress.find(p => p.id === def.id) as AchievementProgress,
+        unlockedAt: unlocks.find(u => u.id === def.id)?.unlockedAt ?? null,
+      }));
+    },
+    [],
+  );
+}
+
+export function useAchievementRuntime(): AchievementRuntime {
+  const { achievements } = useServices();
+  return useSyncExternalStore(achievements.subscribeChanges, achievements.getSnapshot);
+}
+
+/** Unlock ids earned on one adventure, for its recap. */
+export function useUnlocksFor(adventureId: string): string[] {
+  const { achievementsRepo } = useServices();
+  return useLiveQuery(
+    [achievementsRepo.changes as Emitter<unknown>],
+    async () =>
+      (await achievementsRepo.list()).filter(u => u.adventureId === adventureId).map(u => u.id),
+    [],
+    [adventureId],
+  );
+}
+
+export { SOLO_ADDRESS };

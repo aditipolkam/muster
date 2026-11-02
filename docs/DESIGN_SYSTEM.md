@@ -193,3 +193,23 @@ Do not conflate `published locally` with `received by every group member`.
 - [ ] Text remains readable at accessibility sizes and in sunlight.
 - [ ] No hard-coded style values duplicate existing tokens.
 - [ ] iOS and Android screens are visually consistent without violating native interaction conventions.
+
+## 14. Adventures, badges and celebration (added with Phase 7)
+
+No new colour, radius, shadow or font size was introduced. Everything is built from existing tokens and shared components; the only new components are `BadgeMark`, `Reveal`, `PulseRing` and `AnimatedProgress` in `src/ui/`.
+
+- **Navigation.** The four tabs are unchanged. Adventures live in the More stack (`More > Adventures`, with Achievements and the journal inside), with three shortcuts: a compact progress card on the map while one is in progress, an Adventures card on the group page, and "Navigate here" on a checkpoint (the existing straight-line screen).
+- **Map.** Checkpoints are white circles with a `brand.primary` outline that fill solid when reached by this person; the recorded route is a `map.trail` line. Purple stays reserved for meeting points and blue for the current position. The adventure card sits above the group card and never covers the status pills, the controls or the attribution (the controls and attribution move up to make room).
+- **Badges.** `BadgeMark` draws mountains, pines, a tent, a compass, a trail, a flag, a mesh and a map from plain shapes in `brand.primary` on `brand.primarySoft`, one stroke weight and one palette. Locked badges use `text.muted` on `surface.subtle`. No gradients, no neon, no cartoon art. (The wider icon-family decision, Lucide with react-native-svg, is still open; badges do not depend on it.)
+- **Copy.** Sentence case. Never "Hurry", "Fastest", "Streak", "Rank". Locked badges state exactly what unlocks them. Achievements always carry the note that they are recorded on the phone and not independently verified. Straight-line guidance keeps its label.
+- **Celebration, by moment.**
+
+| Moment | Treatment | Reduced motion |
+|---|---|---|
+| Arrival at a checkpoint | One-line banner (6 s), marker swells in three steps on the map, a soft ring on the checkpoint screen | Banner only |
+| Progress changes | Bar eases over 320 ms | Jumps |
+| Badge earned | One-line banner on the map; the badge fades and rises into the collection with a "New" marker | Appears in place |
+| Adventure finished | The recap sections fade in one after another, 90 ms apart | Appears at once |
+
+  Rules: nothing animates until the platform has said motion is allowed; nothing covers the position, GPS or mesh status; nothing large appears on the map or while navigating (large reveals live only on screens opened on purpose); all animation uses opacity and transform on the native driver except the short progress width.
+- **States covered on each new screen:** loading (first frame is empty, no spinner flash), empty (adventures, journal), error (inline banner with the reason), no GPS (waiting text, manual path), permission denied (map banner unchanged), mesh off (group adventures show state as of last contact; solo ones are unaffected), paused, finished, cancelled, removed checkpoint.

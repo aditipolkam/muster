@@ -111,14 +111,14 @@ export function authorizeSubscription(input: {
     if (group.status !== 'active') {
       return deny('group is not active');
     }
-    const organizerChannels = ['member', 'point', 'point-removed'];
+    const organizerChannels = ['member', 'point', 'point-removed', 'adv'];
     if (!organizerChannels.includes(channel)) {
       return deny('channel is not published by the organizer');
     }
     const m = members.find(x => x.address === sender);
     return m && m.state === 'active' ? allow : deny('requester is not an active member');
   }
-  const memberChannels = ['member', 'ack', 'sync'];
+  const memberChannels = ['member', 'ack', 'sync', 'adv'];
   if (!memberChannels.includes(channel)) {
     return deny('channel is not published by members');
   }

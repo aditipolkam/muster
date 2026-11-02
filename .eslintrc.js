@@ -51,7 +51,7 @@ module.exports = {
             zone('./src/ui', `./src/${d}/**`, 'ui/ is presentational: react-native and shared only.'),
           ),
           zone('./src/runtime', './src/app/**', 'runtime/ must not depend on app/.'),
-          ...['map', 'maps-manager', 'location', 'markers', 'settings', 'mesh-diagnostics'].map(f =>
+          ...['map', 'maps-manager', 'location', 'markers', 'settings', 'mesh-diagnostics', 'adventures'].map(f =>
             zone(`./src/features/${f}`, [`./src/features/!(${f})/**`, './src/app/**'], 'features never import each other.'),
           ),
         ],

@@ -30,6 +30,7 @@ workspace/
 | Topics, lanes, envelopes, versioning, join flow | `docs/MESH_PROTOCOL.md` |
 | SQLite schema, projections, retention | `docs/DATA_MODELS.md` |
 | Scope and acceptance of the current phase | `docs/phases/PHASE_n.md` |
+| Adventures, checkpoints, badges, celebration | `docs/GAMIFICATION_ARCHITECTURE.md`, `docs/MESH_PROTOCOL.md` section 10 |
 
 ## Rules that are easy to break
 

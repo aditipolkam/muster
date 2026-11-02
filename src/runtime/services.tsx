@@ -4,8 +4,12 @@ import type { PointsRepo } from '../data/repositories/PointsRepo';
 import type { RegionsRepo } from '../data/repositories/RegionsRepo';
 import type { DbPort } from '../data/DbPort';
 import type { EventsRepo } from '../data/repositories/EventsRepo';
+import type { AchievementsRepo, AdventuresRepo } from '../data/repositories/AdventuresRepo';
 import type { GroupsRepo } from '../data/repositories/GroupsRepo';
 import type { MeetingPointsRepo } from '../data/repositories/MeetingPointsRepo';
+import type { AchievementEngine } from '../features/adventures/AchievementEngine';
+import type { AdventureService } from '../features/adventures/AdventureService';
+import type { AdventureTracker } from '../features/adventures/AdventureTracker';
 import type { GroupService } from '../features/groups/GroupService';
 import type { MeshPort } from '../mesh/types';
 import type { PubSub } from '../mesh/PubSub';
@@ -27,6 +31,13 @@ export type Services = {
   meetingPoints: MeetingPointsRepo;
   /** Group membership and meeting point sharing over `groupPubsub`. */
   groups: GroupService;
+  adventuresRepo: AdventuresRepo;
+  achievementsRepo: AchievementsRepo;
+  /** Adventures, checkpoints, arrivals and their group replication (`adv` channel). */
+  adventures: AdventureService;
+  /** Route, distance and arrival detection from location fixes. */
+  adventureTracker: AdventureTracker;
+  achievements: AchievementEngine;
   /** The only door to the SDK. Real adapter in the app, FakeMesh in tests. */
   mesh: MeshPort;
   pubsub: PubSub;

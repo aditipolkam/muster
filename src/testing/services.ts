@@ -3,6 +3,11 @@ import { KvRepo } from '../data/repositories/KvRepo';
 import { EventsRepo } from '../data/repositories/EventsRepo';
 import { GroupsRepo } from '../data/repositories/GroupsRepo';
 import { MeetingPointsRepo } from '../data/repositories/MeetingPointsRepo';
+import { AchievementsRepo, AdventuresRepo } from '../data/repositories/AdventuresRepo';
+import { AchievementEngine } from '../features/adventures/AchievementEngine';
+import { AdventureService } from '../features/adventures/AdventureService';
+import { AdventureTracker } from '../features/adventures/AdventureTracker';
+import { Emitter } from '../shared/emitter';
 import { GroupService } from '../features/groups/GroupService';
 import { GROUP_SERVICE_ID } from '../mesh/groupTopics';
 import { PointsRepo } from '../data/repositories/PointsRepo';
@@ -102,6 +107,36 @@ export async function makeTestServices(
     randomBytes: testRandomBytes,
     displayName: async () => (await kv.get('profile.name')) ?? 'Tester',
   });
+  const adventuresRepo = new AdventuresRepo(db);
+  const achievementsRepo = new AchievementsRepo(db);
+  const adventures = new AdventureService({
+    repo: adventuresRepo,
+    groups: groupsRepo,
+    mesh,
+    pubsub: groupPubsub,
+    clock,
+    newId: testId,
+    displayName: async () => (await kv.get('profile.name')) ?? 'Tester',
+    installedRegions: async () =>
+      (await regions.list())
+        .filter(r => r.state === 'installed')
+        .map(r => ({ id: r.id, bbox: r.bbox, minZoom: r.minZoom, maxZoom: r.maxZoom })),
+    tzOffsetMin: () => 0,
+  });
+  const adventureTracker = new AdventureTracker({
+    service: adventures,
+    repo: adventuresRepo,
+    clock,
+    fixes: () => () => undefined,
+    radiusM: async () => 30,
+  });
+  const achievements = new AchievementEngine({
+    repo: adventuresRepo,
+    unlocks: achievementsRepo,
+    clock,
+    address: () => mesh.getSnapshot().localAddress,
+    sources: [meetingPoints.changes as Emitter<unknown>],
+  });
   const places = new PlaceSearch(http, () => clock.now());
   const loc = new FakeLocation();
   const location = new LocationService(loc, clock);
@@ -114,6 +149,11 @@ export async function makeTestServices(
     groupsRepo,
     meetingPoints,
     groups,
+    adventuresRepo,
+    achievementsRepo,
+    adventures,
+    adventureTracker,
+    achievements,
     mesh,
     pubsub,
     groupPubsub,

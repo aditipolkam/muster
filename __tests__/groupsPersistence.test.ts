@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MIGRATIONS, runMigrations } from '../src/data/migrations';
+import { LATEST_VERSION, MIGRATIONS, runMigrations } from '../src/data/migrations';
 import { parseInviteLink } from '../src/domain/groups/invite';
 import { FakeNetwork } from '../src/testing/FakeMesh';
 import { makeGroupNode, settle } from '../src/testing/groupNode';
@@ -27,7 +27,7 @@ describe('migration 3', () => {
       "INSERT INTO events(id,group_id,type,author,received_at,body) VALUES('e','diag','ping','a',1,'{}')",
     );
     const r = await runMigrations(db);
-    expect(r).toEqual({ from: 2, to: 3 });
+    expect(r).toEqual({ from: 2, to: LATEST_VERSION });
     const tables = (
       await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
     ).map(t => t.name);
@@ -45,7 +45,7 @@ describe('migration 3', () => {
     });
     expect(await db.get('SELECT type FROM events WHERE id = ?', ['e'])).toEqual({ type: 'ping' });
     // Re-running is a no-op.
-    expect(await runMigrations(db)).toEqual({ from: 3, to: 3 });
+    expect(await runMigrations(db)).toEqual({ from: LATEST_VERSION, to: LATEST_VERSION });
   });
 });
 

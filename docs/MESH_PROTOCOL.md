@@ -249,3 +249,66 @@ sequenceDiagram
 - No per-author authentication inside the group space; a member could write another member's doc. Mitigation: readers only accept a member doc's `author` fields that equal the doc's address; mismatches are logged and ignored. This is a consistency check, not a security boundary.
 - Join tokens are bearer secrets over a face-to-face QR; short expiry; admin approval default.
 - Inputs from the mesh are untrusted: schema-validate, bound sizes, bound counts (max points per member 200, max members 32 shown), rate-limit event processing.
+
+## 10. Adventures (Phase 7, implemented, not device-verified)
+
+Adventures ride on the group service of section 2.3 (`tm.group.1`) and its authorization model. **Nothing existing changes**: no topic is renamed, no payload field is repurposed, the service id and policy are unchanged, and a build without this channel keeps working (it refuses the one extra subscription; `authorizeSubscription` for the channel is the only addition). Design reasons: `GAMIFICATION_ARCHITECTURE.md` section 4, `adr/0009`.
+
+### 10.1 Channel
+
+`adv` is added to both channel lists (`ORGANIZER_CHANNELS`, `MEMBER_CHANNELS`), so it is subscribed and reconciled with the same code as `member`. It is one topic per direction with several keys (mode `latest`, one value per key). Direction is decided by the receiver's role, as for `member`.
+
+| Direction | Topic | Key | Type | Payload |
+|---|---|---|---|---|
+| organizer -> members | `tm/1/<g>/adv` | `a-<advId>` | `adventure` | `{id, rev, name, desc?, status, st?:{lat,lon,n?}, ca, sa?, ea?, ts}` |
+| organizer -> members | same | `c-<checkpointId>` | `checkpoint` | `{adv, id, rev, ord, name, desc?, kind, lat, lon, del?, ts}` |
+| organizer -> members | same | `r-<completionId>` | `reached` (relay) | `{adv, cp, id, at, m, addr}` |
+| organizer -> members | same | `p-<pid>` | `participant` (relay) | `{adv, pid, state, seq, ts, addr, name?}` |
+| organizer -> members | same | `m-<checkpointId>` | `milestone` | `{adv, key:'all_reached', cp, ts}` |
+| member -> organizer | same | `r-<completionId>` | `reached` | `{adv, cp, id, at, m}` |
+| member -> organizer | same | `p-<pid>` | `participant` | `{adv, pid, state, seq, ts}` |
+| member -> organizer | same | `sync` | `adv_sync` | `{advs:[{id, rev, cc}]}` (<= 6) |
+
+- Envelope as section 4 (<= 2 KB). The worst case (4-byte characters in every free-text field) is tested to fit. Keys use `A-Za-z0-9_-` only (the existing keys already do) [ASSUMPTION A-26: the SDK accepts these keys; same charset as `_group` and point ids].
+- `status` is one of `planned | active | paused | completed | cancelled`. The events requested by the product map to this: *adventure created* = `adventure` with `rev 1`; *started / paused / completed* = `adventure` with the new status; *checkpoint reached* = `reached`; *participant status updated* = `participant`; *group milestone unlocked* = `milestone`.
+- `m` is `auto` or `manual`. `at` is the arriving person's clock and is capped at the organizer's receive time. **No `reached` or `participant` payload carries a position.**
+- `pid` is a ULID the participant chooses once per adventure; it is only the key. Identity always comes from the SDK `provider` (members) or from the organizer's attestation `addr` (relays).
+
+### 10.2 Who may publish what
+
+Enforced by `domain/adventures/authorize.ts`, on top of the group rules (envelope `a` equals `provider`; group `active`).
+
+| Message | Accepted when |
+|---|---|
+| `adventure`, `checkpoint`, `milestone`, relayed `reached` / `participant` | This device is a member and the sender is the organizer recorded for the group. Relays must name `addr` |
+| `reached` | This device is the organizer; sender is an active roster member and names no one else; the adventure belongs to this group and is owned here; it is `active`, `paused` or `completed`; the checkpoint exists and is not removed; the sender has not left it |
+| `participant` | As above, adventure not completed or cancelled |
+| `adv_sync` | Organizer, from an active roster member |
+| subscription to `adv` | Same as the other channels: the organizer accepts active members; a member accepts only its organizer |
+
+Only the group organizer can *create* a group adventure or change its status or checkpoints; members plan their own solo adventures, which never touch the mesh. Anything else is dropped and logged without coordinates.
+
+### 10.3 Ordering, conflicts and deduplication
+
+| Record | Winner | Notes |
+|---|---|---|
+| Header | Highest `rev` | A higher `rev` is still refused if it leaves `completed`/`cancelled`, returns to `planned`, or names another group. Skipping states (a lost `active`) is accepted |
+| Checkpoint | Highest `rev` | Removal is `del: true` at a higher `rev`; a late older version cannot resurrect it |
+| Arrival | Earliest `at`, then smaller id | Grow-only; one row per (adventure, checkpoint, person) |
+| Participation | Highest `seq` | Only that person bumps it |
+
+Every handler is idempotent. `PubSub` drops repeated envelope ids (also after a restart); the rules above make a re-sent record under a new envelope id a no-op. Applying in any order gives the same state (tested over all 120 orders of a five-step history).
+
+### 10.4 Reconnection
+
+Subscriptions are not persisted by the SDK, so the existing 30 s reconcile re-creates them. Then:
+
+1. A member's `adv` subscription to the organizer becomes active -> the member sends `adv_sync` with `{id, rev, cc}` per adventure of the group (`cc` = completions held).
+2. The organizer answers by re-publishing the shared state of every adventure whose `rev` or `cc` differs (header, checkpoints, participants, arrivals). The same push happens when any follower becomes active, with no request needed.
+3. The organizer following a member again triggers the member to re-send what was never confirmed (its own arrivals and participation). The organizer's relay of a member's record comes back to that member, which is the confirmation (`published`). A 30 s timer repeats this while anything is unconfirmed.
+
+Nothing depends on SDK snapshots or replay. Finished adventures are pushed for 7 days only.
+
+### 10.5 Limits and subscription budget
+
+20 checkpoints, 240 arrivals, 12 members per adventure. The channel adds **one** subscription per group per direction (a member holds 4 follows on its organizer per group; the SDK allows 16 per subscriber, so a member of 4 groups with the same organizer is at the limit). A group adventure that is closed because its group ended stops all traffic for it.

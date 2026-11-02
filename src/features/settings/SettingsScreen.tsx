@@ -9,12 +9,23 @@ import {
 } from '../../domain/location/permission';
 import { LATEST_VERSION, currentVersion } from '../../data/migrations';
 import { useLocationStore } from '../../platform/locationStore';
-import { useMarkers, useRegions } from '../../runtime/hooks';
+import { MAX_RADIUS_M, MIN_RADIUS_M } from '../../domain/adventures/arrival';
+import { useCheckpointRadius, useMarkers, useNavPrefs, useRegions } from '../../runtime/hooks';
 import { useServices } from '../../runtime/services';
 import { config } from '../../shared/config';
 import { setDebugPositions } from '../../shared/logger';
 import { perf } from '../../shared/perf';
-import { Badge, Button, Card, Divider, Row, Screen, Text } from '../../ui/components';
+import {
+  Badge,
+  Button,
+  Card,
+  Divider,
+  Row,
+  Screen,
+  SegmentedTabs,
+  Text,
+} from '../../ui/components';
+import { MAX_PACE_KMH, MIN_PACE_KMH } from '../../domain/geo/pace';
 import { space, useTheme } from '../../ui/theme';
 import { useNow } from '../../ui/useNow';
 import { OSM_ATTRIBUTION } from '../../shared/attribution';
@@ -34,6 +45,8 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
   const now = useNow();
   const gps = gpsStatus(now, fix, permission, watchingSince);
   const action = permissionAction(permission);
+  const { paceKmh, units, setPace, setUnits } = useNavPrefs();
+  const { radiusM, setRadius } = useCheckpointRadius();
 
   const [usage, setUsage] = useState<Awaited<ReturnType<typeof packs.storageUsage>> | null>(null);
   const [dbVersion, setDbVersion] = useState<number | null>(null);
@@ -85,6 +98,71 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
           ) : null}
           <Text variant="caption" muted>
             TrailMesh only reads your location while the app is open. It is never sent anywhere.
+          </Text>
+        </Card>
+
+        <Card style={{ gap: space.sm }} testID="nav-prefs">
+          <Text variant="label" muted>
+            Navigation
+          </Text>
+          <SegmentedTabs
+            value={units}
+            onChange={setUnits}
+            options={[
+              { value: 'metric', label: 'Metric (km)' },
+              { value: 'imperial', label: 'Imperial (mi)' },
+            ]}
+          />
+          <Row>
+            <Text style={{ flex: 1 }}>{`Walking pace: ${paceKmh} km/h`}</Text>
+            <Button
+              small
+              variant="secondary"
+              label="−"
+              disabled={paceKmh <= MIN_PACE_KMH}
+              onPress={() => setPace(paceKmh - 0.5)}
+              testID="pace-down"
+            />
+            <Button
+              small
+              variant="secondary"
+              label="+"
+              disabled={paceKmh >= MAX_PACE_KMH}
+              onPress={() => setPace(paceKmh + 0.5)}
+              testID="pace-up"
+            />
+          </Row>
+          <Text variant="caption" muted>
+            Used for the time estimate on the Navigate screen. It assumes flat ground.
+          </Text>
+        </Card>
+
+        <Card style={{ gap: space.sm }} testID="adventure-prefs">
+          <Text variant="label" muted>
+            Adventures
+          </Text>
+          <Row>
+            <Text style={{ flex: 1 }}>{`Arrival radius: ${radiusM} m`}</Text>
+            <Button
+              small
+              variant="secondary"
+              label="−"
+              disabled={radiusM <= MIN_RADIUS_M}
+              onPress={() => setRadius(radiusM - 5)}
+              testID="radius-down"
+            />
+            <Button
+              small
+              variant="secondary"
+              label="+"
+              disabled={radiusM >= MAX_RADIUS_M}
+              onPress={() => setRadius(radiusM + 5)}
+              testID="radius-up"
+            />
+          </Row>
+          <Text variant="caption" muted>
+            How close you must be to a checkpoint to be marked as arrived. A GPS fix less precise
+            than this never marks an arrival; you can always mark it yourself.
           </Text>
         </Card>
 

@@ -2,7 +2,7 @@ import type { CameraRef, MapRef, ViewStateChangeEvent } from '@maplibre/maplibre
 import { useFocusEffect } from '@react-navigation/native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, StyleSheet, View } from 'react-native';
+import { Alert, AppState, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BBox } from '../../domain/geo';
 import { fixToLatLon, gpsStatus, GpsStatus, describeAccuracy } from '../../domain/location/fix';
@@ -16,6 +16,10 @@ import { defaultMarkerName } from '../../domain/markers/marker';
 import { covers, needsRegionBanner, selectActiveRegions } from '../../domain/maps/coverage';
 import { useLocationStore } from '../../platform/locationStore';
 import {
+  useAdventures,
+  useGroupMembers,
+  useNavPrefs,
+  useGroupPresence,
   useGroups,
   useMarkers,
   useMesh,
@@ -28,6 +32,9 @@ import { createLogger } from '../../shared/logger';
 import { OSM_ATTRIBUTION } from '../../shared/attribution';
 import { perf } from '../../shared/perf';
 import { useNow } from '../../ui/useNow';
+import { canEditAdventure } from '../../domain/adventures/authorize';
+import { AdventureBanners, AdventureChip, useAdventureMapState } from './AdventureOverlay';
+import { MeshStatusSheet } from './MeshStatusSheet';
 import { Banner, Card, IconButton, IconTile, ListRow, StatusPill, Text } from '../../ui/components';
 import { radius, space, useTheme } from '../../ui/theme';
 import { MapCanvas } from './MapCanvas';
@@ -76,11 +83,20 @@ function gpsLabel(
 export function MapScreen({ navigation, route }: Props) {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
-  const { style, points, location, packs, groups: groupService } = useServices();
+  const {
+    style,
+    points,
+    location,
+    packs,
+    groups: groupService,
+    adventures: adventureService,
+  } = useServices();
   const markers = useMarkers();
   const meetingPoints = useVisibleMeetingPoints();
   const groupList = useGroups();
   const myAddress = useMesh().localAddress;
+  const adventureList = useAdventures();
+  const adv = useAdventureMapState(route.params?.showAdventure);
   const allRegions = useRegions();
   const installed = useMemo(
     () => allRegions.filter(r => r.state === 'installed' && r.filePath),
@@ -93,6 +109,7 @@ export function MapScreen({ navigation, route }: Props) {
   const watchingSince = useLocationStore(s => s.watchingSince);
   const permission = effectivePermission(rawPermission, fix?.accM ?? null);
   const now = useNow();
+  const permAction = permissionAction(permission);
   const gps = gpsStatus(now, fix, permission, watchingSince);
 
   const mapRef = useRef<MapRef>(null);
@@ -140,6 +157,13 @@ export function MapScreen({ navigation, route }: Props) {
     setAreaOpen(true);
   }, [view?.bounds]);
   const useOnline = !!onlineUri && !covers(installed, center);
+  // Streaming the online map is network use: an adventure running now no longer counts as offline.
+  const runningNow = adv.current?.adventure.status === 'active';
+  useEffect(() => {
+    if (useOnline && runningNow) {
+      void adventureService.noteNetworkUse();
+    }
+  }, [useOnline, runningNow, adventureService]);
   const mapStyle = useMemo(() => {
     const ids = activeKey ? activeKey.split(',') : [];
     const regions = ids
@@ -261,6 +285,22 @@ export function MapScreen({ navigation, route }: Props) {
     installed,
   ]);
 
+  // "Show on map" from an adventure: frame its checkpoints and route once per request.
+  const framed = useRef<string | null>(null);
+  useEffect(() => {
+    const id = route.params?.showAdventure;
+    const key = `${id ?? ''}|${route.params?.nonce ?? ''}`;
+    if (!id || framed.current === key || !adv.bounds || adv.shownId !== id) {
+      return;
+    }
+    framed.current = key;
+    setMode('free');
+    cameraRef.current?.fitBounds(adv.bounds, {
+      duration: 800,
+      padding: { top: 120, bottom: 160, left: 48, right: 48 },
+    });
+  }, [adv.bounds, adv.shownId, route.params?.showAdventure, route.params?.nonce]);
+
   // Re-check permission when returning from system Settings.
   useFocusEffect(
     useCallback(() => {
@@ -328,16 +368,42 @@ export function MapScreen({ navigation, route }: Props) {
 
   // Long-press: an organizer chooses between a personal marker and a meeting point for the group.
   const organized = groupList.filter(g => g.role === 'organizer' && g.status === 'active');
+  // The adventure a long-press can add a checkpoint to: the one in progress, else a planned one.
+  const currentAdventureId = adv.current?.adventure.id;
+  const checkpointTarget = useMemo(() => {
+    const editable = adventureList.filter(
+      a =>
+        (a.status === 'planned' || a.status === 'active' || a.status === 'paused') &&
+        canEditAdventure(a, groupList.find(g => g.id === a.groupId) ?? null, myAddress),
+    );
+    return (
+      editable.find(a => a.id === currentAdventureId) ??
+      editable.find(a => a.status === 'planned') ??
+      null
+    );
+  }, [adventureList, groupList, myAddress, currentAdventureId]);
   const onLongPress = useCallback(
     ([lon, lat]: [number, number]) => {
       if (moving || movingMeeting) {
         return;
       }
-      if (organized.length === 0) {
+      if (organized.length === 0 && !checkpointTarget) {
         void addMarker([lon, lat]);
         return;
       }
       Alert.alert('Add to the map', 'What is this place?', [
+        ...(checkpointTarget
+          ? [
+              {
+                text: `Checkpoint: ${checkpointTarget.name}`,
+                onPress: () =>
+                  navigation.navigate('More', {
+                    screen: 'CheckpointEditor',
+                    params: { adventureId: checkpointTarget.id, lat, lon },
+                  }),
+              },
+            ]
+          : []),
         ...organized.slice(0, 2).map(g => ({
           text: `Meeting point: ${g.name}`,
           onPress: () => {
@@ -349,7 +415,7 @@ export function MapScreen({ navigation, route }: Props) {
         { text: 'Cancel', style: 'cancel' as const },
       ]);
     },
-    [addMarker, moving, movingMeeting, organized],
+    [addMarker, checkpointTarget, moving, movingMeeting, navigation, organized],
   );
 
   const submitDraft = useCallback(
@@ -423,6 +489,14 @@ export function MapScreen({ navigation, route }: Props) {
 
   const cycleMode = useCallback(() => {
     if (!canTrackLocation(permission) || !fix) {
+      // No usable position yet: ask for permission or send the user to Settings.
+      if (permAction === 'request') {
+        void location.requestPermission();
+      } else if (permAction === 'open_settings') {
+        void location.openSettings();
+      } else {
+        void location.start();
+      }
       return;
     }
     if (mode === 'free') {
@@ -438,7 +512,7 @@ export function MapScreen({ navigation, route }: Props) {
       setMode('free');
       cameraRef.current?.easeTo({ center: [fix.lon, fix.lat], bearing: 0, duration: 400 });
     }
-  }, [fix, mode, permission, view?.zoom]);
+  }, [fix, mode, permission, permAction, location, view?.zoom]);
 
   const confirmMove = useCallback(async () => {
     if (!selected) {
@@ -482,11 +556,16 @@ export function MapScreen({ navigation, route }: Props) {
   const meetingData = useMemo(() => meetingPointsCollection(meetingPoints), [meetingPoints]);
 
   const activeGroup = groupList.find(g => g.status === 'active') ?? null;
-  const meshSnap = useMesh();
+  const activeMembers = useGroupMembers(activeGroup?.id ?? '');
+  const presence = useGroupPresence(activeGroup, activeMembers, now);
+  const [meshSheet, setMeshSheet] = useState(false);
+  const navPrefs = useNavPrefs();
   const sheetOpen = !!(selected || selectedPoint || moving || movingMeeting);
+  const showChip = !!adv.current && !sheetOpen && !meshSheet;
+  const chipBottom = activeGroup ? 100 : space.md;
+  const lift = showChip ? 84 : 0;
   const ageS = fix ? Math.max(0, Math.round((now - fix.fixAt) / 1000)) : null;
   const label = gpsLabel(gps, fix?.accM ?? null, ageS);
-  const permAction = permissionAction(permission);
   const showCoverageBanner =
     !bannerDismissed && !!view && needsRegionBanner(installed, center, view.zoom);
   const showFirstRun = !bannerDismissed && installed.length === 0 && !showCoverageBanner;
@@ -499,6 +578,16 @@ export function MapScreen({ navigation, route }: Props) {
         me={overlays}
         markers={markerData}
         meetingPoints={meetingData}
+        checkpoints={adv.checkpoints}
+        route={adv.route}
+        pulse={adv.pulse}
+        onCheckpointPress={id =>
+          adv.shownId &&
+          navigation.navigate('More', {
+            screen: 'CheckpointDetails',
+            params: { adventureId: adv.shownId, checkpointId: id },
+          })
+        }
         selectedMeetingKey={selectedMeeting}
         onMeetingPointPress={key => {
           setSelectedMeeting(key);
@@ -531,6 +620,15 @@ export function MapScreen({ navigation, route }: Props) {
 
       <View style={[styles.top, { top: insets.top + space.sm }]} pointerEvents="box-none">
         <StatusPill label={label.text} tone={label.tone} />
+        <Pressable
+          onPress={() => setMeshSheet(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`${presence.status.label}. Tap for details`}
+          testID="mesh-pill"
+          hitSlop={8}
+        >
+          <StatusPill label={presence.status.label} tone={presence.status.tone} />
+        </Pressable>
         {useOnline ? (
           <StatusPill label="Online map · not saved" tone="warn" testID="online-pill" />
         ) : null}
@@ -574,6 +672,21 @@ export function MapScreen({ navigation, route }: Props) {
           />
         ) : null}
         {info ? <Banner title={info} onDismiss={() => setInfo(null)} /> : null}
+        <AdventureBanners
+          onOpenAchievements={() => navigation.navigate('More', { screen: 'Achievements' })}
+          onOpenCheckpoint={(adventureId, checkpointId) =>
+            navigation.navigate('More', {
+              screen: 'CheckpointDetails',
+              params: { adventureId, checkpointId },
+            })
+          }
+          onOpenSummary={adventureId =>
+            navigation.navigate('More', {
+              screen: 'AdventureSummary',
+              params: { adventureId },
+            })
+          }
+        />
         {movingMeeting ? (
           <Banner
             tone="info"
@@ -598,7 +711,10 @@ export function MapScreen({ navigation, route }: Props) {
       ) : null}
 
       <View
-        style={[styles.controls, { bottom: sheetOpen ? 250 : activeGroup ? 112 : space.xl }]}
+        style={[
+          styles.controls,
+          { bottom: (sheetOpen ? 250 : activeGroup ? 112 : space.xl) + lift },
+        ]}
         pointerEvents="box-none"
       >
         <IconButton
@@ -629,7 +745,10 @@ export function MapScreen({ navigation, route }: Props) {
       </View>
 
       <View
-        style={[styles.attribution, { bottom: sheetOpen ? 244 : activeGroup ? 92 : space.sm }]}
+        style={[
+          styles.attribution,
+          { bottom: (sheetOpen ? 244 : activeGroup ? 92 : space.sm) + lift },
+        ]}
         pointerEvents="none"
         testID="attribution"
       >
@@ -638,13 +757,38 @@ export function MapScreen({ navigation, route }: Props) {
         </Text>
       </View>
 
-      {activeGroup && !sheetOpen ? (
+      {meshSheet && !sheetOpen ? (
+        <MeshStatusSheet
+          status={presence.status}
+          groupName={activeGroup?.name ?? null}
+          members={presence.members}
+          onClose={() => setMeshSheet(false)}
+          onDiagnostics={() => {
+            setMeshSheet(false);
+            navigation.navigate('More', { screen: 'Mesh' });
+          }}
+        />
+      ) : null}
+
+      {showChip && adv.current ? (
+        <AdventureChip
+          detail={adv.current}
+          now={now}
+          bottom={chipBottom}
+          onPress={() =>
+            navigation.navigate('More', {
+              screen: 'AdventureDetails',
+              params: { adventureId: adv.current?.adventure.id as string },
+            })
+          }
+        />
+      ) : null}
+
+      {activeGroup && !sheetOpen && !meshSheet ? (
         <Card style={styles.groupCard} testID="map-group-card">
           <ListRow
             title={activeGroup.name}
-            subtitle={`${meshSnap.lifecycle === 'running' ? 'Connected' : 'Mesh off'}${
-              meshSnap.blePeerCount !== null ? ` · ${meshSnap.blePeerCount} nearby` : ''
-            }`}
+            subtitle={presence.status.label}
             leading={<IconTile name="group" />}
             chevron
             divider={false}
@@ -702,6 +846,13 @@ export function MapScreen({ navigation, route }: Props) {
                 ),
               );
           }}
+          units={navPrefs.units}
+          onNavigate={() =>
+            navigation.navigate('Navigate', {
+              groupId: selectedPoint.groupId,
+              pointId: selectedPoint.id,
+            })
+          }
           onDetails={() =>
             navigation.navigate('Groups', {
               screen: 'MeetingPoint',

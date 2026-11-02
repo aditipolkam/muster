@@ -1,18 +1,21 @@
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { bearingDeg, distanceM, formatCoord, formatDistance } from '../../domain/geo';
+import { bearingDeg, distanceM, formatCoord } from '../../domain/geo';
+import { cardinalOf, etaMinutes, formatDistanceIn, formatEta } from '../../domain/geo/pace';
 import { useLocationStore } from '../../platform/locationStore';
-import { useMarkers, useVisibleMeetingPoints } from '../../runtime/hooks';
+import {
+  useAdventures,
+  useMarkers,
+  useNavPrefs,
+  useVisibleMeetingPoints,
+} from '../../runtime/hooks';
+import { useServices } from '../../runtime/services';
 import { RootTabParamList } from '../../runtime/navigation';
-import { Card, EmptyState, Icon, IconTile, Screen, Text } from '../../ui/components';
+import { Badge, Card, EmptyState, Icon, IconTile, Screen, Text } from '../../ui/components';
 import { space, useTheme } from '../../ui/theme';
 
 type Props = BottomTabScreenProps<RootTabParamList, 'Navigate'>;
-
-const WALK_KMH = 4;
-const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-const cardinal = (deg: number) => CARDINALS[Math.round(deg / 45) % 8]!;
 
 /** Straight-line guidance to a meeting point or saved place; not turn-by-turn. */
 export function NavigateScreen({ navigation, route }: Props) {
@@ -22,8 +25,29 @@ export function NavigateScreen({ navigation, route }: Props) {
   const fix = useLocationStore(s => s.fix);
   const heading = useLocationStore(s => s.headingDeg);
   const p = route.params;
+  const { adventuresRepo } = useServices();
+  const adventureList = useAdventures();
+  const [checkpoint, setCheckpoint] = React.useState<{
+    name: string;
+    lat: number;
+    lon: number;
+  } | null>(null);
+  React.useEffect(() => {
+    if (!p?.adventureId || !p.checkpointId) {
+      setCheckpoint(null);
+      return;
+    }
+    void adventuresRepo.checkpoint(p.adventureId, p.checkpointId).then(cp => {
+      setCheckpoint(cp && !cp.deleted ? { name: cp.name, lat: cp.lat, lon: cp.lon } : null);
+    });
+  }, [adventuresRepo, p?.adventureId, p?.checkpointId, adventureList]);
+  const { paceKmh, units } = useNavPrefs();
+  const fmt = (m: number) => formatDistanceIn(m, units);
 
   const target = useMemo(() => {
+    if (checkpoint) {
+      return { kind: 'checkpoint' as const, ...checkpoint };
+    }
     const live = points.filter(x => !x.deleted);
     const meeting = p?.pointId
       ? live.find(x => x.id === p.pointId && (!p.groupId || x.groupId === p.groupId))
@@ -35,7 +59,7 @@ export function NavigateScreen({ navigation, route }: Props) {
     return marker
       ? { kind: 'marker' as const, name: marker.name, lat: marker.lat, lon: marker.lon }
       : null;
-  }, [markers, p?.groupId, p?.markerId, p?.pointId, points]);
+  }, [checkpoint, markers, p?.groupId, p?.markerId, p?.pointId, points]);
 
   if (!target) {
     return (
@@ -55,7 +79,7 @@ export function NavigateScreen({ navigation, route }: Props) {
   // The arrow is drawn relative to where the phone points when a heading is known,
   // otherwise relative to north (the compass ring then reads as a map).
   const arrow = bearing === null ? 0 : (bearing - (heading ?? 0) + 360) % 360;
-  const minutes = dist === null ? null : Math.max(1, Math.round((dist / 1000 / WALK_KMH) * 60));
+  const minutes = etaMinutes(dist, paceKmh);
   const tone = target.kind === 'meeting' ? c.mapMeeting : c.primary;
 
   return (
@@ -72,7 +96,7 @@ export function NavigateScreen({ navigation, route }: Props) {
             <Text variant="caption" muted>
               {dist === null || bearing === null
                 ? formatCoord(target)
-                : `${formatDistance(dist)} · Bearing ${Math.round(bearing)}°`}
+                : `${fmt(dist)} · ${cardinalOf(bearing)} ${Math.round(bearing)}°`}
             </Text>
           </View>
         </Card>
@@ -83,7 +107,9 @@ export function NavigateScreen({ navigation, route }: Props) {
           accessibilityLabel={
             bearing === null
               ? 'Compass unavailable until GPS has a fix'
-              : `${target.name} is ${formatDistance(dist!)} towards ${cardinal(bearing)}`
+              : `${target.name} is ${fmt(dist!)} towards ${cardinalOf(
+                  bearing,
+                )}. Straight line, terrain not considered`
           }
         >
           <View style={[styles.ring, { borderColor: c.primary }]}>
@@ -95,17 +121,20 @@ export function NavigateScreen({ navigation, route }: Props) {
             </View>
           </View>
           <Text variant="metric" testID="nav-distance">
-            {dist === null ? '–' : formatDistance(dist)}
+            {dist === null ? '–' : fmt(dist)}
           </Text>
-          <Text muted>{bearing === null ? 'Waiting for GPS' : `towards ${cardinal(bearing)}`}</Text>
+          <Text muted>
+            {bearing === null ? 'Waiting for GPS' : `towards ${cardinalOf(bearing)}`}
+          </Text>
+          <Badge label="Straight line · terrain not considered" tone="warn" />
         </View>
 
         <View style={styles.metrics}>
           <Card style={[styles.row, { flex: 1 }]}>
             <Icon name="walk" size={20} color={c.textMuted} />
             <View>
-              <Text variant="cardTitle">{minutes === null ? '–' : `~ ${minutes} min`}</Text>
-              <Text variant="caption" muted>{`(at ${WALK_KMH} km/h)`}</Text>
+              <Text variant="cardTitle">{minutes === null ? '–' : `~ ${formatEta(minutes)}`}</Text>
+              <Text variant="caption" muted>{`at ${paceKmh} km/h, flat ground`}</Text>
             </View>
           </Card>
           <Card style={[styles.row, { flex: 1 }]}>
@@ -119,7 +148,8 @@ export function NavigateScreen({ navigation, route }: Props) {
           </Card>
         </View>
         <Text variant="caption" muted style={{ textAlign: 'center' }}>
-          Straight-line direction, not turn-by-turn. Trails may not follow it.
+          This points directly at the target. Trails, cliffs and water may not follow it, and the
+          time ignores climbs.
         </Text>
       </ScrollView>
     </Screen>
