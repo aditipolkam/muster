@@ -540,7 +540,8 @@ describe('NavigateScreen', () => {
     const { unmount } = render(ui({ markerId: m.id }));
     expect(await screen.findByTestId('nav-distance')).toBeTruthy();
     expect(screen.getByText('Hut')).toBeTruthy();
-    expect(screen.getByText(/Bearing 0°/)).toBeTruthy();
+    expect(screen.getByText(/N 0°/)).toBeTruthy();
+    expect(screen.getByText('Straight line · terrain not considered')).toBeTruthy();
     unmount();
     render(ui());
     expect(await screen.findByText('Nothing to navigate to')).toBeTruthy();

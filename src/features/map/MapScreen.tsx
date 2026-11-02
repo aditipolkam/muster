@@ -17,6 +17,7 @@ import { covers, needsRegionBanner, selectActiveRegions } from '../../domain/map
 import { useLocationStore } from '../../platform/locationStore';
 import {
   useGroupMembers,
+  useNavPrefs,
   useGroupPresence,
   useGroups,
   useMarkers,
@@ -497,6 +498,7 @@ export function MapScreen({ navigation, route }: Props) {
   const activeMembers = useGroupMembers(activeGroup?.id ?? '');
   const presence = useGroupPresence(activeGroup, activeMembers, now);
   const [meshSheet, setMeshSheet] = useState(false);
+  const navPrefs = useNavPrefs();
   const sheetOpen = !!(selected || selectedPoint || moving || movingMeeting);
   const ageS = fix ? Math.max(0, Math.round((now - fix.fixAt) / 1000)) : null;
   const label = gpsLabel(gps, fix?.accM ?? null, ageS);
@@ -735,6 +737,13 @@ export function MapScreen({ navigation, route }: Props) {
                 ),
               );
           }}
+          units={navPrefs.units}
+          onNavigate={() =>
+            navigation.navigate('Navigate', {
+              groupId: selectedPoint.groupId,
+              pointId: selectedPoint.id,
+            })
+          }
           onDetails={() =>
             navigation.navigate('Groups', {
               screen: 'MeetingPoint',

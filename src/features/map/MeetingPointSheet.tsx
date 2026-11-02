@@ -1,9 +1,10 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { bearingDeg, distanceM, formatCoord, formatDistance } from '../../domain/geo';
+import { bearingDeg, distanceM, formatCoord } from '../../domain/geo';
 import type { Group, MeetingPoint } from '../../domain/groups/model';
 import { shortAddress } from '../../domain/groups/model';
 import { Fix } from '../../domain/location/fix';
+import { Units, formatDistanceIn } from '../../domain/geo/pace';
 import { useGroupMembers } from '../../runtime/hooks';
 import { Badge, Button, Row, Text } from '../../ui/components';
 import { radius, space, useTheme } from '../../ui/theme';
@@ -18,6 +19,8 @@ type Props = {
   onRemove: () => void;
   onAcknowledge: () => void;
   onDetails: () => void;
+  onNavigate: () => void;
+  units?: Units;
   onClose: () => void;
 };
 
@@ -53,8 +56,17 @@ export function MeetingPointSheet(p: Props) {
         {formatCoord(p.point)}
       </Text>
       {dist !== null && brg !== null ? (
-        <Text>{`${formatDistance(dist)} straight line, ${Math.round(brg)}°`}</Text>
+        <Text>{`${formatDistanceIn(dist, p.units ?? 'metric')} straight line · ${Math.round(
+          brg,
+        )}°`}</Text>
       ) : null}
+      <Button
+        label="Navigate"
+        icon="navigate"
+        onPress={p.onNavigate}
+        testID="meeting-navigate"
+        style={{ marginTop: space.xs }}
+      />
       <Row style={{ marginTop: space.xs }}>
         {organizer ? (
           <>

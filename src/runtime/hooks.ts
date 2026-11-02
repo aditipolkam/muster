@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Emitter } from '../data/events';
 import type { Group, GroupMember, MeetingPoint, PointAck } from '../domain/groups/model';
+import { DEFAULT_PACE_KMH, Units, clampPace } from '../domain/geo/pace';
 import { Presence, meshStatus, MeshStatus, presenceOf } from '../domain/groups/presence';
 import type { GroupRuntime } from '../features/groups/GroupService';
 import { Marker } from '../domain/markers/marker';
@@ -166,5 +167,32 @@ export function useGroupPresence(
       total: withPresence.length,
       reachable,
     }),
+  };
+}
+
+export type NavPrefs = { paceKmh: number; units: Units };
+
+/** Walking pace and display units, stored locally in the kv table. */
+export function useNavPrefs(): NavPrefs & {
+  setPace: (kmh: number) => void;
+  setUnits: (u: Units) => void;
+} {
+  const { kv } = useServices();
+  const prefs = useLiveQuery<NavPrefs>(
+    [kv.changes as Emitter<unknown>],
+    async () => {
+      const pace = Number(await kv.get('pref.paceKmh'));
+      const units = await kv.get('pref.units');
+      return {
+        paceKmh: Number.isFinite(pace) && pace > 0 ? clampPace(pace) : DEFAULT_PACE_KMH,
+        units: units === 'imperial' ? 'imperial' : 'metric',
+      };
+    },
+    { paceKmh: DEFAULT_PACE_KMH, units: 'metric' },
+  );
+  return {
+    ...prefs,
+    setPace: kmh => void kv.set('pref.paceKmh', String(clampPace(kmh))),
+    setUnits: u => void kv.set('pref.units', u),
   };
 }

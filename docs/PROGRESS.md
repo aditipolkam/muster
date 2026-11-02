@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-11-01 (Phase 3)
+Last updated: 2026-11-02 (Phase 3 + UX pass)
 
 ## Status
 
@@ -245,3 +245,9 @@ Run `docs/GROUPS_VERIFICATION.md`, record A-19 to A-24 and fill the device log. 
 
 | Date | Phase | Devices (model, OS) | Scenario | Result | Notes / issue |
 |---|---|---|---|---|---|
+
+## UX pass (2026-11-02)
+
+Audit in `docs/ux-audit.md`. Done: honest mesh status (map pill + explanation sheet, group header, group card; green only when someone is reachable), member presence age and ordering, Navigate as the primary meeting-point action, "Straight line · terrain not considered" label, configurable walking pace and metric/imperial units (Settings, stored in `kv`), Android fixes (spaces in file URIs, location tracking when services report off).
+
+**Not verified on any device.** Covered by Jest only. Presence uses `Peer.lastSeenAt` and received group messages; there are no member positions yet (Phase 4). Not done and why: see the audit's "Not implemented" list (needs new native modules, a local schema change, or a new envelope kind).
