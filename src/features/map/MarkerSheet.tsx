@@ -16,10 +16,20 @@ type Props = {
   onRename: (name: string) => void;
   onMove: () => void;
   onDelete: () => void;
+  onNavigate: () => void;
   onClose: () => void;
 };
 
-export function MarkerSheet({ marker, fix, gps, onRename, onMove, onDelete, onClose }: Props) {
+export function MarkerSheet({
+  marker,
+  fix,
+  gps,
+  onRename,
+  onMove,
+  onDelete,
+  onNavigate,
+  onClose,
+}: Props) {
   const { c } = useTheme();
   const [name, setName] = useState(marker.name);
   useEffect(() => setName(marker.name), [marker.id, marker.name]);
@@ -60,7 +70,13 @@ export function MarkerSheet({ marker, fix, gps, onRename, onMove, onDelete, onCl
               gps === 'lost' ? ' (from last known position)' : ''
             }`}
       </Text>
-      <Row style={{ marginTop: space.sm }}>
+      <Button
+        style={{ marginTop: space.sm }}
+        label="Start navigation"
+        onPress={onNavigate}
+        testID="marker-navigate"
+      />
+      <Row>
         <Button
           style={{ flex: 1 }}
           variant="secondary"

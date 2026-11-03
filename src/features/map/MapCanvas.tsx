@@ -35,7 +35,11 @@ type Props = {
   cameraRef: React.Ref<CameraRef>;
   onLongPress: (lngLat: [number, number]) => void;
   onMarkerPress: (id: string) => void;
-  onMapPress: () => void;
+  /** Tap on empty map. */
+  onMapPress: (lngLat: [number, number]) => void;
+  /** Straight guidance line to the navigation target, and the temporary pin it points at. */
+  guide: FeatureCollection;
+  pin: FeatureCollection;
   onRegionChange: (e: ViewStateChangeEvent) => void;
   onStyleLoaded: () => void;
   onLoadFailed: () => void;
@@ -64,7 +68,10 @@ export function MapCanvas(p: Props) {
         const [lon, lat] = e.nativeEvent.lngLat;
         p.onLongPress([lon, lat]);
       }}
-      onPress={() => p.onMapPress()}
+      onPress={e => {
+        const [lon, lat] = e.nativeEvent.lngLat;
+        p.onMapPress([lon, lat]);
+      }}
       onRegionDidChange={(e: NativeSyntheticEvent<ViewStateChangeEvent>) =>
         p.onRegionChange(e.nativeEvent)
       }
@@ -77,6 +84,39 @@ export function MapCanvas(p: Props) {
         minZoom={0}
         maxZoom={19}
       />
+
+      <GeoJSONSource id="guide-line" data={p.guide}>
+        <Layer
+          id="guide-line-casing"
+          type="line"
+          layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+          paint={{ 'line-color': '#FFFFFF', 'line-width': 7, 'line-opacity': 0.85 }}
+        />
+        <Layer
+          id="guide-line-dash"
+          type="line"
+          layout={{ 'line-cap': 'butt', 'line-join': 'round' }}
+          paint={{ 'line-color': MEETING, 'line-width': 4, 'line-dasharray': [2, 1.5] }}
+        />
+      </GeoJSONSource>
+
+      <GeoJSONSource id="pin" data={p.pin}>
+        <Layer
+          id="pin-halo"
+          type="circle"
+          paint={{ 'circle-radius': 15, 'circle-color': '#BE4C45', 'circle-opacity': 0.3 }}
+        />
+        <Layer
+          id="pin-dot"
+          type="circle"
+          paint={{
+            'circle-radius': 8,
+            'circle-color': '#BE4C45',
+            'circle-stroke-color': '#FFFFFF',
+            'circle-stroke-width': 3,
+          }}
+        />
+      </GeoJSONSource>
 
       <GeoJSONSource id="me-accuracy" data={p.me.accuracy}>
         <Layer

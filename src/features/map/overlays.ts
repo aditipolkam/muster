@@ -123,3 +123,27 @@ export function routeCollection(points: { lat: number; lon: number }[]): Feature
 export function metresPerPixel(lat: number, zoom: number): number {
   return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
 }
+
+/** The straight guidance line from the user to the navigation target (empty without a fix). */
+export function guideLine(
+  from: { lat: number; lon: number } | null,
+  to: { lat: number; lon: number } | null,
+): FeatureCollection {
+  return from && to ? routeCollection([from, to]) : empty();
+}
+
+/** A single temporary pin (the dropped pin or the navigation target); empty when null. */
+export function pinCollection(p: { lat: number; lon: number } | null): FeatureCollection {
+  return p
+    ? {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+          },
+        ],
+      }
+    : empty();
+}
