@@ -1,8 +1,9 @@
-import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import React, { useState } from 'react';
+import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Card, IconName, IconTile, ListRow, Text } from '../../ui/components';
-import { space, useTheme } from '../../ui/theme';
+import { MEMBER_NAME_MAX } from '../../domain/groups/model';
+import { radius, space, useTheme } from '../../ui/theme';
 
 const BENEFITS: { icon: IconName; title: string; body: string }[] = [
   { icon: 'map', title: 'Offline maps', body: 'Download maps & navigate offline' },
@@ -44,11 +45,14 @@ function Scene() {
   );
 }
 
-export function OnboardingScreen({ onDone }: { onDone: () => void }) {
+/** Welcome, then ask for the name group members will see. It is required to continue. */
+export function OnboardingScreen({ onDone }: { onDone: (name: string) => void }) {
   const { c } = useTheme();
+  const [name, setName] = useState('');
+  const ready = name.trim().length > 0;
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }} testID="onboarding">
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.brand}>
           <Text variant="hero" color={c.deep} accessibilityRole="header">
             ▲ TrailMesh
@@ -69,7 +73,35 @@ export function OnboardingScreen({ onDone }: { onDone: () => void }) {
             />
           ))}
         </Card>
-        <Button label="Get started" icon="navigate" onPress={onDone} testID="onboarding-start" />
+        <View style={{ gap: space.sm }}>
+          <Text variant="cardTitle">What should your group call you?</Text>
+          <TextInput
+            testID="onboarding-name"
+            value={name}
+            onChangeText={setName}
+            maxLength={MEMBER_NAME_MAX}
+            placeholder="Your name"
+            placeholderTextColor={c.textMuted}
+            autoCapitalize="words"
+            returnKeyType="done"
+            onSubmitEditing={() => ready && onDone(name.trim())}
+            accessibilityLabel="Your name"
+            style={[
+              styles.input,
+              { color: c.text, borderColor: c.border, backgroundColor: c.surface },
+            ]}
+          />
+          <Text variant="caption" muted>
+            Shown to people in your groups. You can change it later in Profile.
+          </Text>
+        </View>
+        <Button
+          label="Get started"
+          icon="navigate"
+          disabled={!ready}
+          onPress={() => onDone(name.trim())}
+          testID="onboarding-start"
+        />
         <Text variant="caption" muted style={{ textAlign: 'center' }}>
           No account needed. Location permission is asked later, when you open the map.
         </Text>
@@ -82,6 +114,13 @@ const styles = StyleSheet.create({
   content: { padding: space.gutter, gap: space.xl },
   brand: { alignItems: 'center', gap: space.md, paddingTop: space.xl },
   tagline: { textAlign: 'center', fontSize: 17, lineHeight: 24, paddingHorizontal: space.lg },
+  input: {
+    borderWidth: 1,
+    borderRadius: radius.input,
+    paddingHorizontal: space.lg,
+    minHeight: 52,
+    fontSize: 15,
+  },
   scene: { height: 160, borderRadius: 24, overflow: 'hidden' },
   hill: {
     position: 'absolute',
