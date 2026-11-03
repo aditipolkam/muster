@@ -40,6 +40,8 @@ The values below are implementation targets sampled conceptually from the mockup
 
 Never use green to imply an internet connection. Prefer explicit labels such as `Offline · 4 nearby` and `Mesh connected`.
 
+> Update 2026-11-03: icons are Ionicons (`@expo/vector-icons`) rather than Lucide, and the bottom bar has the Map as a raised centre button (ADR 0010, `PROGRESS.md`).
+
 ## 3. Typography
 
 Use **Inter** where bundled/licensed; otherwise use the native system sans-serif consistently. Do not mix unrelated typefaces across tabs. Respect dynamic text sizing.
@@ -198,7 +200,7 @@ Do not conflate `published locally` with `received by every group member`.
 
 No new colour, radius, shadow or font size was introduced. Everything is built from existing tokens and shared components; the only new components are `BadgeMark`, `Reveal`, `PulseRing` and `AnimatedProgress` in `src/ui/`.
 
-- **Navigation.** The four tabs are unchanged. Adventures live in the More stack (`More > Adventures`, with Achievements and the journal inside), with three shortcuts: a compact progress card on the map while one is in progress, an Adventures card on the group page, and "Navigate here" on a checkpoint (the existing straight-line screen).
+- **Navigation.** Superseded 2026-11-03 by five tabs (Compass, Activity, Map, Groups, Profile; ADR 0010). Adventures live in the Activity tab (`Activity > Adventures`, with Achievements and the journal inside), with three shortcuts: a compact progress card on the map while one is in progress, an Adventures card on the group page, and "Navigate here" on a checkpoint (the existing straight-line screen).
 - **Map.** Checkpoints are white circles with a `brand.primary` outline that fill solid when reached by this person; the recorded route is a `map.trail` line. Purple stays reserved for meeting points and blue for the current position. The adventure card sits above the group card and never covers the status pills, the controls or the attribution (the controls and attribution move up to make room).
 - **Badges.** `BadgeMark` draws mountains, pines, a tent, a compass, a trail, a flag, a mesh and a map from plain shapes in `brand.primary` on `brand.primarySoft`, one stroke weight and one palette. Locked badges use `text.muted` on `surface.subtle`. No gradients, no neon, no cartoon art. (The wider icon-family decision, Lucide with react-native-svg, is still open; badges do not depend on it.)
 - **Copy.** Sentence case. Never "Hurry", "Fastest", "Streak", "Rank". Locked badges state exactly what unlocks them. Achievements always carry the note that they are recorded on the phone and not independently verified. Straight-line guidance keeps its label.
