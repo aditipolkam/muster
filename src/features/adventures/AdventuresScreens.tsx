@@ -31,7 +31,7 @@ import {
   useNavPrefs,
   useUnlocksFor,
 } from '../../runtime/hooks';
-import { MoreStackParamList } from '../../runtime/navigation';
+import { ActivityStackParamList } from '../../runtime/navigation';
 import { useServices } from '../../runtime/services';
 import {
   Badge,
@@ -39,6 +39,7 @@ import {
   Button,
   Card,
   EmptyState,
+  IconButton,
   IconTile,
   ListRow,
   Screen,
@@ -50,7 +51,10 @@ import { radius, space, useTheme } from '../../ui/theme';
 import { useNow } from '../../ui/useNow';
 import { KIND_ICON, STATUS_LABEL, STATUS_TONE, formatDate, formatTime } from './format';
 
-type Nav<T extends keyof MoreStackParamList> = NativeStackScreenProps<MoreStackParamList, T>;
+type Nav<T extends keyof ActivityStackParamList> = NativeStackScreenProps<
+  ActivityStackParamList,
+  T
+>;
 
 function useInput() {
   const { c } = useTheme();
@@ -64,6 +68,7 @@ function useInput() {
 
 type Row = { adventure: Adventure; done: number; total: number };
 
+/** The Activity tab: planned and active adventures, the journal, and achievements. */
 export function AdventuresScreen({ navigation }: Nav<'Adventures'>) {
   const adventures = useAdventures();
   const achievements = useAchievements();
@@ -107,14 +112,25 @@ export function AdventuresScreen({ navigation }: Nav<'Adventures'>) {
       .join(' · ');
 
   return (
-    <Screen title="Adventures" onBack={() => navigation.goBack()}>
+    <Screen
+      title="Activity"
+      right={
+        <IconButton
+          testID="new-adventure"
+          icon="plus"
+          label="New adventure"
+          onPress={() => navigation.navigate('AdventureEditor')}
+          active
+        />
+      }
+    >
       <ScrollView contentContainerStyle={styles.list}>
         <Card style={styles.flatCard}>
           <ListRow
             testID="open-achievements"
             title="Achievements"
             subtitle={`${earned} of ${achievements.length || 13} earned`}
-            leading={<IconTile name="flag" />}
+            leading={<IconTile name="trophy" />}
             chevron
             divider={false}
             onPress={() => navigation.navigate('Achievements')}
@@ -159,12 +175,6 @@ export function AdventuresScreen({ navigation }: Nav<'Adventures'>) {
                 ))}
               </Card>
             )}
-            <Button
-              testID="new-adventure"
-              label="New adventure"
-              icon="plus"
-              onPress={() => navigation.navigate('AdventureEditor')}
-            />
           </>
         ) : past.length === 0 ? (
           <EmptyState

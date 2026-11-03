@@ -22,7 +22,7 @@ import {
   useMesh,
   useNavPrefs,
 } from '../../runtime/hooks';
-import { MoreStackParamList } from '../../runtime/navigation';
+import { ActivityStackParamList } from '../../runtime/navigation';
 import { useServices } from '../../runtime/services';
 import {
   Badge,
@@ -39,7 +39,10 @@ import { radius, space, useTheme } from '../../ui/theme';
 import { useNow } from '../../ui/useNow';
 import { KIND_ICON, SAFETY_NOTE, formatDate, formatTime } from './format';
 
-type Nav<T extends keyof MoreStackParamList> = NativeStackScreenProps<MoreStackParamList, T>;
+type Nav<T extends keyof ActivityStackParamList> = NativeStackScreenProps<
+  ActivityStackParamList,
+  T
+>;
 
 export function CheckpointEditorScreen({ navigation, route }: Nav<'CheckpointEditor'>) {
   const { adventureId, checkpointId } = route.params;

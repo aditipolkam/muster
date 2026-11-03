@@ -15,7 +15,9 @@ import {
   AchievementsScreen,
   AdventureSummaryScreen,
 } from '../src/features/adventures/RecapScreens';
-import { GroupDetailsScreen } from '../src/features/groups/GroupsScreens';
+import { GroupInfoScreen } from '../src/features/groups/GroupsScreens';
+import { AdventureToastHost } from '../src/features/adventures/AdventureToastHost';
+import { AdventureBanners } from '../src/features/adventures/AdventureBanners';
 import { MapScreen } from '../src/features/map/MapScreen';
 import { SettingsScreen } from '../src/features/settings/SettingsScreen';
 import { useLocationStore } from '../src/platform/locationStore';
@@ -25,7 +27,9 @@ import { MOTION, PulseRing, Reveal, motionDuration, resetMotionPreference } from
 
 jest.mock('@react-navigation/native', () => {
   const R = require('react');
-  return { useFocusEffect: (cb: () => void | (() => void)) => R.useEffect(cb, [cb]) };
+  return {
+    useFocusEffect: (cb: () => void | (() => void)) => R.useEffect(cb, [cb]),
+  };
 });
 jest.mock('expo-camera', () => ({
   CameraView: () => null,
@@ -535,7 +539,7 @@ describe('Adventure summary', () => {
 });
 
 describe('Map integration', () => {
-  it('shows the progress chip, checkpoint markers with their reached state, and keeps the attribution', async () => {
+  it('draws checkpoint markers with their reached state, opens their details, and keeps the attribution', async () => {
     const t = await seed();
     await t.services.adventures.act(t.adv.id, 'start');
     await t.services.adventures.confirmArrival(t.adv.id, t.view.id, 'manual');
@@ -545,20 +549,13 @@ describe('Map integration', () => {
         <MapScreen navigation={n} route={{ params: undefined } as any} />
       </Harness>,
     );
-    expect(await screen.findByTestId('adventure-chip')).toBeTruthy();
-    expect(screen.getByText('Ridge walk')).toBeTruthy();
-    expect(screen.getByTestId('attribution')).toBeTruthy();
+    expect(await screen.findByTestId('attribution')).toBeTruthy();
+    expect(screen.queryByTestId('adventure-chip')).toBeNull();
     await waitFor(() => {
       const feats = mockMap.sources.checkpoints?.data.features;
       expect(feats).toHaveLength(2);
       expect(feats.map((f: any) => f.properties.reached)).toEqual([true, false]);
     });
-    fireEvent.press(screen.getByText('Ridge walk'));
-    expect(calls).toContainEqual([
-      'navigate',
-      'More',
-      { screen: 'AdventureDetails', params: { adventureId: t.adv.id } },
-    ]);
     // Tapping a checkpoint marker opens its details.
     act(() =>
       mockMap.sources.checkpoints!.onPress({
@@ -567,7 +564,7 @@ describe('Map integration', () => {
     );
     expect(calls).toContainEqual([
       'navigate',
-      'More',
+      'Activity',
       { screen: 'CheckpointDetails', params: { adventureId: t.adv.id, checkpointId: t.top.id } },
     ]);
   });
@@ -591,7 +588,7 @@ describe('Map integration', () => {
     choice!.onPress!();
     expect(calls).toContainEqual([
       'navigate',
-      'More',
+      'Activity',
       { screen: 'CheckpointEditor', params: { adventureId: t.adv.id, lat: 56.85, lon: -4.9 } },
     ]);
   });
@@ -612,16 +609,18 @@ describe('Map integration', () => {
     expect(alertSpy).not.toHaveBeenCalled();
   });
 
-  it('shows a quiet hint near a checkpoint and offers manual confirmation when GPS is weak', async () => {
+  it('banners: a quiet hint near a checkpoint offers manual confirmation when GPS is weak', async () => {
     const t = await seed();
     await t.services.adventures.act(t.adv.id, 'start');
-    const { n } = nav();
     render(
       <Harness services={t.services}>
-        <MapScreen navigation={n} route={{ params: undefined } as any} />
+        <AdventureBanners
+          onOpenAchievements={() => undefined}
+          onOpenCheckpoint={() => undefined}
+          onOpenSummary={() => undefined}
+        />
       </Harness>,
     );
-    await screen.findByTestId('adventure-chip');
     t.clock.advance(2000);
     await act(async () => {
       await t.services.adventureTracker.onFix({ ...VIEW, accM: 90, fixAt: t.clock.now() });
@@ -636,6 +635,24 @@ describe('Map integration', () => {
     expect(await screen.findByText('Reached Viewpoint')).toBeTruthy();
   });
 
+  it('toast host: adventure news shows on other tabs but never over the map', async () => {
+    const t = await seed();
+    await t.services.adventures.act(t.adv.id, 'start');
+    const ui = (tab: string) => (
+      <Harness services={t.services}>
+        <AdventureToastHost tab={tab} onNavigate={jest.fn()} />
+      </Harness>
+    );
+    const { rerender } = render(ui('Map'));
+    t.clock.advance(2000);
+    await act(async () => {
+      await t.services.adventureTracker.onFix({ ...VIEW, accM: 90, fixAt: t.clock.now() });
+    });
+    expect(screen.queryByText('Near Viewpoint')).toBeNull();
+    rerender(ui('Navigate'));
+    expect(await screen.findByText('Near Viewpoint')).toBeTruthy();
+  });
+
   it('streaming the online map while an adventure runs marks it as having used the network', async () => {
     const t = await seed();
     await t.services.adventures.act(t.adv.id, 'start');
@@ -645,7 +662,7 @@ describe('Map integration', () => {
 });
 
 describe('Group and settings entry points', () => {
-  it('the group page lets an organizer plan a group adventure', async () => {
+  it('group info lets an organizer plan a group adventure', async () => {
     const t = await makeTestServices({ address: 'off1me' });
     await t.mesh.start();
     await t.services.groups.start({ poll: false });
@@ -653,7 +670,7 @@ describe('Group and settings entry points', () => {
     const { n, calls } = nav();
     render(
       <Harness services={t.services}>
-        <GroupDetailsScreen
+        <GroupInfoScreen
           navigation={n}
           route={{ params: { groupId: g.ok ? g.value.id : '' } } as any}
         />
@@ -662,7 +679,7 @@ describe('Group and settings entry points', () => {
     fireEvent.press(await screen.findByTestId('plan-group-adventure'));
     expect(calls).toContainEqual([
       'navigate',
-      'More',
+      'Activity',
       { screen: 'AdventureEditor', params: { groupId: g.ok ? g.value.id : '' } },
     ]);
   });

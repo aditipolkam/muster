@@ -14,7 +14,7 @@ import {
   useNavPrefs,
   useUnlocksFor,
 } from '../../runtime/hooks';
-import { MoreStackParamList } from '../../runtime/navigation';
+import { ActivityStackParamList } from '../../runtime/navigation';
 import { useServices } from '../../runtime/services';
 import {
   Badge,
@@ -32,7 +32,10 @@ import { radius, space, useTheme } from '../../ui/theme';
 import { formatDate, formatTime } from './format';
 import { RouteSketch } from './RouteSketch';
 
-type Nav<T extends keyof MoreStackParamList> = NativeStackScreenProps<MoreStackParamList, T>;
+type Nav<T extends keyof ActivityStackParamList> = NativeStackScreenProps<
+  ActivityStackParamList,
+  T
+>;
 
 const noteKey = (id: string) => `adventure.note.${id}`;
 

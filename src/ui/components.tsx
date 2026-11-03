@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -36,34 +37,41 @@ const textStyles: Record<TextVariant, TextStyle> = {
 };
 
 /**
- * Icon glyphs live here so there is one place to swap for a vector icon family (the design
- * system asks for Lucide; it needs react-native-svg, a native dependency).
+ * One icon family (Ionicons, via @expo/vector-icons, which ships with expo and loads its font
+ * through the already-linked expo-font). Names are app concepts; this is the only place that
+ * knows the family, so swapping it later (the design system names Lucide) touches one table.
+ * Each entry is the outline name; `filled` drops the `-outline` suffix for the solid variant.
  */
 const GLYPHS = {
-  map: '▤',
-  group: '☺',
-  navigate: '➤',
-  more: '⋯',
-  back: '‹',
-  chevron: '›',
-  layers: '≋',
-  locate: '◎',
-  follow: '➤',
-  plus: '+',
-  check: '✓',
-  close: '✕',
-  flag: '⚑',
-  mesh: '⌁',
-  settings: '⚙',
-  pin: '⌖',
-  trail: '〰',
-  walk: '⇢',
-  help: '?',
-  share: '➤',
-  bearing: '⌀',
-  download: '⇩',
-  search: '⌕',
-  bluetooth: 'ᛒ',
+  map: 'map-outline',
+  group: 'people-outline',
+  navigate: 'navigate-outline',
+  compass: 'compass-outline',
+  offline: 'checkmark-circle-outline',
+  online: 'cloud-outline',
+  profile: 'person-outline',
+  more: 'ellipsis-horizontal',
+  back: 'chevron-back',
+  chevron: 'chevron-forward',
+  layers: 'layers-outline',
+  locate: 'locate-outline',
+  follow: 'navigate',
+  plus: 'add',
+  check: 'checkmark',
+  close: 'close',
+  flag: 'flag-outline',
+  mesh: 'git-network-outline',
+  settings: 'settings-outline',
+  pin: 'location-outline',
+  trail: 'trail-sign-outline',
+  trophy: 'trophy-outline',
+  walk: 'walk-outline',
+  help: 'help-circle-outline',
+  share: 'share-outline',
+  bearing: 'compass-outline',
+  download: 'download-outline',
+  search: 'search-outline',
+  bluetooth: 'bluetooth',
 } as const;
 export type IconName = keyof typeof GLYPHS;
 
@@ -71,20 +79,24 @@ export function Icon({
   name,
   size = 20,
   color,
+  filled,
 }: {
   name: IconName;
   size?: number;
   color?: string;
+  /** Solid variant, used for the selected tab. */
+  filled?: boolean;
 }) {
   const { c } = useTheme();
+  const glyph = GLYPHS[name];
   return (
-    <RNText
+    <Ionicons
       accessibilityElementsHidden
       importantForAccessibility="no"
-      style={{ fontSize: size, lineHeight: size + 4, color: color ?? c.text, fontWeight: '600' }}
-    >
-      {GLYPHS[name]}
-    </RNText>
+      name={(filled ? glyph.replace('-outline', '') : glyph) as never}
+      size={size}
+      color={color ?? c.text}
+    />
   );
 }
 
@@ -361,7 +373,7 @@ export function ListRow({
           </Text>
         ) : null}
       </View>
-      {trailing}
+      {trailing ? <View style={{ alignSelf: 'center' }}>{trailing}</View> : null}
       {chevron ? <Icon name="chevron" size={22} color={c.textMuted} /> : null}
     </>
   );
