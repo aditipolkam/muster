@@ -76,6 +76,22 @@ function withoutKey<T>(o: Record<string, T>, key: string): Record<string, T> {
   return Object.fromEntries(Object.entries(o).filter(([k]) => k !== key));
 }
 
+/** Why a join attempt ended, from the SDK's `service_subscription_changed` reason. */
+function joinEndReason(reason: string): string {
+  switch (reason) {
+    case 'session_timeout':
+    case 'no_reply':
+    case 'provider_unreachable':
+      return 'the organizer could not be reached. Move closer and try again';
+    case 'not_found':
+      return "the organizer's mesh is not ready. Ask them to open TrailMesh and try again";
+    case 'full':
+      return 'the group is full';
+    default:
+      return 'the organizer did not accept the request';
+  }
+}
+
 export type JoinRequest = {
   subId: string;
   groupId: string;
@@ -83,6 +99,8 @@ export type JoinRequest = {
   sender: string;
   nearby: boolean;
   tokenHash: string | null;
+  /** The join topic the request came in on; the welcome goes back on it. */
+  topic: string;
   at: number;
 };
 
@@ -129,6 +147,12 @@ export class GroupService {
   private discovering = false;
   private reconciling = false;
   private dirty = false;
+  /**
+   * Organizer: join subscriptions the SDK has admitted and the organizer has not decided on.
+   * The SDK admits a valid join request at once, so it cannot expire under its 60 s approval
+   * timeout while the card is on screen; the approval itself is this app's (the welcome).
+   */
+  private readonly held = new Map<string, JoinRequest>();
 
   constructor(private readonly d: GroupServiceDeps) {}
 
@@ -427,23 +451,42 @@ export class GroupService {
     const req = this.rt.joinRequests.find(r => r.subId === subId);
     this.setRt({ joinRequests: this.rt.joinRequests.filter(r => r.subId !== subId) });
     if (req) {
-      await this.d.pubsub.rejectRequest(subId);
+      await this.enqueue(() => this.refuseHeld(req, 'declined'));
     }
   }
 
+  /** Ends a join subscription the SDK already admitted; the joiner is told it ended. */
+  private async refuseHeld(req: JoinRequest, reason: string): Promise<void> {
+    this.held.delete(req.subId);
+    await this.d.pubsub.endSubscriber(req.subId, reason);
+  }
+
   private async admit(req: JoinRequest): Promise<Result<void>> {
+    if (!this.held.has(req.subId)) {
+      // The joiner cancelled, walked out of range for good, or the organizer's app restarted.
+      this.notice(
+        `The request from ${shortAddress(req.sender)} is no longer open. Ask them to try again.`,
+      );
+      return err(
+        appError(
+          'groups.request_expired',
+          'That request is no longer open. Ask them to try again.',
+        ),
+      );
+    }
     const group = await this.d.groups.get(req.groupId);
     if (!group || group.role !== 'organizer' || group.status !== 'active') {
-      await this.d.pubsub.rejectRequest(req.subId);
+      await this.refuseHeld(req, 'group closed');
       return err(appError('groups.not_organizer', 'This group is no longer open.'));
     }
     const members = await this.d.groups.members(group.id);
     const existing = members.find(m => m.address === req.sender);
     const active = members.filter(m => m.state === 'active').length;
     if (existing?.state !== 'active' && active >= MAX_GROUP_MEMBERS) {
-      await this.d.pubsub.rejectRequest(req.subId);
+      await this.refuseHeld(req, 'full');
       return err(appError('groups.full', `A group can have at most ${MAX_GROUP_MEMBERS} members.`));
     }
+    this.held.delete(req.subId);
     if (existing?.state !== 'active') {
       const rev = await this.d.groups.nextMemberRev(group.id);
       const m: GroupMember = {
@@ -461,9 +504,20 @@ export class GroupService {
     if (req.tokenHash) {
       await this.d.groups.markInviteUsed(req.tokenHash, req.sender);
     }
-    await this.d.pubsub.acceptRequest(req.subId);
+    // The subscription is already admitted, so the welcome reaches the joiner live, or on the
+    // reliable ladder; a renewal that has not seen it is sent it again by the SDK.
+    await this.publishWelcome(group, req.topic);
     await this.reconcile();
     return ok(undefined);
+  }
+
+  private publishWelcome(group: Group, topic: string): Promise<boolean> {
+    return this.publish(topic, 'welcome', 'welcome', {
+      g: group.id,
+      name: group.name,
+      o: group.organizer,
+      mrev: group.memberRev,
+    });
   }
 
   // ---- leaving / removing --------------------------------------------------------------------
@@ -780,6 +834,9 @@ export class GroupService {
         if (env.t !== 'welcome' || !w.success || w.data.g !== group.id || w.data.o !== from) {
           return reject('malformed welcome');
         }
+        if (group.status !== 'joining') {
+          return; // a repeated welcome: already in
+        }
         if (!gate('welcome')) {
           return;
         }
@@ -790,6 +847,8 @@ export class GroupService {
           joinedAt: now,
         });
         this.notice(`You joined "${w.data.name}"`);
+        // The join topic has done its job; the group's own topics take over.
+        await this.dropJoinSubs(group.id);
         await this.reconcile();
         return;
       }
@@ -912,6 +971,14 @@ export class GroupService {
     if (e.data.addr === this.me && state === 'removed') {
       this.notice(`You were removed from "${group.name}"`);
       await this.teardown(group.id);
+    }
+  }
+
+  private async dropJoinSubs(groupId: string): Promise<void> {
+    for (const s of this.d.pubsub.getSnapshot().subscriptions) {
+      if (s.topic.startsWith(`tm/1/${groupId}/${GroupChannel.join}/`)) {
+        await this.d.pubsub.unsubscribe(s.subId);
+      }
     }
   }
 
@@ -1053,6 +1120,14 @@ export class GroupService {
       }
       autoApprove = !!invite?.autoApprove || check.rejoin;
     }
+    // Admit the subscription now and decide on the person afterwards. Left with the SDK, the
+    // request is rejected after 60 s (approval_timeout), often before the organizer has seen it.
+    // Admission gives the joiner nothing: only the welcome is ever published on this topic.
+    const accepted = await this.d.pubsub.acceptRequest(r.subId);
+    if (!accepted.ok) {
+      log.warn(`join request from ${shortAddress(r.sender)} could not be admitted`);
+      return;
+    }
     const existing = await this.d.groups.member(group.id, r.sender);
     const req: JoinRequest = {
       subId: r.subId,
@@ -1061,8 +1136,10 @@ export class GroupService {
       sender: r.sender,
       nearby: token === NEARBY_TOKEN,
       tokenHash,
+      topic: r.topic,
       at: now,
     };
+    this.held.set(r.subId, req);
     if (autoApprove || existing?.state === 'active') {
       await this.admit(req);
       return;
@@ -1081,6 +1158,7 @@ export class GroupService {
       if (c.state === 'active') {
         await this.pushCurrent(parsed, c);
       } else if (c.state === 'ended') {
+        this.held.delete(c.subId);
         this.setRt({ joinRequests: this.rt.joinRequests.filter(r => r.subId !== c.subId) });
       }
       return;
@@ -1089,10 +1167,15 @@ export class GroupService {
       return;
     }
     if (parsed.channel === GroupChannel.join && c.state === 'ended') {
+      // Only the attempt still open counts: a cancelled one can report its end after a retry.
+      if (!this.d.pubsub.getSnapshot().subscriptions.some(s => s.subId === c.subId)) {
+        return;
+      }
+      await this.d.pubsub.unsubscribe(c.subId);
       const group = await this.d.groups.get(parsed.groupId);
       if (group?.status === 'joining') {
         await this.d.groups.purge(group.id);
-        this.notice(`Could not join "${group.name}": the organizer did not accept the request`);
+        this.notice(`Could not join "${group.name}": ${joinEndReason(c.reason)}`);
       }
       return;
     }
@@ -1131,11 +1214,9 @@ export class GroupService {
         group.role === 'organizer' &&
         members.some(m => m.address === c.peer && m.state === 'active')
       ) {
-        await this.publish(
+        await this.publishWelcome(
+          group,
           groupTopic(group.id, GroupChannel.join, parsed.detail ?? undefined),
-          'welcome',
-          'welcome',
-          { g: group.id, name: group.name, o: group.organizer, mrev: group.memberRev },
         );
       }
       return;
