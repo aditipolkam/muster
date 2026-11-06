@@ -26,7 +26,8 @@ case "$mode" in
     ;;
   npm)
     version="${2:?usage: sdk-source.sh npm <version>}"
-    npm install "$PKG@$version" "${NPM_FLAGS[@]}"
+    # Exact pin: a native SDK upgrade is a deliberate bump, then pod install and a rebuild.
+    npm install "$PKG@$version" --save-exact "${NPM_FLAGS[@]}"
     ;;
   *)
     echo "usage: $0 local | npm <version>" >&2
