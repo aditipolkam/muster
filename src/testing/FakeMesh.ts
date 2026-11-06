@@ -113,6 +113,19 @@ export class FakeMesh implements MeshPort {
     this.set({ peers: [...this.snap.peers.filter(x => x.address !== address), p] });
   }
 
+  /**
+   * The SDK's approval timeout (`approval_timeout_ms`, 60 s under `restricted`): every request
+   * this provider was asked about and has not answered is rejected.
+   */
+  expireUnanswered(): void {
+    for (const [subId, sub] of this.held) {
+      if (sub.state === 'pending') {
+        this.held.delete(subId);
+        this.end(sub, 'approval_timeout');
+      }
+    }
+  }
+
   /** Simulates a restart of the SDK: subscriptions/registrations are gone, listeners are told. */
   simulateRestart(): void {
     this.registered.clear();
@@ -170,7 +183,19 @@ export class FakeMesh implements MeshPort {
       unsubscribe: async subId => {
         const sub = this.mine.get(subId);
         this.mine.delete(subId);
-        this.net.nodes.get(sub?.provider ?? '')?.held.delete(subId);
+        const prov = this.net.nodes.get(sub?.provider ?? '');
+        if (sub && prov?.held.delete(subId)) {
+          // The SDK tells the provider its follower left.
+          prov.subChanges.emit({
+            subId,
+            role: 'provider',
+            serviceId: sub.serviceId,
+            topic: sub.topic,
+            peer: sub.subscriber,
+            state: 'ended',
+            reason: 'unsubscribed',
+          });
+        }
         return !!sub;
       },
       publish: async (serviceId, topic, body, key) => {
@@ -218,9 +243,11 @@ export class FakeMesh implements MeshPort {
       },
       acceptSubscriber: async subId => {
         const sub = this.held.get(subId);
-        if (sub) {
-          this.net.nodes.get(sub.subscriber)?.activate(sub);
+        if (!sub || sub.state === 'ended') {
+          // The real SDK refuses a request it no longer holds (answered, timed out, withdrawn).
+          throw new Error(`no subscription awaiting an answer: ${subId}`);
         }
+        this.net.nodes.get(sub.subscriber)?.activate(sub);
       },
       rejectSubscriber: async subId => {
         const sub = this.held.get(subId);
