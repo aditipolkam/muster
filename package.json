@@ -16,7 +16,7 @@
   "dependencies": {
     "@maplibre/maplibre-react-native": "^11.5.1",
     "@noble/hashes": "^2.4.0",
-    "@offline-protocol/mesh-sdk": "file:../offline-protocol-sdk/bindings/react-native",
+    "@offline-protocol/mesh-sdk": "0.32.0",
     "@op-engineering/op-sqlite": "^19.0.3",
     "@protomaps/basemaps": "^5.7.2",
     "@react-navigation/bottom-tabs": "^7.21.0",
@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
-    "@babel/plugin-transform-export-namespace-from": "^8.0.1",
+    "@babel/plugin-transform-export-namespace-from": "^7.27.1",
     "@babel/preset-env": "^7.25.3",
     "@babel/runtime": "^7.25.0",
     "@react-native-community/cli": "20.0.0",
