@@ -103,18 +103,21 @@ sequenceDiagram
   O->>O: invitation QR: trailmesh://join?v=1&g=GROUP&o=ADDR&t=TOKEN&n=NAME
   J->>J: scan (or paste) the link; enter name
   J->>O: subscribeService(O, tm.group.1, tm/1/GROUP/j/TOKEN)
-  O->>O: service_subscribe_received: check token hash, expiry, single use, capacity
-  O->>O: ask "wants to join" (skipped if the invitation was created with auto-approve)
-  O->>J: acceptServiceSubscription; roster entry added (rev n)
-  O-->>J: welcome on that topic (when the provider-side subscription turns active)
+  O->>O: service_subscribe_received: check token hash, expiry, single use (or nearby window)
+  O->>J: acceptServiceSubscription at once (the SDK would reject it after 60 s unanswered)
+  O->>O: card "wants to join" (skipped if the invitation was created with auto-approve)
+  O->>O: Approve: capacity check, roster entry added (rev n)
+  O-->>J: welcome on that topic; Decline ends the subscription instead
+  J->>J: active; unsubscribes the join topic
   J->>O: subscribe to member, point, point-removed
   O->>J: subscribe to member, ack, sync (joiner accepts only its organizer)
   O-->>J: current roster and points; J sends hello (name) and, on activation, sync_request
 ```
 
+- The SDK admission and the organizer's approval are separate (ADR 0012). A valid request is admitted by the SDK straight away, which gives the joiner nothing: only the welcome is ever published on its token topic. The request then waits for the organizer for as long as the joiner keeps renewing, instead of the SDK's 60 s approval timeout. If the joiner cancels or its lease lapses, the provider-side `ended` event removes the card.
 - Token: 128 random bits (base32, 26 characters), single use, 24 h. Only its SHA-256 is stored. A used token admits only the device that used it (retry). The default is organizer approval; the organizer can choose auto-approve per invitation (the QR is shown face to face).
 - Capacity: 12 active members (each costs the organizer 3 subscriptions; ADR 0035 limits).
-- **Nearby discovery.** The organizer can open the group for 10 minutes. While open, a device that subscribes to the organizer's `tm/1/beacon` is accepted and receives `{g, n, o, until}`. A joiner that scans nearby peers lists such groups and can ask to join with the reserved token `open`; this **always needs approval**. When the window closes the organizer publishes a beacon with `until` in the past and rejects further beacon and `open` requests.
+- **Nearby discovery.** The organizer can open the group for 10 minutes. Every subscription to a device's `tm/1/beacon` is accepted, but a beacon `{g, n, o, until}` is published only while a group is open, so a follower learns nothing until then and hears it the moment the group opens. A joiner follows the beacon of each nearby peer (up to 8) once, lists open groups, and can ask to join with the reserved token `open`; this **always needs approval**. When the window closes the organizer publishes a beacon with `until` in the past and refuses further `open` requests.
 - Leaving: a member sends `leave` and deletes the group locally; the organizer marks it `left`, drops its follows and tells the others. The organizer "leaving" ends the group (`closed`); members keep the group read-only, its points leave the map. The organizer can remove a member (`removed`); the removed device purges the group.
 
 **Reconnection.** Subscriptions are not persisted by the SDK, so on every mesh start, on mesh state changes and every 30 s the app re-checks that each group has its subscriptions (retries per provider limited to once a minute because a pending subscription times out after 120 s). When a follower becomes active the provider re-publishes current state for that topic; a member also sends `sync_request` when it becomes active. An acknowledgment that could not be delivered is kept (`ack_published = 0`) and sent when the organizer follows the member again.

@@ -96,7 +96,9 @@ Same mechanism as the SDK's own examples (`examples/react-native-app/package.jso
 
 iOS: autolinking resolves `MeshSdk.podspec` at the package root, `pod install`. Android: autolinking via `react-native.config.js`. [SDK]
 
-### 2.4 Switching to the published package later (requirement)
+### 2.4 Switching to the published package (done: 0.32.0, ADR 0012)
+
+**Current mode: `npm`, `@offline-protocol/mesh-sdk@0.32.0` pinned.** Check it with `ls -la node_modules/@offline-protocol/`: `mesh-sdk` must be a directory, not a symlink. Editing the version in `package.json` alone is not enough: the lockfile entry keeps `"link": true` and `npm install` keeps the symlink to the checkout, whose natives may be older than its JavaScript. Always switch with the script.
 
 Three rules keep the swap to a one-line change:
 
