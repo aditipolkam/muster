@@ -147,6 +147,10 @@ export class GroupService {
   private discovering = false;
   private reconciling = false;
   private dirty = false;
+  /** The resume waiting in the queue, if any. Triggers that arrive meanwhile share it. */
+  private queuedResume: Promise<void> | null = null;
+  /** What resume depends on in the mesh snapshot; other snapshot changes do not schedule one. */
+  private lastMeshKey = '';
   /**
    * Organizer: join subscriptions the SDK has admitted and the organizer has not decided on.
    * The SDK admits a valid join request at once, so it cannot expire under its 60 s approval
@@ -179,11 +183,19 @@ export class GroupService {
       this.d.pubsub.onRequest(r => this.enqueue(() => this.handleRequest(r))),
       this.d.pubsub.onSubscriptionEvent(c => this.enqueue(() => this.handleSubEvent(c))),
       this.d.mesh.subscribe(() => {
-        if (this.running) {
-          void this.enqueue(() => this.resume());
+        // The snapshot changes on every SDK diagnostic, RSSI reading and link refresh. A resume
+        // per change queued them faster than they ran, and a join request waited behind them
+        // for longer than the SDK holds it.
+        const key = this.meshKey();
+        if (key !== this.lastMeshKey) {
+          this.lastMeshKey = key;
+          if (this.running) {
+            void this.scheduleResume();
+          }
         }
       }),
     );
+    this.lastMeshKey = this.meshKey();
     // A join that never completed before the app was closed cannot be resumed (the token is gone).
     const now = this.d.clock.now();
     for (const g of await this.d.groups.list()) {
@@ -192,11 +204,30 @@ export class GroupService {
       }
     }
     if (opts.poll !== false) {
-      this.timer = setInterval(() => void this.enqueue(() => this.resume()), POLL_MS);
+      this.timer = setInterval(() => void this.scheduleResume(), POLL_MS);
     }
     if (this.running) {
-      await this.enqueue(() => this.resume());
+      await this.scheduleResume();
     }
+  }
+
+  private meshKey(): string {
+    const s = this.d.mesh.getSnapshot();
+    const nearby = s.peers
+      .filter(p => p.state === 'nearby')
+      .map(p => p.address)
+      .sort()
+      .join(',');
+    return `${s.lifecycle}|${s.localAddress ?? ''}|${nearby}`;
+  }
+
+  /** Queues one resume; triggers that arrive before it starts are folded into it. */
+  private scheduleResume(): Promise<void> {
+    this.queuedResume ??= this.enqueue(async () => {
+      this.queuedResume = null;
+      await this.resume();
+    }).then(() => undefined);
+    return this.queuedResume;
   }
 
   stop(): void {
@@ -223,7 +254,7 @@ export class GroupService {
 
   /** Re-check subscriptions now (also run on every mesh change and on a timer). */
   resumeNow(): Promise<void> {
-    return this.enqueue(() => this.resume()).then(() => undefined);
+    return this.scheduleResume();
   }
 
   /** Ensure the service is provided and every group has its subscriptions. Safe to repeat. */
@@ -282,7 +313,7 @@ export class GroupService {
       rev,
       updatedAt: now,
     });
-    await this.enqueue(() => this.resume());
+    await this.scheduleResume();
     return ok((await this.d.groups.get(group.id)) ?? group);
   }
 
