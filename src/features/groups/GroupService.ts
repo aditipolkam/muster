@@ -67,6 +67,8 @@ import { appError, err, ok, Result } from '../../shared/result';
 
 const log = createLogger('groups');
 const RETRY_MS = 60_000;
+/** A provider in range that refused or dropped a subscription is asked again at most this often. */
+const NEARBY_RETRY_MS = 10_000;
 const POLL_MS = 30_000;
 const MAX_DISCOVERY_PEERS = 8;
 const STALE_JOINING_MS = 5 * 60_000;
@@ -463,7 +465,7 @@ export class GroupService {
       .peers.filter(p => p.state === 'nearby')
       .slice(0, MAX_DISCOVERY_PEERS);
     for (const p of peers) {
-      await this.ensureSub(p.address, BEACON_TOPIC, true);
+      await this.ensureSub(p.address, BEACON_TOPIC);
     }
   }
 
@@ -1101,8 +1103,10 @@ export class GroupService {
       return;
     }
     if (parsed.kind === 'beacon') {
-      const open = Object.keys(this.rt.nearbyUntil).some(g => this.nearbyOpen(g));
-      await (open ? this.d.pubsub.acceptRequest(r.subId) : this.d.pubsub.rejectRequest(r.subId));
+      // Always admitted: a beacon is only published while a group is open, so a follower learns
+      // nothing until then, and hears the beacon the moment the organizer opens. Refusing it made
+      // every joiner nearby subscribe again on each reconcile, crowding the link a join needs.
+      await this.d.pubsub.acceptRequest(r.subId);
       return;
     }
     const group = await this.d.groups.get(parsed.groupId);
@@ -1303,7 +1307,7 @@ export class GroupService {
           }
           if (g.role === 'member' && g.status === 'active') {
             for (const ch of ORGANIZER_CHANNELS) {
-              await this.ensureSub(g.organizer, groupTopic(g.id, ch), false);
+              await this.ensureSub(g.organizer, groupTopic(g.id, ch));
             }
           }
           if (g.role === 'organizer') {
@@ -1312,7 +1316,7 @@ export class GroupService {
                 continue;
               }
               for (const ch of MEMBER_CHANNELS) {
-                await this.ensureSub(m.address, groupTopic(g.id, ch), false);
+                await this.ensureSub(m.address, groupTopic(g.id, ch));
               }
             }
           }
@@ -1323,7 +1327,7 @@ export class GroupService {
     }
   }
 
-  private async ensureSub(provider: string, topic: string, force: boolean): Promise<void> {
+  private async ensureSub(provider: string, topic: string): Promise<void> {
     const tracked = this.d.pubsub
       .getSnapshot()
       .subscriptions.find(s => s.provider === provider && s.topic === topic);
@@ -1336,8 +1340,11 @@ export class GroupService {
       .getSnapshot()
       .peers.some(p => p.address === provider && p.state === 'nearby');
     // A provider that is not in range may still be reachable over several hops, so try anyway,
-    // but not more than once a minute (a pending subscription times out after 120 s).
-    if (!nearby && !force && now - (this.lastAttempt.get(key) ?? -Infinity) < RETRY_MS) {
+    // but not more than once a minute (a pending subscription times out after 120 s). One in range
+    // is asked at once the first time; after it ended one (refused, dropped), not straight away
+    // again, or every reconcile sends it another subscribe over the same Bluetooth link.
+    const wait = !nearby ? RETRY_MS : tracked ? NEARBY_RETRY_MS : 0;
+    if (now - (this.lastAttempt.get(key) ?? -Infinity) < wait) {
       return;
     }
     this.lastAttempt.set(key, now);
