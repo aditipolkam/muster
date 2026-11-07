@@ -20,6 +20,7 @@ The SDK calls themselves matched the 0.32.0 API, docs and native bridges.
 - The organizer keeps the admitted, undecided requests; one whose subscription ends (joiner cancelled, lease lapsed) is dropped, and approving it adds no one (`groups.request_expired`).
 - Resume runs only when the lifecycle, the local address or the set of nearby peers changes, and triggers that arrive while one is queued share it.
 - `PubSub.subscribe` subscribes again when the tracked subscription has ended. A joiner unsubscribes its join topic once it is in, and forgets an attempt that ended.
+- A join attempt the SDK ends for want of an answer (`session_timeout`, `no_reply`, `provider_unreachable`) is asked again, for up to 10 minutes from the first try; the organizer keeps one card per person, the newest. On devices, an Android joiner reaching an iPhone organizer took 3-4 minutes, longer than the SDK's 120 s pending timeout, because the Android-to-iPhone direction delivers each Bluetooth indication with no confirmation (`Notification flushed` never logged, so every fragment waits for the 250 ms watchdog) and the first MLS handshake is several KB. The session the first attempt built survives, so the retry's small subscribe frame gets through quickly. The slow direction itself is an SDK defect, not fixed here.
 - Beacon subscriptions are always accepted; the beacon is published only while open. `ensureSub` never re-subscribes a nearby provider within 10 s of the last try, a far one within 60 s.
 
 ## Consequences
