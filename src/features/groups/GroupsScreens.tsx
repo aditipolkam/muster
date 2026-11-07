@@ -526,7 +526,7 @@ export function JoinGroupScreen({ navigation, route }: Nav<'JoinGroup'>) {
               Waiting for the organizer to approve "{joining.name}"
             </Text>
             <Text variant="caption" muted style={{ textAlign: 'center' }}>
-              Stay close to the organizer. This can take a minute.
+              Stay close to the organizer. The first connection can take a few minutes.
             </Text>
             <Button
               small

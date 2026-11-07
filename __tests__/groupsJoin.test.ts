@@ -142,6 +142,60 @@ describe('join requests', () => {
   });
 });
 
+/** The SDK ending the joiner's open join subscription, as its 120 s pending timeout does. */
+function endJoinAttempt(bob: GroupNode, reason: string) {
+  const sub = bob.pubsub.getSnapshot().subscriptions.find(s => s.topic.includes('/j/'))!;
+  (bob.mesh as unknown as { subChanges: { emit(c: object): void } }).subChanges.emit({
+    subId: sub.subId,
+    role: 'consumer',
+    serviceId: sub.serviceId,
+    topic: sub.topic,
+    peer: 'off1org',
+    state: 'ended',
+    reason,
+  });
+  return sub;
+}
+
+describe('slow links', () => {
+  it('a join that times out before the organizer answers asks again, and still gets in', async () => {
+    const net = new FakeNetwork();
+    const { org, bob, g, invite, all } = await setup(net);
+    await bob.groups.joinFromInvite(invite);
+    await settle(all);
+    const first = endJoinAttempt(bob, 'no_reply');
+    await settle(all);
+    expect((await bob.groupsRepo.get(g.id))?.status).toBe('joining');
+    const second = bob.pubsub.getSnapshot().subscriptions.find(s => s.topic.includes('/j/'));
+    expect(second?.subId).toBeDefined();
+    expect(second?.subId).not.toBe(first.subId);
+    // One card for Bob, the newest attempt.
+    const cards = org.groups.getSnapshot().joinRequests.filter(r => r.sender === 'off1bob');
+    expect(cards.map(c => c.subId)).toEqual([second!.subId]);
+    await org.groups.approveJoin(cards[0]!.subId);
+    await settle(all);
+    expect((await bob.groupsRepo.get(g.id))?.status).toBe('active');
+  });
+
+  it('a "no" is not retried, and nor is a join older than the retry window', async () => {
+    const net = new FakeNetwork();
+    const { bob, g, invite, all } = await setup(net);
+    await bob.groups.joinFromInvite(invite);
+    await settle(all);
+    endJoinAttempt(bob, 'rejected');
+    await settle(all);
+    expect(await bob.groupsRepo.get(g.id)).toBeNull();
+
+    await bob.groups.joinFromInvite(invite);
+    await settle(all);
+    bob.clock.advance(11 * 60_000);
+    endJoinAttempt(bob, 'session_timeout');
+    await settle(all);
+    expect(await bob.groupsRepo.get(g.id)).toBeNull();
+    expect(bob.groups.getSnapshot().notices[0]?.text).toMatch(/could not be reached/);
+  });
+});
+
 describe('nearby discovery', () => {
   it('follows a nearby phone once, and hears its beacon the moment its group opens', async () => {
     const net = new FakeNetwork();

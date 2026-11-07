@@ -72,6 +72,10 @@ const NEARBY_RETRY_MS = 10_000;
 const POLL_MS = 30_000;
 const MAX_DISCOVERY_PEERS = 8;
 const STALE_JOINING_MS = 5 * 60_000;
+/** How long a joiner keeps asking an organizer that has not answered yet. */
+const JOIN_RETRY_WINDOW_MS = 10 * 60_000;
+/** SDK reasons meaning "no answer yet", not "no". */
+const RETRY_JOIN_REASONS = new Set(['session_timeout', 'no_reply', 'provider_unreachable']);
 const NOTICE_CAP = 5;
 
 function withoutKey<T>(o: Record<string, T>, key: string): Record<string, T> {
@@ -1179,7 +1183,18 @@ export class GroupService {
       await this.admit(req);
       return;
     }
-    this.setRt({ joinRequests: [...this.rt.joinRequests.filter(x => x.subId !== r.subId), req] });
+    // One card per person: a retried attempt replaces the one it follows, whose subscription the
+    // joiner has already given up (its lease lapses on its own).
+    const older = this.rt.joinRequests.filter(
+      x => x.groupId === req.groupId && x.sender === req.sender && x.subId !== r.subId,
+    );
+    older.forEach(x => this.held.delete(x.subId));
+    this.setRt({
+      joinRequests: [
+        ...this.rt.joinRequests.filter(x => x.subId !== r.subId && !older.includes(x)),
+        req,
+      ],
+    });
   }
 
   // ---- subscription lifecycle ----------------------------------------------------------------
@@ -1208,6 +1223,26 @@ export class GroupService {
       }
       await this.d.pubsub.unsubscribe(c.subId);
       const group = await this.d.groups.get(parsed.groupId);
+      if (
+        group?.status === 'joining' &&
+        RETRY_JOIN_REASONS.has(c.reason) &&
+        this.d.clock.now() - group.createdAt < JOIN_RETRY_WINDOW_MS
+      ) {
+        // The SDK gives a subscription 120 s to be answered. Over a slow link (Android replying to
+        // an iPhone took 3-4 minutes on devices) the first secure-session handshake alone takes
+        // longer, so the attempt ends just before the organizer would see it. The session it
+        // started survives, so asking again is a small frame that gets through quickly.
+        log.info(`join attempt ended (${c.reason}); asking ${shortAddress(group.organizer)} again`);
+        const again = await this.d.pubsub.subscribe({
+          provider: group.organizer,
+          serviceId: GROUP_SERVICE_ID,
+          topic: c.topic,
+          mode: 'latest',
+        });
+        if (again.ok) {
+          return;
+        }
+      }
       if (group?.status === 'joining') {
         await this.d.groups.purge(group.id);
         this.notice(`Could not join "${group.name}": ${joinEndReason(c.reason)}`);
