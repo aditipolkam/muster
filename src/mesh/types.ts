@@ -103,6 +103,8 @@ export type SubscribeRequest = {
   topic: string;
   mode: SubscriptionMode;
   sender: string;
+  /** What the subscriber attached to its request (`subscribeService` params); sealed, its claim. */
+  params: string;
 };
 
 /**
@@ -118,6 +120,7 @@ export interface ServiceTransport {
     serviceId: string,
     topic: string,
     mode: SubscriptionMode,
+    params?: string,
   ): Promise<string>;
   unsubscribe(subId: string): Promise<boolean>;
   publish(serviceId: string, topic: string, body: string, key?: string): Promise<PublishReport>;

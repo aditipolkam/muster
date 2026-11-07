@@ -336,6 +336,7 @@ export class SdkMeshAdapter implements MeshPort {
         topic: e.topic,
         mode: e.mode,
         sender: e.sender,
+        params: e.params ?? '',
       }),
     );
     return p;
@@ -406,8 +407,8 @@ export class SdkMeshAdapter implements MeshPort {
       registerService: (id, version) => s.registerService(id, version),
       unregisterService: id => s.unregisterService(id),
       setPolicy: (id, policy) => s.setServiceSubscriptionPolicy(id, { kind: policy }),
-      subscribe: (provider, serviceId, topic, mode) =>
-        s.subscribeService(provider, serviceId, topic, mode),
+      subscribe: (provider, serviceId, topic, mode, params) =>
+        s.subscribeService(provider, serviceId, topic, mode, params ?? ''),
       unsubscribe: subId => s.unsubscribeService(subId),
       publish: async (serviceId, topic, body, key) => {
         const r = await s.publishServiceUpdate(serviceId, topic, body, key);

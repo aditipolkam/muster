@@ -90,7 +90,14 @@ export type MessageHandler = (
   meta: { topic: string; from: string; key: string | null; snapshot: boolean },
 ) => void;
 
-type Desired = { provider: string; serviceId: string; topic: string; mode: SubscriptionMode };
+type Desired = {
+  provider: string;
+  serviceId: string;
+  topic: string;
+  mode: SubscriptionMode;
+  /** Attached to the request and seen by the provider (`service_subscribe_received.params`). */
+  params?: string;
+};
 
 const keyOf = (d: Desired) => `${d.provider}|${d.serviceId}|${d.topic}|${d.mode}`;
 
@@ -238,6 +245,7 @@ export class PubSub {
         d.serviceId,
         d.topic,
         d.mode,
+        d.params,
       );
       this.desired.set(k, { ...d, subId });
       this.upsertSub({ subId, ...d, state: 'pending', desired: true });
@@ -525,7 +533,7 @@ export class PubSub {
     }
     for (const [k, { subId: oldId, ...d }] of [...this.desired]) {
       try {
-        const subId = await s.subscribe(d.provider, d.serviceId, d.topic, d.mode);
+        const subId = await s.subscribe(d.provider, d.serviceId, d.topic, d.mode, d.params);
         this.desired.set(k, { ...d, subId });
         this.set({ subscriptions: this.snap.subscriptions.filter(x => x.subId !== oldId) });
         this.upsertSub({ subId, ...d, state: 'pending', desired: true });

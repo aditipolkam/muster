@@ -156,7 +156,7 @@ export class FakeMesh implements MeshPort {
       setPolicy: async (id, policy) => {
         this.registered.set(id, policy);
       },
-      subscribe: async (provider, serviceId, topic, mode) => {
+      subscribe: async (provider, serviceId, topic, mode, params = '') => {
         const subId = `${this.address}-sub-${++this.counter}`;
         const sub: Sub = {
           subId,
@@ -176,7 +176,7 @@ export class FakeMesh implements MeshPort {
         if (prov.registered.get(serviceId) === 'accept_all') {
           this.activate(sub);
         } else {
-          prov.requests.emit({ subId, serviceId, topic, mode, sender: this.address });
+          prov.requests.emit({ subId, serviceId, topic, mode, sender: this.address, params });
         }
         return subId;
       },

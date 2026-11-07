@@ -486,7 +486,7 @@ describe('ServiceTransport mapping to the SDK', () => {
       },
     ]);
     expect(requests).toEqual([
-      { subId: 's2', serviceId: 'svc', topic: 't', mode: 'log', sender: 'off1q' },
+      { subId: 's2', serviceId: 'svc', topic: 't', mode: 'log', sender: 'off1q', params: '' },
     ]);
   });
 

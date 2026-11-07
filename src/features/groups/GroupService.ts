@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { GroupsRepo } from '../../data/repositories/GroupsRepo';
 import type { MeetingPointsRepo } from '../../data/repositories/MeetingPointsRepo';
 import {
@@ -98,11 +99,24 @@ function joinEndReason(reason: string): string {
   }
 }
 
+const JoinParamsSchema = z.object({ name: MemberNameSchema });
+
+function nameFromParams(params: string): string | null {
+  try {
+    const p = JoinParamsSchema.safeParse(JSON.parse(params));
+    return p.success ? p.data.name : null;
+  } catch {
+    return null;
+  }
+}
+
 export type JoinRequest = {
   subId: string;
   groupId: string;
   groupName: string;
   sender: string;
+  /** The name the joiner sent with its request; its claim, shown until its `hello` confirms it. */
+  name: string | null;
   nearby: boolean;
   tokenHash: string | null;
   /** The join topic the request came in on; the welcome goes back on it. */
@@ -432,6 +446,7 @@ export class GroupService {
       serviceId: GROUP_SERVICE_ID,
       topic: groupTopic(groupId, GroupChannel.join, token),
       mode: 'latest',
+      params: await this.joinParams(),
     });
     if (!sub.ok) {
       await this.d.groups.purge(groupId);
@@ -441,6 +456,15 @@ export class GroupService {
     }
     this.lastAttempt.set(`${organizer}|${groupId}`, this.d.clock.now());
     return ok(group);
+  }
+
+  /**
+   * The joiner's name, sent with the join request so the organizer's card can say who is asking.
+   * Before this the card showed an address until the joiner's `hello` arrived, after admission.
+   */
+  private async joinParams(): Promise<string> {
+    const name = MemberNameSchema.safeParse(await this.d.displayName());
+    return name.success ? JSON.stringify({ name: name.data }) : '';
   }
 
   /** Joiner: look for groups that organizers have opened to people nearby. */
@@ -529,7 +553,7 @@ export class GroupService {
       const m: GroupMember = {
         groupId: group.id,
         address: req.sender,
-        name: existing?.name ?? defaultMemberName(req.sender),
+        name: existing?.name ?? req.name ?? defaultMemberName(req.sender),
         role: 'member',
         state: 'active',
         rev,
@@ -1173,6 +1197,7 @@ export class GroupService {
       groupId: group.id,
       groupName: group.name,
       sender: r.sender,
+      name: nameFromParams(r.params),
       nearby: token === NEARBY_TOKEN,
       tokenHash,
       topic: r.topic,
@@ -1238,6 +1263,7 @@ export class GroupService {
           serviceId: GROUP_SERVICE_ID,
           topic: c.topic,
           mode: 'latest',
+          params: await this.joinParams(),
         });
         if (again.ok) {
           return;

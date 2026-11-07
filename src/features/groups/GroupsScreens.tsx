@@ -296,7 +296,7 @@ export function GroupsScreen({ navigation }: Nav<'GroupsList'>) {
                 testID="join-request"
               >
                 <Text style={{ fontWeight: '700' }}>
-                  {shortAddress(r.sender)} wants to join "{r.groupName}"
+                  {r.name ?? shortAddress(r.sender)} wants to join "{r.groupName}"
                 </Text>
                 <Text variant="caption" muted>
                   {r.nearby
@@ -936,7 +936,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
         .map(r => (
           <Banner
             key={r.subId}
-            title={`${shortAddress(r.sender)} wants to join`}
+            title={`${r.name ?? shortAddress(r.sender)} wants to join`}
             actionLabel="Approve"
             onAction={() => void service.approveJoin(r.subId)}
             onDismiss={() => void service.rejectJoin(r.subId)}

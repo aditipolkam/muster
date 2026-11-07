@@ -26,6 +26,28 @@ const requestFrom = (org: GroupNode, sender: string) =>
   org.groups.getSnapshot().joinRequests.find(r => r.sender === sender);
 
 describe('join requests', () => {
+  it('name the joiner on the card, and the roster takes that name on approval', async () => {
+    const net = new FakeNetwork();
+    const { org, bob, g, invite, all } = await setup(net);
+    await bob.groups.joinFromInvite(invite);
+    await settle(all);
+    const req = requestFrom(org, 'off1bob')!;
+    expect(req.name).toBe('Bob');
+    // Nothing gets through after approval, so no hello: the roster still says Bob, not a placeholder.
+    net.lossRate = 1;
+    await org.groups.approveJoin(req.subId);
+    expect((await org.groupsRepo.member(g.id, 'off1bob'))?.name).toBe('Bob');
+  });
+
+  it('a name the joiner sends that is not valid is ignored', async () => {
+    const net = new FakeNetwork();
+    const { org, bob, invite, all } = await setup(net);
+    await bob.kv.set('profile.name', 'x'.repeat(500));
+    await bob.groups.joinFromInvite(invite);
+    await settle(all);
+    expect(requestFrom(org, 'off1bob')?.name).toBeNull();
+  });
+
   it('survive the SDK approval timeout: the organizer can approve minutes later', async () => {
     const net = new FakeNetwork();
     const { org, bob, g, invite, all } = await setup(net);
@@ -62,6 +84,7 @@ describe('join requests', () => {
       expect.any(String),
       expect.stringContaining('/j/'),
       'latest',
+      JSON.stringify({ name: 'Bob' }),
     );
     const req = requestFrom(org, 'off1bob');
     expect(req).toBeDefined();
