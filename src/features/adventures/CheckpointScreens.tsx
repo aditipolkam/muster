@@ -79,14 +79,38 @@ export function CheckpointEditorScreen({ navigation, route }: Nav<'CheckpointEdi
     });
   }, [adventureId, checkpointId, adventuresRepo]);
 
+  // Back from "Select Location" on the map.
+  const picked = route.params.picked;
+  useEffect(() => {
+    if (picked) {
+      setPos({ lat: picked.lat, lon: picked.lon });
+    }
+  }, [picked?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const chooseOnMap = () =>
+    (navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined)?.navigate(
+      'Map',
+      {
+        pick: {
+          adventureId,
+          checkpointId,
+          type: 'checkpoint',
+          lat: pos?.lat,
+          lon: pos?.lon,
+          includeRegion: false,
+        },
+        nonce: Date.now(),
+      },
+    );
+
   const save = async () => {
     if (!pos) {
-      setError('Choose where it is: use your location, or long-press the map.');
+      setError('Choose where it is: search on the map, or use your location.');
       return;
     }
     setBusy(true);
     setError(null);
-    const body = { name, description, kind, ...pos };
+    const body = { name, description, kind, region: null, ...pos };
     const r = checkpointId
       ? await service.updateCheckpoint(adventureId, checkpointId, body)
       : await service.addCheckpoint(adventureId, body);
@@ -166,6 +190,13 @@ export function CheckpointEditorScreen({ navigation, route }: Nav<'CheckpointEdi
             Saved on this device. Group members get it only if this is a group adventure.
           </Text>
         </Card>
+        <Button
+          testID="select-location"
+          variant="secondary"
+          icon="search"
+          label="Search or choose on the map"
+          onPress={chooseOnMap}
+        />
         <Button
           testID="checkpoint-use-location"
           variant="secondary"

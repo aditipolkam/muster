@@ -40,6 +40,8 @@ type Props = {
   /** Straight guidance line to the navigation target, and the temporary pin it points at. */
   guide: FeatureCollection;
   pin: FeatureCollection;
+  /** The offline map region being chosen for a phase, as a rectangle. */
+  regionBox: FeatureCollection;
   onRegionChange: (e: ViewStateChangeEvent) => void;
   onStyleLoaded: () => void;
   onLoadFailed: () => void;
@@ -97,6 +99,19 @@ export function MapCanvas(p: Props) {
           type="line"
           layout={{ 'line-cap': 'butt', 'line-join': 'round' }}
           paint={{ 'line-color': MEETING, 'line-width': 4, 'line-dasharray': [2, 1.5] }}
+        />
+      </GeoJSONSource>
+
+      <GeoJSONSource id="region-box" data={p.regionBox}>
+        <Layer
+          id="region-box-fill"
+          type="fill"
+          paint={{ 'fill-color': PRIMARY, 'fill-opacity': 0.1 }}
+        />
+        <Layer
+          id="region-box-line"
+          type="line"
+          paint={{ 'line-color': PRIMARY, 'line-width': 2, 'line-dasharray': [3, 2] }}
         />
       </GeoJSONSource>
 

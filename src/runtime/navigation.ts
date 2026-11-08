@@ -1,4 +1,27 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { PhaseType } from '../domain/adventures/model';
+
+/** A place (and optionally its offline map region) chosen on the map for a phase. */
+export type PickedLocation = {
+  lat: number;
+  lon: number;
+  /** [west, south, east, north], or null when the phase has no map region. */
+  region: [number, number, number, number] | null;
+  nonce: number;
+};
+
+/** Asks the map to choose a place for a phase and send it back to the editor. */
+export type PickLocationRequest = {
+  adventureId: string;
+  checkpointId?: string;
+  type: PhaseType;
+  /** Where to start: the phase's current place, if it has one. */
+  lat?: number;
+  lon?: number;
+  /** Also ask for the offline map region round the place. */
+  includeRegion: boolean;
+  region?: [number, number, number, number] | null;
+};
 
 /** Profile tab: identity, plus the offline-maps, saved-places, mesh and settings screens. */
 export type ProfileStackParamList = {
@@ -15,7 +38,21 @@ export type ActivityStackParamList = {
   /** Edit an existing adventure, or plan a new one (optionally for a group you organize). */
   AdventureEditor: { adventureId?: string; groupId?: string } | undefined;
   AdventureDetails: { adventureId: string };
-  CheckpointEditor: { adventureId: string; checkpointId?: string; lat?: number; lon?: number };
+  CheckpointEditor: {
+    adventureId: string;
+    checkpointId?: string;
+    lat?: number;
+    lon?: number;
+    /** The kind of phase being added (the picker's choice). */
+    type?: PhaseType;
+    /** Coming back from "Select Location" on the map. */
+    picked?: PickedLocation;
+  };
+  /** "What kind of phase is this?" */
+  AddPhase: { adventureId: string };
+  PhaseAdded: { adventureId: string; checkpointId: string };
+  /** Shown once, after a person finishes their last phase. */
+  ActivityCompleted: { adventureId: string };
   CheckpointDetails: { adventureId: string; checkpointId: string };
   AdventureSummary: { adventureId: string; celebrate?: boolean };
   Achievements: undefined;
@@ -46,6 +83,8 @@ export type RootTabParamList = {
         /** Show an adventure's checkpoints and recorded route on the map. */
         showAdventure?: string;
         nonce?: number;
+        /** Choose a place for a phase: shows the pin-placing flow instead of the usual map. */
+        pick?: PickLocationRequest;
       }
     | undefined;
   Groups: NavigatorScreenParams<GroupsStackParamList> | undefined;
