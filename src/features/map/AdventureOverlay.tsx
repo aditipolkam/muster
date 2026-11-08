@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { placeOf } from '../../domain/adventures/model';
 import { thinRoute } from '../../domain/adventures/track';
 import { boundsOf } from '../../domain/adventures/route';
 import { useAdventureDetail, useAdventureRuntime, useCurrentAdventure } from '../../runtime/hooks';
@@ -55,15 +56,21 @@ export function useAdventureMapState(showId: string | undefined) {
   const pins: CheckpointPin[] = useMemo(
     () =>
       detail
-        ? detail.checkpoints.map(cp => ({
-            id: cp.id,
-            name: cp.name,
-            lat: cp.lat,
-            lon: cp.lon,
-            reached: detail.completions.some(
-              x => x.checkpointId === cp.id && x.address === detail.self,
-            ),
-          }))
+        ? detail.checkpoints.flatMap(cp => {
+            const place = placeOf(cp);
+            return place
+              ? [
+                  {
+                    id: cp.id,
+                    name: cp.name,
+                    ...place,
+                    reached: detail.completions.some(
+                      x => x.checkpointId === cp.id && x.address === detail.self,
+                    ),
+                  },
+                ]
+              : [];
+          })
         : [],
     [detail],
   );

@@ -11,7 +11,6 @@ import {
   nextCheckpoint,
   progressCounts,
   progressLabel,
-  TimelineEntry,
 } from '../../domain/adventures/stats';
 import { formatDistanceIn } from '../../domain/geo/pace';
 import { canEditAdventure } from '../../domain/adventures/authorize';
@@ -49,7 +48,14 @@ import {
 import { AnimatedProgress } from '../../ui/motion';
 import { radius, space, useTheme } from '../../ui/theme';
 import { useNow } from '../../ui/useNow';
-import { KIND_ICON, STATUS_LABEL, STATUS_TONE, formatDate, formatTime } from './format';
+import {
+  KIND_ICON,
+  STATUS_LABEL,
+  STATUS_TONE,
+  formatDate,
+  formatTime,
+  timelineText,
+} from './format';
 
 type Nav<T extends keyof ActivityStackParamList> = NativeStackScreenProps<
   ActivityStackParamList,
@@ -386,6 +392,7 @@ export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEdito
 // ---- Details and active progress ---------------------------------------------------------------------
 
 const ACTION_LABEL: Record<AdventureAction, string> = {
+  publish: 'Publish',
   start: 'Start adventure',
   pause: 'Pause',
   resume: 'Resume',
@@ -821,27 +828,7 @@ function Metric({ label, value, testID }: { label: string; value: string; testID
   );
 }
 
-export function timelineText(
-  e: TimelineEntry,
-  nameOf: (addr: string) => string,
-  cps: { id: string; name: string }[],
-): string {
-  const cp = cps.find(c => c.id === e.checkpointId)?.name ?? 'a checkpoint';
-  switch (e.kind) {
-    case 'created':
-      return 'Adventure planned';
-    case 'status':
-      return `Adventure ${e.status === 'active' ? 'started or resumed' : e.status}`;
-    case 'joined':
-      return `${nameOf(e.address ?? '')} joined`;
-    case 'left':
-      return `${nameOf(e.address ?? '')} left`;
-    case 'reached':
-      return `${nameOf(e.address ?? '')} reached ${cp}`;
-    case 'all_reached':
-      return `Everyone has reached ${cp}`;
-  }
-}
+export { timelineText } from './format';
 
 const styles = StyleSheet.create({
   list: { padding: space.gutter, paddingTop: 0, gap: space.md, paddingBottom: space.xxl },

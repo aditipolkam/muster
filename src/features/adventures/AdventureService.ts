@@ -1,5 +1,6 @@
 import type { AdventuresRepo } from '../../data/repositories/AdventuresRepo';
 import type { GroupsRepo } from '../../data/repositories/GroupsRepo';
+import { z } from 'zod';
 import {
   authorizeAdventureInbound,
   canEditAdventure,
@@ -31,14 +32,22 @@ import {
   CheckpointWireSchema,
   Completion,
   MAX_CHECKPOINTS,
+  MapArea,
+  MapAreaWireSchema,
   MAX_COMPLETIONS_PER_ADVENTURE,
   MilestoneSchema,
   Participant,
   ParticipantSchema,
+  ParticipantState,
   PersonalProgress,
+  placeOf,
   ReachedSchema,
   SOLO_ADDRESS,
+  toMapArea,
+  toMapAreaWire,
 } from '../../domain/adventures/model';
+import { areaForBoxes, boxAround } from '../../domain/adventures/area';
+import { isPhaseUnlocked, phaseProgress } from '../../domain/adventures/phases';
 import { checkpointStatuses } from '../../domain/adventures/stats';
 import type { CoverageRegion } from '../../domain/maps/coverage';
 import { covers } from '../../domain/maps/coverage';
@@ -115,6 +124,7 @@ const defaultProgress = (): PersonalProgress => ({
   offlineMapsCovered: null,
   networkUsed: false,
   meshExchangeAt: null,
+  finishedAt: null,
 });
 
 /**
@@ -229,7 +239,13 @@ export class AdventureService {
 
   async createAdventure(
     input: AdventureInput,
-    opts: { groupId?: string } = {},
+    opts: {
+      groupId?: string;
+      /** Plan a group activity as an unpublished draft (organizer only). */
+      draft?: boolean;
+      ordered?: boolean;
+      region?: MapArea | null;
+    } = {},
   ): Promise<Result<Adventure>> {
     const parsed = AdventureInputSchema.safeParse(input);
     if (!parsed.success) {
@@ -249,16 +265,27 @@ export class AdventureService {
         );
       }
     }
+    if (opts.draft && !opts.groupId) {
+      return err(appError('adventures.solo', 'Activities belong to a group.'));
+    }
+    if (opts.region && !MapAreaWireSchema.safeParse(toMapAreaWire(opts.region)).success) {
+      return err(appError('adventures.invalid_area', 'That map area is too large or empty.'));
+    }
     const now = this.d.clock.now();
     const start = parsed.data.start;
+    const draft = opts.draft === true;
     const adv: Adventure = {
       id: this.d.newId(),
       groupId: opts.groupId ?? null,
       owner: opts.groupId ? me : null,
       name: parsed.data.name,
       description: parsed.data.description,
-      status: 'planned',
-      rev: 1,
+      // A draft is revision 0: nothing has been shared yet. Publishing writes revision 1.
+      status: draft ? 'draft' : 'planned',
+      rev: draft ? 0 : 1,
+      activity: draft,
+      ordered: draft && opts.ordered === true,
+      region: draft ? opts.region ?? null : null,
       startLat: start?.lat ?? null,
       startLon: start?.lon ?? null,
       startLabel: start?.label ?? null,
@@ -274,6 +301,9 @@ export class AdventureService {
       );
     }
     await this.d.repo.save(adv);
+    if (draft) {
+      return ok(adv); // private: no log entry, no participation, nothing sent
+    }
     await this.d.repo.addLog({ adventureId: adv.id, rev: 1, status: 'planned', at: now });
     if (adv.groupId && me) {
       // The organizer who plans it takes part by default; everyone else chooses for themselves.
@@ -292,7 +322,11 @@ export class AdventureService {
     return ok(adv);
   }
 
-  async updateAdventure(id: string, input: AdventureInput): Promise<Result<Adventure>> {
+  async updateAdventure(
+    id: string,
+    input: AdventureInput,
+    extra: { ordered?: boolean; region?: MapArea | null } = {},
+  ): Promise<Result<Adventure>> {
     const adv = await this.d.repo.get(id);
     const parsed = AdventureInputSchema.safeParse(input);
     if (!adv || isFinal(adv.status)) {
@@ -308,7 +342,14 @@ export class AdventureService {
         appError('adventures.not_organizer', 'Only the organizer can change this adventure.'),
       );
     }
+    if (this.isLockedActivity(adv)) {
+      return err(this.lockedError());
+    }
+    if (extra.region && !MapAreaWireSchema.safeParse(toMapAreaWire(extra.region)).success) {
+      return err(appError('adventures.invalid_area', 'That map area is too large or empty.'));
+    }
     const start = parsed.data.start;
+    const draft = adv.status === 'draft';
     const next: Adventure = {
       ...adv,
       name: parsed.data.name,
@@ -316,7 +357,10 @@ export class AdventureService {
       startLat: start?.lat ?? null,
       startLon: start?.lon ?? null,
       startLabel: start?.label ?? null,
-      rev: adv.rev + 1,
+      ...(draft && extra.ordered !== undefined ? { ordered: extra.ordered } : {}),
+      ...(draft && extra.region !== undefined ? { region: extra.region } : {}),
+      // A draft has not been shared, so editing it does not make a new revision.
+      rev: draft ? adv.rev : adv.rev + 1,
     };
     if (!this.fitsHeader(next, this.d.clock.now())) {
       return err(
@@ -324,6 +368,9 @@ export class AdventureService {
       );
     }
     await this.d.repo.save(next);
+    if (draft) {
+      return ok(next);
+    }
     await this.d.repo.addLog({
       adventureId: id,
       rev: next.rev,
@@ -336,6 +383,23 @@ export class AdventureService {
     return ok(next);
   }
 
+  /** A published activity cannot be edited: cancel it and publish a new one. */
+  private isLockedActivity(adv: Adventure): boolean {
+    return adv.activity === true && adv.status !== 'draft';
+  }
+
+  private lockedError() {
+    return appError(
+      'adventures.published',
+      'A published activity cannot be changed. Cancel it and publish a new one.',
+    );
+  }
+
+  /** Is this adventure's shared state something other devices should hear about? */
+  private isShared(adv: Adventure): boolean {
+    return adv.groupId !== null && adv.status !== 'draft';
+  }
+
   private async canEdit(adv: Adventure): Promise<boolean> {
     const group = adv.groupId ? await this.d.groups.get(adv.groupId) : null;
     return canEditAdventure(adv, group, this.me);
@@ -346,7 +410,7 @@ export class AdventureService {
     if (!adv) {
       return ok(undefined);
     }
-    if (!isFinal(adv.status) && adv.status !== 'planned') {
+    if (!isFinal(adv.status) && adv.status !== 'planned' && adv.status !== 'draft') {
       return err(appError('adventures.running', 'Finish or cancel the adventure first.'));
     }
     await this.d.repo.delete(id);
@@ -367,6 +431,9 @@ export class AdventureService {
     if (!(await this.canEdit(adv))) {
       return err(appError('adventures.not_organizer', 'Only the organizer can add checkpoints.'));
     }
+    if (this.isLockedActivity(adv)) {
+      return err(this.lockedError());
+    }
     if ((await this.d.repo.checkpoints(adventureId)).length >= MAX_CHECKPOINTS) {
       return err(
         appError(
@@ -383,15 +450,36 @@ export class AdventureService {
       name: parsed.data.name,
       description: parsed.data.description,
       kind: parsed.data.kind,
-      lat: parsed.data.lat,
-      lon: parsed.data.lon,
+      lat: parsed.data.lat ?? null,
+      lon: parsed.data.lon ?? null,
+      task: parsed.data.task,
+      ...this.phaseOptions(parsed.data),
       deleted: false,
     };
     await this.d.repo.applyCheckpoint(cp);
-    if (adv.groupId) {
+    if (this.isShared(adv)) {
       void this.enqueue(() => this.publishCheckpoint(adv.groupId as string, cp));
     }
     return ok(cp);
+  }
+
+  /** The type, radius, photo rule and map region of a phase from validated input. */
+  private phaseOptions(
+    d: z.output<typeof CheckpointInputSchema>,
+  ): Pick<Checkpoint, 'type' | 'radiusM' | 'requirePhoto' | 'region'> {
+    const hasPlace = d.lat != null && d.lon != null;
+    return {
+      type: d.type,
+      radiusM: d.radiusM ?? null,
+      // A photo phase is its photo: it cannot be switched off.
+      requirePhoto: d.requirePhoto || d.type === 'photo',
+      // No region key means "use the default box round the place"; null means "none".
+      region: !hasPlace
+        ? null
+        : d.region === undefined
+        ? boxAround({ lat: d.lat as number, lon: d.lon as number })
+        : d.region,
+    };
   }
 
   async updateCheckpoint(
@@ -413,20 +501,46 @@ export class AdventureService {
         appError('adventures.not_organizer', 'Only the organizer can change checkpoints.'),
       );
     }
+    if (this.isLockedActivity(adv)) {
+      return err(this.lockedError());
+    }
     const next: Checkpoint = {
       ...cur,
       rev: cur.rev + 1,
       name: parsed.data.name,
       description: parsed.data.description,
       kind: parsed.data.kind,
-      lat: parsed.data.lat,
-      lon: parsed.data.lon,
+      lat: parsed.data.lat ?? null,
+      lon: parsed.data.lon ?? null,
+      task: parsed.data.task,
+      ...this.phaseOptions(parsed.data),
     };
     await this.d.repo.applyCheckpoint(next);
-    if (adv.groupId) {
+    if (this.isShared(adv)) {
       void this.enqueue(() => this.publishCheckpoint(adv.groupId as string, next));
     }
     return ok(next);
+  }
+
+  /** Swap a draft phase with its neighbour. Only the organizer's private draft can be reordered. */
+  async movePhase(adventureId: string, id: string, direction: -1 | 1): Promise<Result<void>> {
+    const adv = await this.d.repo.get(adventureId);
+    if (!adv || adv.status !== 'draft') {
+      return err(this.lockedError());
+    }
+    if (!(await this.canEdit(adv))) {
+      return err(appError('adventures.not_organizer', 'Only the organizer can reorder phases.'));
+    }
+    const list = await this.d.repo.checkpoints(adventureId);
+    const i = list.findIndex(c => c.id === id);
+    const j = i + direction;
+    if (i < 0 || j < 0 || j >= list.length) {
+      return ok(undefined);
+    }
+    const [a, b] = [list[i] as Checkpoint, list[j] as Checkpoint];
+    await this.d.repo.applyCheckpoint({ ...a, ord: b.ord, rev: a.rev + 1 });
+    await this.d.repo.applyCheckpoint({ ...b, ord: a.ord, rev: b.rev + 1 });
+    return ok(undefined);
   }
 
   async removeCheckpoint(adventureId: string, id: string): Promise<Result<void>> {
@@ -440,9 +554,12 @@ export class AdventureService {
         appError('adventures.not_organizer', 'Only the organizer can remove checkpoints.'),
       );
     }
+    if (this.isLockedActivity(adv)) {
+      return err(this.lockedError());
+    }
     const next = { ...cur, rev: cur.rev + 1, deleted: true };
     await this.d.repo.applyCheckpoint(next);
-    if (adv.groupId) {
+    if (this.isShared(adv)) {
       void this.enqueue(() => this.publishCheckpoint(adv.groupId as string, next));
     }
     return ok(undefined);
@@ -451,7 +568,7 @@ export class AdventureService {
   // ---- lifecycle -------------------------------------------------------------------------------
 
   async act(id: string, action: AdventureAction): Promise<Result<Adventure>> {
-    const adv = await this.d.repo.get(id);
+    let adv = await this.d.repo.get(id);
     if (!adv) {
       return err(appError('adventures.missing', 'That adventure no longer exists.'));
     }
@@ -472,6 +589,33 @@ export class AdventureService {
         ),
       );
     }
+    if (action === 'publish') {
+      const live = await this.d.repo.checkpoints(id);
+      if (live.length === 0) {
+        return err(appError('adventures.no_phases', 'Add at least one phase before publishing.'));
+      }
+      // One download for the whole activity: every phase's map region merged.
+      const boxes = live.flatMap(c => (c.region ? [c.region] : []));
+      if (boxes.length > 0) {
+        const area = areaForBoxes(boxes, adv.name);
+        if (!area.ok) {
+          return err(
+            appError(
+              'adventures.region_too_wide',
+              'The map regions are too far apart for one download. Remove the map region from some phases.',
+            ),
+          );
+        }
+        adv = { ...adv, region: area.area };
+      }
+      if (!(await this.fitsPublished(adv, live))) {
+        return err(appError('adventures.too_large', 'Some text is too long to send to the group.'));
+      }
+      const group = adv.groupId ? await this.d.groups.get(adv.groupId) : null;
+      if (!group || group.status !== 'active') {
+        return err(appError('adventures.group_closed', 'This group is no longer active.'));
+      }
+    }
     if (action === 'start' && adv.groupId === null) {
       const others = await this.runningAdventures();
       if (others.some(o => o.groupId === null)) {
@@ -482,10 +626,12 @@ export class AdventureService {
     }
     const now = this.d.clock.now();
     const joined = await this.isJoined(adv);
+    const wasDraft = adv.status === 'draft';
     let updated: Adventure = {
       ...adv,
       status: next,
-      rev: adv.rev + 1,
+      // Publishing writes revision 1. Cancelling a draft shares nothing, so no revision either.
+      rev: wasDraft ? (action === 'publish' ? 1 : adv.rev) : adv.rev + 1,
       startedAt: adv.startedAt ?? (next === 'active' ? now : null),
       endedAt: isFinal(next) ? now : adv.endedAt,
       progress: advanceProgress(
@@ -499,22 +645,53 @@ export class AdventureService {
       updated = await this.finalize(updated, joined);
     }
     await this.d.repo.save(updated);
+    if (wasDraft && action !== 'publish') {
+      return ok(updated); // a cancelled draft was never shared
+    }
     await this.d.repo.addLog({ adventureId: id, rev: updated.rev, status: next, at: now });
     if (next === 'completed' && joined) {
       this.celebrate({ kind: 'adventure_complete', adventureId: id });
     }
     if (updated.groupId) {
-      void this.enqueue(() => this.publishHeader(updated));
+      const groupId = updated.groupId;
+      void this.enqueue(async () => {
+        if (action === 'publish') {
+          await this.publishAll(groupId, id);
+        } else {
+          await this.publishHeader(updated);
+        }
+      });
     }
     return ok(updated);
   }
 
+  /** Would the published header and every phase fit in an envelope? */
+  private async fitsPublished(adv: Adventure, phases: Checkpoint[]): Promise<boolean> {
+    const now = this.d.clock.now();
+    if (!this.fitsHeader({ ...adv, rev: 1, status: 'active' }, now)) {
+      return false;
+    }
+    return phases.every(
+      cp =>
+        encodeEnvelope(
+          createEnvelope(
+            { type: 'checkpoint', author: this.me ?? '', payload: this.checkpointPayload(cp) },
+            { clock: this.d.clock, newId: this.d.newId },
+          ),
+        ).ok,
+    );
+  }
+
   /** Settle what can only be decided at the end: where the trip ended, and map coverage. */
   private async finalize(adv: Adventure, joined: boolean): Promise<Adventure> {
-    const out: Adventure = { ...adv, tzOffsetMin: this.d.tzOffsetMin() };
+    // A person who already finished keeps the time zone they finished in.
+    const out: Adventure = {
+      ...adv,
+      tzOffsetMin: adv.progress.finishedAt != null ? adv.tzOffsetMin : this.d.tzOffsetMin(),
+    };
     if (joined && adv.status !== 'cancelled') {
       const regions = await this.d.installedRegions();
-      const cps = (await this.d.repo.checkpoints(adv.id)).map(c => ({ lat: c.lat, lon: c.lon }));
+      const cps = (await this.d.repo.checkpoints(adv.id)).flatMap(c => placeOf(c) ?? []);
       const places =
         adv.startLat !== null && adv.startLon !== null
           ? [{ lat: adv.startLat, lon: adv.startLon }, ...cps]
@@ -537,7 +714,7 @@ export class AdventureService {
     return this.setParticipation(id, 'left');
   }
 
-  private async setParticipation(id: string, state: 'joined' | 'left'): Promise<Result<void>> {
+  private async setParticipation(id: string, state: ParticipantState): Promise<Result<void>> {
     const adv = await this.d.repo.get(id);
     const me = this.me;
     if (!adv || !adv.groupId || !me) {
@@ -546,9 +723,15 @@ export class AdventureService {
     if (isFinal(adv.status)) {
       return err(appError('adventures.closed', 'This adventure is over.'));
     }
+    if (adv.status === 'draft') {
+      return err(appError('adventures.draft', 'Publish the activity before starting it.'));
+    }
     const cur = await this.d.repo.participant(id, me);
     if (cur?.state === state) {
       return ok(undefined);
+    }
+    if (cur?.state === 'done') {
+      return err(appError('adventures.finished', 'You already finished this activity.'));
     }
     const now = this.d.clock.now();
     const isOwner = adv.owner === me;
@@ -606,6 +789,19 @@ export class AdventureService {
     if (!(await this.isJoined(adv))) {
       return err(appError('adventures.not_joined', 'Join the adventure to mark checkpoints.'));
     }
+    if (cp.requirePhoto && !(await this.d.repo.phaseRecord(adventureId, checkpointId))?.photoUri) {
+      return err(appError('adventures.photo_required', 'Add a photo to complete this phase.'));
+    }
+    if (adv.ordered) {
+      const mine = new Set(
+        (await this.d.repo.completions(adventureId))
+          .filter(x => x.address === self)
+          .map(x => x.checkpointId),
+      );
+      if (!isPhaseUnlocked(true, await this.d.repo.checkpoints(adventureId), mine, checkpointId)) {
+        return err(appError('adventures.locked', 'Finish the earlier phases first.'));
+      }
+    }
     const now = this.d.clock.now();
     const isOwner = !adv.groupId || adv.owner === self;
     const c: Completion = {
@@ -640,7 +836,64 @@ export class AdventureService {
         }
       });
     }
+    if (adv.activity && adv.groupId) {
+      await this.finishIfDone(adv, self);
+    }
     return ok(c);
+  }
+
+  /** What this address last said about taking part (joined, left, done), or null. */
+  async participantState(adventureId: string, address: string): Promise<ParticipantState | null> {
+    return (await this.d.repo.participant(adventureId, address))?.state ?? null;
+  }
+
+  /** This person's own note on a phase. Stays on this phone. */
+  async setPhaseNote(adventureId: string, checkpointId: string, note: string): Promise<void> {
+    const text = note.trim().slice(0, 280);
+    await this.d.repo.savePhaseRecord(
+      adventureId,
+      checkpointId,
+      { note: text.length > 0 ? text : null },
+      this.d.clock.now(),
+    );
+  }
+
+  /** Attach (or remove, with null) this person's photo of a phase. Stays on this phone. */
+  async setPhasePhoto(
+    adventureId: string,
+    checkpointId: string,
+    photoUri: string | null,
+  ): Promise<void> {
+    await this.d.repo.savePhaseRecord(adventureId, checkpointId, { photoUri }, this.d.clock.now());
+  }
+
+  /** Activities: the last phase stops this person's own clock and tells the group. */
+  private async finishIfDone(adv: Adventure, self: string): Promise<void> {
+    const mine = new Set(
+      (await this.d.repo.completions(adv.id))
+        .filter(x => x.address === self)
+        .map(x => x.checkpointId),
+    );
+    if (!phaseProgress(await this.d.repo.checkpoints(adv.id), mine).finished) {
+      return;
+    }
+    const r = await this.setParticipation(adv.id, 'done');
+    if (!r.ok) {
+      return;
+    }
+    // This person's own completion: it counts for their journal, recap and badges whatever the
+    // organizer does to the shared activity later.
+    const fresh = await this.d.repo.get(adv.id);
+    if (fresh) {
+      const now = this.d.clock.now();
+      const settled = await this.finalize({ ...fresh, status: 'completed' }, true);
+      await this.d.repo.save({
+        ...fresh,
+        tzOffsetMin: settled.tzOffsetMin,
+        progress: { ...settled.progress, finishedAt: now },
+      });
+    }
+    this.celebrate({ kind: 'adventure_complete', adventureId: adv.id });
   }
 
   // ---- signals from the rest of the app --------------------------------------------------------
@@ -735,6 +988,9 @@ export class AdventureService {
       name: adv.name,
       desc: adv.description,
       status: adv.status,
+      act: adv.activity ? 1 : undefined,
+      ord: adv.ordered ? 1 : undefined,
+      rg: adv.region ? toMapAreaWire(adv.region) : undefined,
       st:
         adv.startLat !== null && adv.startLon !== null
           ? { lat: adv.startLat, lon: adv.startLon, n: adv.startLabel }
@@ -752,7 +1008,7 @@ export class AdventureService {
   }
 
   private async publishHeader(adv: Adventure): Promise<boolean> {
-    if (!adv.groupId || adv.owner !== this.me) {
+    if (!adv.groupId || adv.owner !== this.me || adv.status === 'draft') {
       return false;
     }
     return this.send(
@@ -764,7 +1020,11 @@ export class AdventureService {
   }
 
   private async publishCheckpoint(groupId: string, cp: Checkpoint): Promise<boolean> {
-    return this.send(groupId, 'checkpoint', `c-${cp.id}`, {
+    return this.send(groupId, 'checkpoint', `c-${cp.id}`, this.checkpointPayload(cp));
+  }
+
+  private checkpointPayload(cp: Checkpoint): Record<string, unknown> {
+    return {
       adv: cp.adventureId,
       id: cp.id,
       rev: cp.rev,
@@ -772,11 +1032,15 @@ export class AdventureService {
       name: cp.name,
       desc: cp.description,
       kind: cp.kind,
-      lat: cp.lat,
-      lon: cp.lon,
+      lat: cp.lat ?? undefined,
+      lon: cp.lon ?? undefined,
+      tx: cp.task ?? undefined,
+      ty: cp.type === 'checkpoint' ? undefined : cp.type,
+      rd: cp.radiusM ?? undefined,
+      rp: cp.requirePhoto ? 1 : undefined,
       del: cp.deleted || undefined,
       ts: this.d.clock.now(),
-    });
+    };
   }
 
   /** Member: own arrival to the organizer. Organizer: relay of an arrival (its own or a member's). */
@@ -820,11 +1084,13 @@ export class AdventureService {
   /** Organizer: send one adventure's complete shared state. */
   private async publishAll(groupId: string, adventureId: string): Promise<void> {
     const adv = await this.d.repo.get(adventureId);
-    if (!adv || adv.owner !== this.me) {
+    if (!adv || adv.owner !== this.me || adv.status === 'draft') {
       return;
     }
     await this.publishHeader(adv);
-    for (const cp of await this.d.repo.checkpoints(adventureId, true)) {
+    // An activity is immutable once published, so a removed phase was a draft-time removal that
+    // nobody ever saw: no tombstone needed.
+    for (const cp of await this.d.repo.checkpoints(adventureId, !adv.activity)) {
       await this.publishCheckpoint(groupId, cp);
     }
     for (const p of await this.d.repo.participants(adventureId)) {
@@ -922,7 +1188,9 @@ export class AdventureService {
   }
 
   private async requestSync(groupId: string): Promise<void> {
-    const advs = (await this.d.repo.list()).filter(a => a.groupId === groupId).slice(0, 6);
+    const advs = (await this.d.repo.list())
+      .filter(a => a.groupId === groupId && a.status !== 'draft')
+      .slice(0, 6);
     const items = [];
     for (const a of advs) {
       items.push({ id: a.id, rev: a.rev, cc: await this.d.repo.countCompletions(a.id) });
@@ -962,7 +1230,10 @@ export class AdventureService {
   }
 
   private isRecent(a: Adventure): boolean {
-    return !isFinal(a.status) || (a.endedAt !== null && this.d.clock.now() - a.endedAt < RECENT_MS);
+    return (
+      a.status !== 'draft' &&
+      (!isFinal(a.status) || (a.endedAt !== null && this.d.clock.now() - a.endedAt < RECENT_MS))
+    );
   }
 
   // ---- inbound ---------------------------------------------------------------------------------
@@ -1236,12 +1507,18 @@ export class AdventureService {
     if (!a) {
       return null;
     }
+    const live = await this.d.repo.checkpoints(adventureId);
     return {
       groupId: a.groupId,
       owner: a.owner,
       status: a.status,
-      liveCheckpointIds: (await this.d.repo.checkpoints(adventureId)).map(c => c.id),
+      liveCheckpointIds: live.map(c => c.id),
       senderState: (await this.d.repo.participant(adventureId, sender))?.state ?? null,
+      ordered: a.ordered === true,
+      liveCheckpoints: live.map(c => ({ id: c.id, ord: c.ord })),
+      senderDoneCheckpointIds: (await this.d.repo.completions(adventureId))
+        .filter(c => c.address === sender)
+        .map(c => c.checkpointId),
     };
   }
 
@@ -1305,6 +1582,9 @@ export class AdventureService {
       startLat: h.st?.lat ?? null,
       startLon: h.st?.lon ?? null,
       startLabel: h.st?.n ?? null,
+      activity: h.act === 1,
+      ordered: h.ord === 1,
+      region: h.rg ? toMapArea(h.rg) : null,
       createdAt: base.createdAt,
       startedAt: h.sa ?? null,
       endedAt: h.ea ?? null,
@@ -1330,7 +1610,7 @@ export class AdventureService {
     p: {
       adv: string;
       pid: string;
-      state: 'joined' | 'left';
+      state: ParticipantState;
       seq: number;
       ts: number;
       addr?: string;
@@ -1377,8 +1657,13 @@ function toCheckpoint(w: CheckpointWire): Checkpoint {
     name: w.name,
     description: w.desc ?? null,
     kind: w.kind,
-    lat: w.lat,
-    lon: w.lon,
+    lat: w.lat ?? null,
+    lon: w.lon ?? null,
+    task: w.tx ?? null,
+    type: w.ty ?? 'checkpoint',
+    radiusM: w.rd ?? null,
+    requirePhoto: w.rp === 1,
+    region: null,
     deleted: w.del === true,
   };
 }

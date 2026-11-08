@@ -10,6 +10,7 @@ import {
   CHECKPOINT_NAME_MAX,
   CheckpointKind,
   kindLabel,
+  placeOf,
 } from '../../domain/adventures/model';
 import { bearingDeg, distanceM, formatCoord } from '../../domain/geo';
 import { cardinalOf, formatDistanceIn } from '../../domain/geo/pace';
@@ -73,7 +74,7 @@ export function CheckpointEditorScreen({ navigation, route }: Nav<'CheckpointEdi
         setName(cp.name);
         setDescription(cp.description ?? '');
         setKind(cp.kind);
-        setPos({ lat: cp.lat, lon: cp.lon });
+        setPos(placeOf(cp));
       }
     });
   }, [adventureId, checkpointId, adventuresRepo]);
@@ -222,9 +223,12 @@ export function CheckpointDetailsScreen({ navigation, route }: Nav<'CheckpointDe
   const canEdit = canEditAdventure(a, group, mesh.localAddress) && !isFinal(a.status);
   const mine = completions.find(x => x.checkpointId === cp.id && x.address === self) ?? null;
   const others = completions.filter(x => x.checkpointId === cp.id && x.address !== self);
-  const dist = fix ? distanceM(fix, cp) : null;
-  const bearing = fix ? bearingDeg(fix, cp) : null;
-  const prox = proximity({ fix, target: cp, radiusM, now });
+  const place = placeOf(cp);
+  const dist = fix && place ? distanceM(fix, place) : null;
+  const bearing = fix && place ? bearingDeg(fix, place) : null;
+  const prox = place
+    ? proximity({ fix, target: place, radiusM, now })
+    : ({ state: 'no_fix' } as const);
   const nameOf = (addr: string) => participants.find(p => p.address === addr)?.name ?? 'Someone';
   const canMark = a.status === 'active' && detail.joined && !mine;
 
@@ -281,7 +285,7 @@ export function CheckpointDetailsScreen({ navigation, route }: Nav<'CheckpointDe
               : `${formatDistanceIn(dist, units)} · ${cardinalOf(bearing)}`}
           </Text>
           <Text variant="caption" muted>
-            {formatCoord(cp)} · terrain not considered
+            {place ? formatCoord(place) : 'No place'} · terrain not considered
           </Text>
         </Card>
         {rt.hint?.checkpointId === cp.id && !mine ? (
@@ -318,19 +322,21 @@ export function CheckpointDetailsScreen({ navigation, route }: Nav<'CheckpointDe
           />
         ) : null}
         {error ? <Banner tone="error" title={error} /> : null}
-        <Button
-          testID="navigate-checkpoint"
-          icon="navigate"
-          label="Navigate here"
-          onPress={() =>
-            (
-              navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined
-            )?.navigate('Navigate', {
-              adventureId: a.id,
-              checkpointId: cp.id,
-            })
-          }
-        />
+        {place ? (
+          <Button
+            testID="navigate-checkpoint"
+            icon="navigate"
+            label="Navigate here"
+            onPress={() =>
+              (
+                navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined
+              )?.navigate('Navigate', {
+                adventureId: a.id,
+                checkpointId: cp.id,
+              })
+            }
+          />
+        ) : null}
         {canMark ? (
           <Button
             testID="confirm-arrival"

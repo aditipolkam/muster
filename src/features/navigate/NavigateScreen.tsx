@@ -1,6 +1,7 @@
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { placeOf } from '../../domain/adventures/model';
 import { bearingDeg, distanceM, formatCoord } from '../../domain/geo';
 import { cardinalOf, etaMinutes, formatDistanceIn, formatEta } from '../../domain/geo/pace';
 import { useLocationStore } from '../../platform/locationStore';
@@ -90,7 +91,8 @@ export function NavigateScreen({ route }: Props) {
       return;
     }
     void adventuresRepo.checkpoint(ckpAdventure, ckpId).then(cp => {
-      setCheckpoint(cp && !cp.deleted ? { name: cp.name, lat: cp.lat, lon: cp.lon } : null);
+      const place = cp && !cp.deleted ? placeOf(cp) : null;
+      setCheckpoint(cp && place ? { name: cp.name, ...place } : null);
     });
   }, [adventuresRepo, ckpAdventure, ckpId, adventureList]);
 

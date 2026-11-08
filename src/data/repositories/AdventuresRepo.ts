@@ -4,10 +4,15 @@ import {
   ArrivalMethod,
   Checkpoint,
   CheckpointKind,
+  MapArea,
+  MapAreaWireSchema,
+  toMapArea,
+  toMapAreaWire,
   Completion,
   Participant,
   ParticipantState,
   PersonalProgress,
+  PhaseType,
   StatusLogEntry,
   TrackPoint,
 } from '../../domain/adventures/model';
@@ -36,6 +41,22 @@ type AdventureRow = {
   offline_maps_covered: number | null;
   network_used: number;
   mesh_exchange_at: number | null;
+  finished_at: number | null;
+  ordered: number;
+  activity: number;
+  region: string | null;
+};
+
+const parseRegion = (raw: string | null): MapArea | null => {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = MapAreaWireSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? toMapArea(parsed.data) : null;
+  } catch {
+    return null;
+  }
 };
 
 const toAdventure = (r: AdventureRow): Adventure => ({
@@ -49,6 +70,9 @@ const toAdventure = (r: AdventureRow): Adventure => ({
   startLat: r.start_lat,
   startLon: r.start_lon,
   startLabel: r.start_label,
+  ordered: r.ordered === 1,
+  activity: r.activity === 1,
+  region: parseRegion(r.region),
   createdAt: r.created_at,
   startedAt: r.started_at,
   endedAt: r.ended_at,
@@ -60,8 +84,17 @@ const toAdventure = (r: AdventureRow): Adventure => ({
     offlineMapsCovered: r.offline_maps_covered === null ? null : r.offline_maps_covered === 1,
     networkUsed: r.network_used === 1,
     meshExchangeAt: r.mesh_exchange_at,
+    finishedAt: r.finished_at,
   },
 });
+
+export type PhaseRecord = {
+  checkpointId: string;
+  note: string | null;
+  /** A file in this app's own storage; never leaves the phone. */
+  photoUri: string | null;
+  updatedAt: number;
+};
 
 type CheckpointRow = {
   adventure_id: string;
@@ -71,10 +104,29 @@ type CheckpointRow = {
   name: string;
   description: string | null;
   kind: string;
-  lat: number;
-  lon: number;
+  lat: number | null;
+  lon: number | null;
+  task: string | null;
+  type: string;
+  radius_m: number | null;
+  require_photo: number;
+  region: string | null;
   deleted: number;
 };
+const parseBox = (raw: string | null): Checkpoint['region'] => {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) && v.length === 4 && v.every(n => typeof n === 'number')
+      ? (v as Checkpoint['region'])
+      : null;
+  } catch {
+    return null;
+  }
+};
+
 const toCheckpoint = (r: CheckpointRow): Checkpoint => ({
   adventureId: r.adventure_id,
   id: r.id,
@@ -85,6 +137,11 @@ const toCheckpoint = (r: CheckpointRow): Checkpoint => ({
   kind: r.kind as CheckpointKind,
   lat: r.lat,
   lon: r.lon,
+  task: r.task,
+  type: (r.type as PhaseType) ?? 'checkpoint',
+  radiusM: r.radius_m,
+  requirePhoto: r.require_photo === 1,
+  region: parseBox(r.region),
   deleted: r.deleted === 1,
 });
 
@@ -157,8 +214,9 @@ export class AdventuresRepo {
     await this.db.run(
       `INSERT INTO adventures(id, group_id, owner, name, description, status, rev, start_lat,
          start_lon, start_label, created_at, started_at, ended_at, tz_offset_min, resumed_at,
-         active_ms, distance_m, offline_maps_covered, network_used, mesh_exchange_at)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         active_ms, distance_m, offline_maps_covered, network_used, mesh_exchange_at, ordered,
+         activity, region, finished_at)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(id) DO UPDATE SET group_id = excluded.group_id, owner = excluded.owner,
          name = excluded.name, description = excluded.description, status = excluded.status,
          rev = excluded.rev, start_lat = excluded.start_lat, start_lon = excluded.start_lon,
@@ -166,7 +224,9 @@ export class AdventuresRepo {
          ended_at = excluded.ended_at, tz_offset_min = excluded.tz_offset_min,
          resumed_at = excluded.resumed_at, active_ms = excluded.active_ms,
          distance_m = excluded.distance_m, offline_maps_covered = excluded.offline_maps_covered,
-         network_used = excluded.network_used, mesh_exchange_at = excluded.mesh_exchange_at`,
+         network_used = excluded.network_used, mesh_exchange_at = excluded.mesh_exchange_at,
+         ordered = excluded.ordered, activity = excluded.activity,
+         region = excluded.region, finished_at = excluded.finished_at`,
       [
         a.id,
         a.groupId,
@@ -188,6 +248,10 @@ export class AdventuresRepo {
         flag(a.progress.offlineMapsCovered),
         a.progress.networkUsed ? 1 : 0,
         a.progress.meshExchangeAt,
+        a.ordered ? 1 : 0,
+        a.activity ? 1 : 0,
+        a.region ? JSON.stringify(toMapAreaWire(a.region)) : null,
+        a.progress.finishedAt ?? null,
       ],
     );
     this.changes.emit();
@@ -197,7 +261,8 @@ export class AdventuresRepo {
   async saveProgress(id: string, p: PersonalProgress): Promise<void> {
     await this.db.run(
       `UPDATE adventures SET resumed_at = ?, active_ms = ?, distance_m = ?,
-         offline_maps_covered = ?, network_used = ?, mesh_exchange_at = ? WHERE id = ?`,
+         offline_maps_covered = ?, network_used = ?, mesh_exchange_at = ?,
+         finished_at = COALESCE(?, finished_at) WHERE id = ?`,
       [
         p.resumedAt,
         p.activeMs,
@@ -205,6 +270,7 @@ export class AdventuresRepo {
         flag(p.offlineMapsCovered),
         p.networkUsed ? 1 : 0,
         p.meshExchangeAt,
+        p.finishedAt ?? null,
         id,
       ],
     );
@@ -243,6 +309,7 @@ export class AdventuresRepo {
     await this.db.transaction(async tx => {
       for (const t of [
         'adventure_checkpoints',
+        'phase_records',
         'checkpoint_completions',
         'adventure_participants',
         'adventure_status_log',
@@ -283,6 +350,57 @@ export class AdventuresRepo {
       status: r.status as AdventureStatus,
       at: r.at,
     }));
+  }
+
+  // ---- this person's note and photo for a phase (never sent) ---------------------------------
+
+  async phaseRecord(adventureId: string, checkpointId: string): Promise<PhaseRecord | null> {
+    const r = await this.db.get<{
+      note: string | null;
+      photo_uri: string | null;
+      updated_at: number;
+    }>('SELECT * FROM phase_records WHERE adventure_id = ? AND checkpoint_id = ?', [
+      adventureId,
+      checkpointId,
+    ]);
+    return r
+      ? { checkpointId, note: r.note, photoUri: r.photo_uri, updatedAt: r.updated_at }
+      : null;
+  }
+
+  async phaseRecords(adventureId: string): Promise<PhaseRecord[]> {
+    const rows = await this.db.all<{
+      checkpoint_id: string;
+      note: string | null;
+      photo_uri: string | null;
+      updated_at: number;
+    }>('SELECT * FROM phase_records WHERE adventure_id = ?', [adventureId]);
+    return rows.map(r => ({
+      checkpointId: r.checkpoint_id,
+      note: r.note,
+      photoUri: r.photo_uri,
+      updatedAt: r.updated_at,
+    }));
+  }
+
+  /** Only the fields given change; `null` clears a field. */
+  async savePhaseRecord(
+    adventureId: string,
+    checkpointId: string,
+    patch: { note?: string | null; photoUri?: string | null },
+    at: number,
+  ): Promise<void> {
+    const cur = await this.phaseRecord(adventureId, checkpointId);
+    const note = patch.note === undefined ? cur?.note ?? null : patch.note;
+    const photoUri = patch.photoUri === undefined ? cur?.photoUri ?? null : patch.photoUri;
+    await this.db.run(
+      `INSERT INTO phase_records(adventure_id, checkpoint_id, note, photo_uri, updated_at)
+       VALUES(?,?,?,?,?)
+       ON CONFLICT(adventure_id, checkpoint_id) DO UPDATE SET note = excluded.note,
+         photo_uri = excluded.photo_uri, updated_at = excluded.updated_at`,
+      [adventureId, checkpointId, note, photoUri, at],
+    );
+    this.changes.emit();
   }
 
   // ---- checkpoints ----------------------------------------------------------------------------
@@ -338,10 +456,13 @@ export class AdventuresRepo {
       }
       await tx.run(
         `INSERT INTO adventure_checkpoints(adventure_id, id, rev, ord, name, description, kind,
-           lat, lon, deleted) VALUES(?,?,?,?,?,?,?,?,?,?)
+           lat, lon, task, type, radius_m, require_photo, region, deleted)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(adventure_id, id) DO UPDATE SET rev = excluded.rev, ord = excluded.ord,
            name = excluded.name, description = excluded.description, kind = excluded.kind,
-           lat = excluded.lat, lon = excluded.lon, deleted = excluded.deleted`,
+           lat = excluded.lat, lon = excluded.lon, task = excluded.task, type = excluded.type,
+           radius_m = excluded.radius_m, require_photo = excluded.require_photo,
+           region = excluded.region, deleted = excluded.deleted`,
         [
           incoming.adventureId,
           incoming.id,
@@ -352,6 +473,11 @@ export class AdventuresRepo {
           incoming.kind,
           incoming.lat,
           incoming.lon,
+          incoming.task,
+          incoming.type,
+          incoming.radiusM,
+          incoming.requirePhoto ? 1 : 0,
+          incoming.region ? JSON.stringify(incoming.region) : null,
           incoming.deleted ? 1 : 0,
         ],
       );
