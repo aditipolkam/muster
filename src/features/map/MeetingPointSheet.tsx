@@ -61,7 +61,7 @@ export function MeetingPointSheet(p: Props) {
         )}°`}</Text>
       ) : null}
       <Button
-        label="Navigate"
+        label="Start navigation"
         icon="navigate"
         onPress={p.onNavigate}
         testID="meeting-navigate"

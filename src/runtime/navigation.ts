@@ -1,12 +1,16 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 
-export type MoreStackParamList = {
-  MoreList: undefined;
+/** Profile tab: identity, plus the offline-maps, saved-places, mesh and settings screens. */
+export type ProfileStackParamList = {
+  ProfileHome: undefined;
   Downloaded: undefined;
   Download: undefined;
   Saved: undefined;
   Mesh: undefined;
   Settings: undefined;
+};
+
+export type ActivityStackParamList = {
   Adventures: undefined;
   /** Edit an existing adventure, or plan a new one (optionally for a group you organize). */
   AdventureEditor: { adventureId?: string; groupId?: string } | undefined;
@@ -17,8 +21,8 @@ export type MoreStackParamList = {
   Achievements: undefined;
 };
 
-/** The offline-maps screens live inside the More stack. */
-export type MapsStackParamList = MoreStackParamList;
+/** The offline-maps screens live inside the Profile stack. */
+export type MapsStackParamList = ProfileStackParamList;
 
 export type GroupsStackParamList = {
   GroupsList: undefined;
@@ -27,6 +31,8 @@ export type GroupsStackParamList = {
     | { link?: string; v?: string; g?: string; o?: string; t?: string; n?: string }
     | undefined;
   GroupDetails: { groupId: string };
+  /** `justCreated`: show the invitation QR straight away so the organizer can add people. */
+  GroupInfo: { groupId: string; justCreated?: boolean };
   MeetingPoint: { groupId: string; pointId: string };
 };
 
@@ -53,5 +59,6 @@ export type RootTabParamList = {
         checkpointId?: string;
       }
     | undefined;
-  More: NavigatorScreenParams<MoreStackParamList> | undefined;
+  Activity: NavigatorScreenParams<ActivityStackParamList> | undefined;
+  Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;
 };

@@ -1,6 +1,6 @@
 # ADR 0007: Groups and meeting points on service subscriptions
 
-Status: Accepted (Phase 3, 2026-11-01). Not yet verified on devices.
+Status: Accepted (Phase 3, 2026-11-01). Not yet verified on devices. The join step is amended by ADR 0012: the SDK admits a valid join subscription at once and the organizer's approval is the welcome, not the SDK accept.
 
 ## Context
 

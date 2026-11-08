@@ -2,10 +2,12 @@ import React from 'react';
 import { Alert } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { parseInviteLink } from '../src/domain/groups/invite';
+import { buildFeed } from '../src/features/groups/GroupsScreens';
 import { MapScreen } from '../src/features/map/MapScreen';
 import {
   CreateGroupScreen,
   GroupDetailsScreen,
+  GroupInfoScreen,
   GroupsScreen,
   JoinGroupScreen,
   MeetingPointScreen,
@@ -136,7 +138,7 @@ describe('Groups screen', () => {
       </Harness>,
     );
     expect(await screen.findByText('Ridge walk')).toBeTruthy();
-    expect(screen.getByText('Organizer')).toBeTruthy();
+    expect(await screen.findByText(/members? · You organize/)).toBeTruthy();
     expect(await screen.findByTestId('join-request')).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByTestId('join-approve'));
@@ -149,6 +151,7 @@ describe('Groups screen', () => {
 describe('Create Group screen', () => {
   it('creates the group, makes the user the organizer and opens its details', async () => {
     const { t } = await twoDevicesBase();
+    await t.services.kv.set('profile.name', 'Alex');
     const { n, calls } = nav();
     render(
       <Harness services={t.services}>
@@ -157,17 +160,24 @@ describe('Create Group screen', () => {
     );
     expect(screen.getByTestId('group-create-submit').props.accessibilityState.disabled).toBe(true);
     fireEvent.changeText(screen.getByTestId('group-name'), 'Sunday loop');
-    fireEvent.changeText(screen.getByTestId('your-name'), 'Alex');
+    await waitFor(() =>
+      expect(screen.getByTestId('group-create-submit').props.accessibilityState.disabled).toBe(
+        false,
+      ),
+    );
     await act(async () => {
       fireEvent.press(screen.getByTestId('group-create-submit'));
     });
     const groups = await t.services.groupsRepo.list();
     expect(groups).toMatchObject([{ name: 'Sunday loop', role: 'organizer' }]);
-    expect(calls[0]).toEqual(['replace', 'GroupDetails', { groupId: groups[0]!.id }]);
-    expect(await t.services.kv.get('profile.name')).toBe('Alex');
+    expect(calls[0]).toEqual([
+      'replace',
+      'GroupInfo',
+      { groupId: groups[0]!.id, justCreated: true },
+    ]);
   });
 
-  it('keeps Create disabled until both names are filled in', async () => {
+  it('keeps Create disabled and points to Profile until a name is set', async () => {
     const t = await makeTestServices();
     const { n } = nav();
     render(
@@ -175,10 +185,10 @@ describe('Create Group screen', () => {
         <CreateGroupScreen navigation={n} route={{} as never} />
       </Harness>,
     );
-    // FakeMesh reports an address from the start; stop it to simulate a device that is not running.
-    fireEvent.changeText(screen.getByTestId('group-name'), '   ');
-    fireEvent.changeText(screen.getByTestId('your-name'), 'Alex');
+    fireEvent.changeText(screen.getByTestId('group-name'), 'Sunday loop');
+    expect(await screen.findByText('Set your name first')).toBeTruthy();
     expect(screen.getByTestId('group-create-submit').props.accessibilityState.disabled).toBe(true);
+    expect(screen.queryByTestId('your-name')).toBeNull();
   });
 });
 
@@ -193,13 +203,14 @@ async function twoDevicesBase() {
 describe('Join Group screen', () => {
   it('rejects text that is not an invitation', async () => {
     const { t } = await twoDevicesBase();
+    await t.services.kv.set('profile.name', 'Sam');
     const { n } = nav();
     render(
       <Harness services={t.services}>
         <JoinGroupScreen navigation={n} route={{ params: undefined } as never} />
       </Harness>,
     );
-    fireEvent.changeText(screen.getByTestId('your-name'), 'Sam');
+    fireEvent.press(await screen.findByTestId('paste-toggle'));
     fireEvent.changeText(screen.getByTestId('invite-link'), 'hello');
     await act(async () => {
       fireEvent.press(screen.getByTestId('join-submit'));
@@ -209,6 +220,7 @@ describe('Join Group screen', () => {
 
   it('joins from a pasted invitation and opens the group once the organizer accepts', async () => {
     const { t, net } = await twoDevicesBase();
+    await t.services.kv.set('profile.name', 'Sam');
     const org = await makeGroupNode(net, 'off1org', { name: 'Olive' });
     const g = await org.groups.createGroup({ name: 'Ridge walk' });
     const inv = await org.groups.createInvite(g.ok ? g.value.id : '', { autoApprove: true });
@@ -218,7 +230,8 @@ describe('Join Group screen', () => {
         <JoinGroupScreen navigation={n} route={{ params: undefined } as never} />
       </Harness>,
     );
-    fireEvent.changeText(screen.getByTestId('your-name'), 'Sam');
+    await waitFor(() => expect(screen.queryByText('Set your name first')).toBeNull());
+    fireEvent.press(await screen.findByTestId('paste-toggle'));
     fireEvent.changeText(screen.getByTestId('invite-link'), inv.ok ? inv.value.link : '');
     await act(async () => {
       fireEvent.press(screen.getByTestId('join-submit'));
@@ -231,6 +244,62 @@ describe('Join Group screen', () => {
       role: 'member',
       status: 'active',
     });
+  });
+
+  it('a deep link shows who invited you and joins with one tap', async () => {
+    const { t, net } = await twoDevicesBase();
+    await t.services.kv.set('profile.name', 'Sam');
+    const org = await makeGroupNode(net, 'off1org', { name: 'Olive' });
+    const g = await org.groups.createGroup({ name: 'Ridge walk' });
+    const inv = await org.groups.createInvite(g.ok ? g.value.id : '', { autoApprove: true });
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <JoinGroupScreen
+          navigation={n}
+          route={{ params: { link: inv.ok ? inv.value.link : '' } } as never}
+        />
+      </Harness>,
+    );
+    expect(await screen.findByText('Ridge walk')).toBeTruthy();
+    expect(screen.getByText('You are invited to')).toBeTruthy();
+    expect(screen.queryByTestId('invite-link')).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId('join-submit').props.accessibilityState.disabled).toBeFalsy(),
+    );
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('join-submit'));
+      await settle([org, { groups: t.services.groups }]);
+    });
+    await waitFor(() =>
+      expect(calls.some(c => c[0] === 'replace' && c[1] === 'GroupDetails')).toBe(true),
+    );
+  });
+
+  it('shows a waiting card with a way to cancel while the organizer decides', async () => {
+    const { t, net } = await twoDevicesBase();
+    await t.services.kv.set('profile.name', 'Sam');
+    const org = await makeGroupNode(net, 'off1org', { name: 'Olive' });
+    const g = await org.groups.createGroup({ name: 'Ridge walk' });
+    const inv = await org.groups.createInvite(g.ok ? g.value.id : '');
+    const { n } = nav();
+    render(
+      <Harness services={t.services}>
+        <JoinGroupScreen navigation={n} route={{ params: undefined } as never} />
+      </Harness>,
+    );
+    fireEvent.press(await screen.findByTestId('paste-toggle'));
+    await waitFor(() => expect(screen.queryByText('Set your name first')).toBeNull());
+    fireEvent.changeText(screen.getByTestId('invite-link'), inv.ok ? inv.value.link : '');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('join-submit'));
+    });
+    expect(await screen.findByTestId('join-waiting')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('join-cancel'));
+    });
+    expect(await t.services.groupsRepo.list()).toEqual([]);
+    expect(await screen.findByTestId('scan-qr')).toBeTruthy();
   });
 
   it('lists open groups found nearby', async () => {
@@ -253,7 +322,130 @@ describe('Join Group screen', () => {
   });
 });
 
-describe('Group Details screen', () => {
+describe('buildFeed', () => {
+  const at = (d: string) => new Date(d).getTime();
+  const member = (address: string, name: string, updatedAt: number) =>
+    ({ address, name, state: 'active', rev: 1, updatedAt } as never);
+
+  it('orders newest first and inserts a day label before each day', () => {
+    const now = at('2026-11-03T12:00:00');
+    const feed = buildFeed(
+      [member('a', 'Ana', at('2026-11-02T09:00:00')), member('b', 'Bo', at('2026-11-03T08:00:00'))],
+      [{ id: 'p', rev: 2, name: 'Hut', updatedAt: at('2026-11-03T10:00:00') }],
+      'a',
+      now,
+    );
+    expect(feed.map(e => (e.kind === 'day' ? `day:${e.text}` : e.kind))).toEqual([
+      'meeting',
+      'member',
+      'day:Today',
+      'member',
+      'day:Yesterday',
+    ]);
+    expect(feed[0]).toMatchObject({ title: 'Meeting point updated', name: 'Hut' });
+    expect(feed.find(e => e.kind === 'member' && e.text === 'You joined')).toBeTruthy();
+  });
+});
+
+describe('Group page (updates)', () => {
+  it('opens on Updates: joins and shared meeting points, newest at the bottom, no member list', async () => {
+    const { t, other, all, g } = await twoDevices('organizer');
+    const inv = await t.services.groups.createInvite(g.id, { autoApprove: true });
+    const parsed = inv.ok ? parseInviteLink(inv.value.link) : null;
+    await other.groups.joinFromInvite(parsed && parsed.ok ? parsed.invite : (undefined as never));
+    await settle(all);
+    const p = await t.services.groups.publishPoint(g.id, {
+      name: 'Lake junction',
+      lat: 56.8,
+      lon: -5.1,
+    });
+    await settle(all);
+    const { n } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    expect(await screen.findByText('Lake junction')).toBeTruthy();
+    expect(screen.getByText('Meeting point shared')).toBeTruthy();
+    expect(screen.getByText('Other joined')).toBeTruthy();
+    expect(screen.getByTestId('group-status').props.children).toMatch(/^2 members/);
+    expect(screen.queryByText('Members (2)')).toBeNull();
+    expect(screen.queryByTestId('invite-create')).toBeNull();
+    expect(p.ok).toBe(true);
+  });
+
+  it('tapping a meeting point update plots it on the map', async () => {
+    const { t, other, all, g } = await twoDevices('member');
+    const p = await other.groups.publishPoint(g.id, { name: 'Hut', lat: 56.8, lon: -5.1 });
+    await settle(all);
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    fireEvent.press(await screen.findByTestId(`update-${p.ok ? p.value.point.id : ''}`));
+    expect(calls.at(-1)).toEqual([
+      'navigate',
+      'Map',
+      { focusMeetingPoint: `${g.id}:${p.ok ? p.value.point.id : ''}`, nonce: expect.any(Number) },
+    ]);
+  });
+
+  it('tapping the title opens group info', async () => {
+    const { t, g } = await twoDevices('member');
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    fireEvent.press(await screen.findByTestId('group-title'));
+    expect(calls.at(-1)).toEqual(['navigate', 'GroupInfo', { groupId: g.id }]);
+  });
+
+  it('organizers get a hint to share meeting points from the map; members do not', async () => {
+    const org = await twoDevices('organizer');
+    render(
+      <Harness services={org.t.services}>
+        <GroupDetailsScreen
+          navigation={nav().n}
+          route={{ params: { groupId: org.g.id } } as never}
+        />
+      </Harness>,
+    );
+    expect(await screen.findByTestId('group-open-map')).toBeTruthy();
+  });
+
+  it('members do not get the organizer hint', async () => {
+    const mem = await twoDevices('member');
+    render(
+      <Harness services={mem.t.services}>
+        <GroupDetailsScreen
+          navigation={nav().n}
+          route={{ params: { groupId: mem.g.id } } as never}
+        />
+      </Harness>,
+    );
+    await screen.findByTestId('group-title');
+    expect(screen.queryByTestId('group-open-map')).toBeNull();
+  });
+
+  it('says so when there are no updates yet', async () => {
+    const { t, g } = await twoDevices('organizer');
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    await screen.findByTestId('group-title');
+    // The organizer's own join is the first update.
+    expect(screen.getByText('You joined')).toBeTruthy();
+  });
+});
+
+describe('Group info screen', () => {
   it('shows the roster and an invitation QR code to the organizer, and ends the group', async () => {
     const { t, other, all, g } = await twoDevices('organizer');
     const inv = await t.services.groups.createInvite(g.id, { autoApprove: true });
@@ -263,7 +455,7 @@ describe('Group Details screen', () => {
     const { n, calls } = nav();
     render(
       <Harness services={t.services}>
-        <GroupDetailsScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
+        <GroupInfoScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
       </Harness>,
     );
     expect(await screen.findByText('Members (2)')).toBeTruthy();
@@ -283,12 +475,48 @@ describe('Group Details screen', () => {
     expect(calls.at(-1)).toEqual(['navigate', 'GroupsList']);
   });
 
+  it('right after creating, shows the invitation QR straight away and Done returns to the group', async () => {
+    const { t, g } = await twoDevices('organizer');
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen
+          navigation={n}
+          route={{ params: { groupId: g.id, justCreated: true } } as never}
+        />
+      </Harness>,
+    );
+    expect(await screen.findByTestId('qr-code')).toBeTruthy();
+    expect(screen.getByText('Group created')).toBeTruthy();
+    fireEvent.press(screen.getByText('Done'));
+    expect(calls.at(-1)).toEqual(['navigate', 'GroupDetails', { groupId: g.id }]);
+  });
+
+  it('lists meeting points and opens one directly on the map', async () => {
+    const { t, other, all, g } = await twoDevices('member');
+    const p = await other.groups.publishPoint(g.id, { name: 'Hut', lat: 56.8, lon: -5.1 });
+    await settle(all);
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    expect(await screen.findByText('Meeting points (1)')).toBeTruthy();
+    fireEvent.press(screen.getByTestId(`point-${p.ok ? p.value.point.id : ''}`));
+    expect(calls.at(-1)).toEqual([
+      'navigate',
+      'Map',
+      { focusMeetingPoint: `${g.id}:${p.ok ? p.value.point.id : ''}`, nonce: expect.any(Number) },
+    ]);
+  });
+
   it('a member sees the organizer and can leave', async () => {
     const { t, g, all, other } = await twoDevices('member');
     const { n } = nav();
     render(
       <Harness services={t.services}>
-        <GroupDetailsScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
+        <GroupInfoScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
       </Harness>,
     );
     expect(await screen.findByText('Members (2)')).toBeTruthy();
@@ -380,16 +608,12 @@ describe('Map: meeting point controls', () => {
       });
     });
 
-  it('shows an honest mesh pill and explains it when tapped', async () => {
-    const { t, g, all } = await twoDevices('organizer');
+  it('keeps group and mesh status off the map', async () => {
+    const { t, all } = await twoDevices('organizer');
     await settle(all);
     await renderMap(t);
-    const pill = await screen.findByTestId('mesh-pill');
-    expect(pill.props.accessibilityLabel).not.toMatch(/connected/i);
-    fireEvent.press(pill);
-    expect(await screen.findByTestId('mesh-status-sheet')).toBeTruthy();
-    expect(screen.getByTestId('mesh-status-diagnostics')).toBeTruthy();
-    expect(g.id).toBeTruthy();
+    expect(screen.queryByTestId('mesh-pill')).toBeNull();
+    expect(screen.queryByTestId('map-group-card')).toBeNull();
   });
 
   it('long-press without a group still drops a personal marker', async () => {
@@ -456,12 +680,15 @@ describe('Map: meeting point controls', () => {
     expect(await screen.findByTestId('meeting-sheet')).toBeTruthy();
     expect(screen.getByTestId('meeting-name').props.children).toBe('Hut');
     expect(screen.queryByTestId('meeting-edit')).toBeNull();
+    // "Start navigation" plots the line on the map instead of leaving it.
+    const before = calls.length;
     fireEvent.press(screen.getByTestId('meeting-navigate'));
-    expect(calls.at(-1)).toEqual([
-      'navigate',
-      'Navigate',
-      { groupId: g.id, pointId: p.ok ? p.value.point.id : '' },
-    ]);
+    expect(calls).toHaveLength(before);
+    expect(await screen.findByTestId('navigation-bar')).toBeTruthy();
+    expect(screen.getByText('Hut')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('navigation-end'));
+    await pressMarker(key);
+    expect(await screen.findByTestId('meeting-sheet')).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByTestId('meeting-ack'));
       await settle(all);

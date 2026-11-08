@@ -3,15 +3,17 @@ import {
   DefaultTheme,
   LinkingOptions,
   NavigationContainer,
+  useNavigationContainerRef,
 } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { BottomTabBarButtonProps, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StatusBar, View } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ActivityIndicator, Pressable, StatusBar, StyleSheet, View } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   CreateGroupScreen,
   GroupDetailsScreen,
+  GroupInfoScreen,
   GroupsScreen,
   JoinGroupScreen,
   MeetingPointScreen,
@@ -29,13 +31,19 @@ import { AchievementsScreen, AdventureSummaryScreen } from '../features/adventur
 import { DownloadScreen } from '../features/maps-manager/DownloadScreen';
 import { RegionsScreen } from '../features/maps-manager/RegionsScreen';
 import { MeshDiagnosticsScreen } from '../features/mesh-diagnostics/MeshDiagnosticsScreen';
+import { AdventureToastHost } from '../features/adventures/AdventureToastHost';
 import { MapScreen } from '../features/map/MapScreen';
 import { OnboardingScreen } from '../features/onboarding/OnboardingScreen';
-import { MoreScreen } from '../features/more/MoreScreen';
+import { ProfileScreen } from '../features/profile/ProfileScreen';
 import { NavigateScreen } from '../features/navigate/NavigateScreen';
 import { SavedScreen } from '../features/markers/SavedScreen';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
-import { GroupsStackParamList, MoreStackParamList, RootTabParamList } from '../runtime/navigation';
+import {
+  ActivityStackParamList,
+  GroupsStackParamList,
+  ProfileStackParamList,
+  RootTabParamList,
+} from '../runtime/navigation';
 import { bindMeshToAppState } from '../runtime/meshLifecycle';
 import { Services, ServicesProvider, useServices } from '../runtime/services';
 import { createLogger } from '../shared/logger';
@@ -46,7 +54,8 @@ import { bootstrap } from './bootstrap';
 
 const log = createLogger('app');
 const Tab = createBottomTabNavigator<RootTabParamList>();
-const MoreStack = createNativeStackNavigator<MoreStackParamList>();
+const ActivityStack = createNativeStackNavigator<ActivityStackParamList>();
+const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
 const GroupsStack = createNativeStackNavigator<GroupsStackParamList>();
 
 function GroupsNavigator() {
@@ -56,35 +65,77 @@ function GroupsNavigator() {
       <GroupsStack.Screen name="CreateGroup" component={CreateGroupScreen} />
       <GroupsStack.Screen name="JoinGroup" component={JoinGroupScreen} />
       <GroupsStack.Screen name="GroupDetails" component={GroupDetailsScreen} />
+      <GroupsStack.Screen name="GroupInfo" component={GroupInfoScreen} />
       <GroupsStack.Screen name="MeetingPoint" component={MeetingPointScreen} />
     </GroupsStack.Navigator>
   );
 }
 
-function MoreNavigator() {
+function ActivityNavigator() {
   return (
-    <MoreStack.Navigator screenOptions={{ headerShown: false }}>
-      <MoreStack.Screen name="MoreList" component={MoreScreen} />
-      <MoreStack.Screen name="Downloaded" component={RegionsScreen} />
-      <MoreStack.Screen name="Download" component={DownloadScreen} />
-      <MoreStack.Screen name="Saved" component={SavedScreen} />
-      <MoreStack.Screen name="Mesh" component={MeshDiagnosticsScreen} />
-      <MoreStack.Screen name="Settings" component={SettingsScreen} />
-      <MoreStack.Screen name="Adventures" component={AdventuresScreen} />
-      <MoreStack.Screen name="AdventureEditor" component={AdventureEditorScreen} />
-      <MoreStack.Screen name="AdventureDetails" component={AdventureDetailsScreen} />
-      <MoreStack.Screen name="CheckpointEditor" component={CheckpointEditorScreen} />
-      <MoreStack.Screen name="CheckpointDetails" component={CheckpointDetailsScreen} />
-      <MoreStack.Screen name="AdventureSummary" component={AdventureSummaryScreen} />
-      <MoreStack.Screen name="Achievements" component={AchievementsScreen} />
-    </MoreStack.Navigator>
+    <ActivityStack.Navigator screenOptions={{ headerShown: false }}>
+      <ActivityStack.Screen name="Adventures" component={AdventuresScreen} />
+      <ActivityStack.Screen name="AdventureEditor" component={AdventureEditorScreen} />
+      <ActivityStack.Screen name="AdventureDetails" component={AdventureDetailsScreen} />
+      <ActivityStack.Screen name="CheckpointEditor" component={CheckpointEditorScreen} />
+      <ActivityStack.Screen name="CheckpointDetails" component={CheckpointDetailsScreen} />
+      <ActivityStack.Screen name="AdventureSummary" component={AdventureSummaryScreen} />
+      <ActivityStack.Screen name="Achievements" component={AchievementsScreen} />
+    </ActivityStack.Navigator>
+  );
+}
+
+function ProfileNavigator() {
+  return (
+    <ProfileStack.Navigator screenOptions={{ headerShown: false }}>
+      <ProfileStack.Screen name="ProfileHome" component={ProfileScreen} />
+      <ProfileStack.Screen name="Downloaded" component={RegionsScreen} />
+      <ProfileStack.Screen name="Download" component={DownloadScreen} />
+      <ProfileStack.Screen name="Saved" component={SavedScreen} />
+      <ProfileStack.Screen name="Mesh" component={MeshDiagnosticsScreen} />
+      <ProfileStack.Screen name="Settings" component={SettingsScreen} />
+    </ProfileStack.Navigator>
   );
 }
 
 const tabIcon =
   (name: IconName) =>
-  ({ color }: { color: string }) =>
-    <Icon name={name} size={24} color={color} />;
+  ({ color, focused }: { color: string; focused: boolean }) =>
+    <Icon name={name} size={24} color={color} filled={focused} />;
+
+/** The Map tab is the app's home: a raised, filled button in the middle of the bar. */
+function MapTabButton(props: BottomTabBarButtonProps) {
+  const { onPress, testID } = props;
+  const { c } = useTheme();
+  // React Navigation 7 reports the selected tab as `aria-selected`.
+  const focused = !!props['aria-selected'];
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel="Map"
+      accessibilityState={{ selected: focused }}
+      onPress={onPress}
+      style={styles.mapSlot}
+    >
+      <View
+        style={[
+          styles.mapOrb,
+          {
+            backgroundColor: focused ? c.primary : c.deep,
+            borderColor: c.bg,
+            shadowColor: c.primary,
+          },
+        ]}
+      >
+        <Icon name="map" size={28} color={c.onPrimary} filled />
+      </View>
+      <Text variant="label" color={focused ? c.primary : c.textMuted} style={styles.mapLabel}>
+        Map
+      </Text>
+    </Pressable>
+  );
+}
 
 const linking: LinkingOptions<RootTabParamList> = {
   prefixes: ['trailmesh://'],
@@ -99,16 +150,20 @@ const linking: LinkingOptions<RootTabParamList> = {
         },
       },
       Navigate: 'navigate',
-      More: {
+      Activity: {
         screens: {
-          MoreList: 'more',
+          Adventures: 'adventures',
+          Achievements: 'achievements',
+        },
+      },
+      Profile: {
+        screens: {
+          ProfileHome: 'profile',
           Downloaded: 'maps',
           Download: 'maps/download',
           Saved: 'saved',
           Mesh: 'mesh',
           Settings: 'settings',
-          Adventures: 'adventures',
-          Achievements: 'achievements',
         },
       },
     },
@@ -117,6 +172,9 @@ const linking: LinkingOptions<RootTabParamList> = {
 
 function Shell() {
   const { c, dark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const navRef = useNavigationContainerRef<RootTabParamList>();
+  const [tab, setTab] = useState<string | undefined>('Map');
   const { mesh, kv } = useServices();
   useEffect(() => bindMeshToAppState(mesh), [mesh]);
   // null = still reading the flag; the first launch shows onboarding once.
@@ -130,9 +188,10 @@ function Shell() {
   if (!onboarded) {
     return (
       <OnboardingScreen
-        onDone={() => {
-          setOnboarded(true);
+        onDone={name => {
+          void kv.set('profile.name', name);
           void kv.set('onboarding.done', '1');
+          setOnboarded(true);
         }}
       />
     );
@@ -140,6 +199,8 @@ function Shell() {
   const base = dark ? DarkTheme : DefaultTheme;
   return (
     <NavigationContainer
+      ref={navRef}
+      onStateChange={state => setTab(state?.routes[state.index]?.name)}
       linking={linking}
       theme={{
         ...base,
@@ -159,36 +220,63 @@ function Shell() {
           headerShown: false,
           tabBarActiveTintColor: c.primary,
           tabBarInactiveTintColor: c.textMuted,
-          tabBarLabelStyle: { fontSize: 12, fontWeight: '500' },
-          tabBarStyle: { backgroundColor: c.surface, borderTopColor: c.border },
+          tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+          tabBarStyle: {
+            backgroundColor: c.surface,
+            borderTopColor: c.border,
+            height: 62 + insets.bottom,
+            paddingTop: 6,
+            paddingBottom: insets.bottom > 0 ? insets.bottom - 4 : 8,
+          },
           lazy: false,
         }}
       >
         <Tab.Screen
+          name="Navigate"
+          component={NavigateScreen}
+          options={{
+            title: 'Compass',
+            tabBarIcon: tabIcon('compass'),
+            tabBarButtonTestID: 'tab-navigate',
+          }}
+        />
+        <Tab.Screen
+          name="Activity"
+          component={ActivityNavigator}
+          options={{ tabBarIcon: tabIcon('trail'), tabBarButtonTestID: 'tab-activity' }}
+        />
+        <Tab.Screen
           name="Map"
           component={MapScreen}
-          options={{ tabBarIcon: tabIcon('map'), tabBarButtonTestID: 'tab-map' }}
+          options={{
+            tabBarButton: MapTabButton,
+            tabBarButtonTestID: 'tab-map',
+          }}
         />
         <Tab.Screen
           name="Groups"
           component={GroupsNavigator}
           options={{
-            title: 'Group',
+            title: 'Groups',
             tabBarIcon: tabIcon('group'),
             tabBarButtonTestID: 'tab-groups',
           }}
         />
         <Tab.Screen
-          name="Navigate"
-          component={NavigateScreen}
-          options={{ tabBarIcon: tabIcon('navigate'), tabBarButtonTestID: 'tab-navigate' }}
-        />
-        <Tab.Screen
-          name="More"
-          component={MoreNavigator}
-          options={{ tabBarIcon: tabIcon('more'), tabBarButtonTestID: 'tab-more' }}
+          name="Profile"
+          component={ProfileNavigator}
+          options={{ tabBarIcon: tabIcon('profile'), tabBarButtonTestID: 'tab-profile' }}
         />
       </Tab.Navigator>
+      <AdventureToastHost
+        tab={tab}
+        onNavigate={(screen, params) =>
+          (navRef as unknown as { navigate: (n: string, p: object) => void }).navigate(
+            screen,
+            params,
+          )
+        }
+      />
     </NavigationContainer>
   );
 }
@@ -231,6 +319,24 @@ function Root() {
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  mapSlot: { flex: 1, alignItems: 'center', justifyContent: 'flex-start' },
+  mapOrb: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    marginTop: -22,
+    borderWidth: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  mapLabel: { marginTop: 2, fontWeight: '600' },
+});
 
 export default function App() {
   return (

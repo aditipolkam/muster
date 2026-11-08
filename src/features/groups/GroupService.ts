@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { GroupsRepo } from '../../data/repositories/GroupsRepo';
 import type { MeetingPointsRepo } from '../../data/repositories/MeetingPointsRepo';
 import {
@@ -67,13 +68,48 @@ import { appError, err, ok, Result } from '../../shared/result';
 
 const log = createLogger('groups');
 const RETRY_MS = 60_000;
+/** A provider in range that refused or dropped a subscription is asked again at most this often. */
+const NEARBY_RETRY_MS = 10_000;
+/** The longest a provider out of range waits between attempts (doubling from `RETRY_MS`). */
+const MAX_FAR_RETRY_MS = 30 * 60_000;
 const POLL_MS = 30_000;
 const MAX_DISCOVERY_PEERS = 8;
 const STALE_JOINING_MS = 5 * 60_000;
+/** How long a joiner keeps asking an organizer that has not answered yet. */
+const JOIN_RETRY_WINDOW_MS = 10 * 60_000;
+/** SDK reasons meaning "no answer yet", not "no". */
+const RETRY_JOIN_REASONS = new Set(['session_timeout', 'no_reply', 'provider_unreachable']);
 const NOTICE_CAP = 5;
 
 function withoutKey<T>(o: Record<string, T>, key: string): Record<string, T> {
   return Object.fromEntries(Object.entries(o).filter(([k]) => k !== key));
+}
+
+/** Why a join attempt ended, from the SDK's `service_subscription_changed` reason. */
+function joinEndReason(reason: string): string {
+  switch (reason) {
+    case 'session_timeout':
+    case 'no_reply':
+    case 'provider_unreachable':
+      return 'the organizer could not be reached. Move closer and try again';
+    case 'not_found':
+      return "the organizer's mesh is not ready. Ask them to open TrailMesh and try again";
+    case 'full':
+      return 'the group is full';
+    default:
+      return 'the organizer did not accept the request';
+  }
+}
+
+const JoinParamsSchema = z.object({ name: MemberNameSchema });
+
+function nameFromParams(params: string): string | null {
+  try {
+    const p = JoinParamsSchema.safeParse(JSON.parse(params));
+    return p.success ? p.data.name : null;
+  } catch {
+    return null;
+  }
 }
 
 export type JoinRequest = {
@@ -81,8 +117,12 @@ export type JoinRequest = {
   groupId: string;
   groupName: string;
   sender: string;
+  /** The name the joiner sent with its request; its claim, shown until its `hello` confirms it. */
+  name: string | null;
   nearby: boolean;
   tokenHash: string | null;
+  /** The join topic the request came in on; the welcome goes back on it. */
+  topic: string;
   at: number;
 };
 
@@ -126,9 +166,26 @@ export class GroupService {
   private readonly unsubs: Unsubscribe[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly lastAttempt = new Map<string, number>();
+  /**
+   * Out-of-range attempts per provider and topic that never became active. Each doubles the wait
+   * before the next, so a member that is gone for good (an uninstalled app is a new identity) is
+   * not sent four subscribe frames a minute forever; every one the SDK retries and offers to each
+   * neighbor. Cleared when the provider is in range or a subscription to it turns active.
+   */
+  private readonly misses = new Map<string, number>();
   private discovering = false;
   private reconciling = false;
   private dirty = false;
+  /** The resume waiting in the queue, if any. Triggers that arrive meanwhile share it. */
+  private queuedResume: Promise<void> | null = null;
+  /** What resume depends on in the mesh snapshot; other snapshot changes do not schedule one. */
+  private lastMeshKey = '';
+  /**
+   * Organizer: join subscriptions the SDK has admitted and the organizer has not decided on.
+   * The SDK admits a valid join request at once, so it cannot expire under its 60 s approval
+   * timeout while the card is on screen; the approval itself is this app's (the welcome).
+   */
+  private readonly held = new Map<string, JoinRequest>();
 
   constructor(private readonly d: GroupServiceDeps) {}
 
@@ -155,11 +212,19 @@ export class GroupService {
       this.d.pubsub.onRequest(r => this.enqueue(() => this.handleRequest(r))),
       this.d.pubsub.onSubscriptionEvent(c => this.enqueue(() => this.handleSubEvent(c))),
       this.d.mesh.subscribe(() => {
-        if (this.running) {
-          void this.enqueue(() => this.resume());
+        // The snapshot changes on every SDK diagnostic, RSSI reading and link refresh. A resume
+        // per change queued them faster than they ran, and a join request waited behind them
+        // for longer than the SDK holds it.
+        const key = this.meshKey();
+        if (key !== this.lastMeshKey) {
+          this.lastMeshKey = key;
+          if (this.running) {
+            void this.scheduleResume();
+          }
         }
       }),
     );
+    this.lastMeshKey = this.meshKey();
     // A join that never completed before the app was closed cannot be resumed (the token is gone).
     const now = this.d.clock.now();
     for (const g of await this.d.groups.list()) {
@@ -168,11 +233,30 @@ export class GroupService {
       }
     }
     if (opts.poll !== false) {
-      this.timer = setInterval(() => void this.enqueue(() => this.resume()), POLL_MS);
+      this.timer = setInterval(() => void this.scheduleResume(), POLL_MS);
     }
     if (this.running) {
-      await this.enqueue(() => this.resume());
+      await this.scheduleResume();
     }
+  }
+
+  private meshKey(): string {
+    const s = this.d.mesh.getSnapshot();
+    const nearby = s.peers
+      .filter(p => p.state === 'nearby')
+      .map(p => p.address)
+      .sort()
+      .join(',');
+    return `${s.lifecycle}|${s.localAddress ?? ''}|${nearby}`;
+  }
+
+  /** Queues one resume; triggers that arrive before it starts are folded into it. */
+  private scheduleResume(): Promise<void> {
+    this.queuedResume ??= this.enqueue(async () => {
+      this.queuedResume = null;
+      await this.resume();
+    }).then(() => undefined);
+    return this.queuedResume;
   }
 
   stop(): void {
@@ -199,7 +283,7 @@ export class GroupService {
 
   /** Re-check subscriptions now (also run on every mesh change and on a timer). */
   resumeNow(): Promise<void> {
-    return this.enqueue(() => this.resume()).then(() => undefined);
+    return this.scheduleResume();
   }
 
   /** Ensure the service is provided and every group has its subscriptions. Safe to repeat. */
@@ -258,7 +342,7 @@ export class GroupService {
       rev,
       updatedAt: now,
     });
-    await this.enqueue(() => this.resume());
+    await this.scheduleResume();
     return ok((await this.d.groups.get(group.id)) ?? group);
   }
 
@@ -371,6 +455,7 @@ export class GroupService {
       serviceId: GROUP_SERVICE_ID,
       topic: groupTopic(groupId, GroupChannel.join, token),
       mode: 'latest',
+      params: await this.joinParams(),
     });
     if (!sub.ok) {
       await this.d.groups.purge(groupId);
@@ -380,6 +465,15 @@ export class GroupService {
     }
     this.lastAttempt.set(`${organizer}|${groupId}`, this.d.clock.now());
     return ok(group);
+  }
+
+  /**
+   * The joiner's name, sent with the join request so the organizer's card can say who is asking.
+   * Before this the card showed an address until the joiner's `hello` arrived, after admission.
+   */
+  private async joinParams(): Promise<string> {
+    const name = MemberNameSchema.safeParse(await this.d.displayName());
+    return name.success ? JSON.stringify({ name: name.data }) : '';
   }
 
   /** Joiner: look for groups that organizers have opened to people nearby. */
@@ -408,7 +502,7 @@ export class GroupService {
       .peers.filter(p => p.state === 'nearby')
       .slice(0, MAX_DISCOVERY_PEERS);
     for (const p of peers) {
-      await this.ensureSub(p.address, BEACON_TOPIC, true);
+      await this.ensureSub(p.address, BEACON_TOPIC);
     }
   }
 
@@ -427,29 +521,48 @@ export class GroupService {
     const req = this.rt.joinRequests.find(r => r.subId === subId);
     this.setRt({ joinRequests: this.rt.joinRequests.filter(r => r.subId !== subId) });
     if (req) {
-      await this.d.pubsub.rejectRequest(subId);
+      await this.enqueue(() => this.refuseHeld(req, 'declined'));
     }
   }
 
+  /** Ends a join subscription the SDK already admitted; the joiner is told it ended. */
+  private async refuseHeld(req: JoinRequest, reason: string): Promise<void> {
+    this.held.delete(req.subId);
+    await this.d.pubsub.endSubscriber(req.subId, reason);
+  }
+
   private async admit(req: JoinRequest): Promise<Result<void>> {
+    if (!this.held.has(req.subId)) {
+      // The joiner cancelled, walked out of range for good, or the organizer's app restarted.
+      this.notice(
+        `The request from ${shortAddress(req.sender)} is no longer open. Ask them to try again.`,
+      );
+      return err(
+        appError(
+          'groups.request_expired',
+          'That request is no longer open. Ask them to try again.',
+        ),
+      );
+    }
     const group = await this.d.groups.get(req.groupId);
     if (!group || group.role !== 'organizer' || group.status !== 'active') {
-      await this.d.pubsub.rejectRequest(req.subId);
+      await this.refuseHeld(req, 'group closed');
       return err(appError('groups.not_organizer', 'This group is no longer open.'));
     }
     const members = await this.d.groups.members(group.id);
     const existing = members.find(m => m.address === req.sender);
     const active = members.filter(m => m.state === 'active').length;
     if (existing?.state !== 'active' && active >= MAX_GROUP_MEMBERS) {
-      await this.d.pubsub.rejectRequest(req.subId);
+      await this.refuseHeld(req, 'full');
       return err(appError('groups.full', `A group can have at most ${MAX_GROUP_MEMBERS} members.`));
     }
+    this.held.delete(req.subId);
     if (existing?.state !== 'active') {
       const rev = await this.d.groups.nextMemberRev(group.id);
       const m: GroupMember = {
         groupId: group.id,
         address: req.sender,
-        name: existing?.name ?? defaultMemberName(req.sender),
+        name: existing?.name ?? req.name ?? defaultMemberName(req.sender),
         role: 'member',
         state: 'active',
         rev,
@@ -461,9 +574,20 @@ export class GroupService {
     if (req.tokenHash) {
       await this.d.groups.markInviteUsed(req.tokenHash, req.sender);
     }
-    await this.d.pubsub.acceptRequest(req.subId);
+    // The subscription is already admitted, so the welcome reaches the joiner live, or on the
+    // reliable ladder; a renewal that has not seen it is sent it again by the SDK.
+    await this.publishWelcome(group, req.topic);
     await this.reconcile();
     return ok(undefined);
+  }
+
+  private publishWelcome(group: Group, topic: string): Promise<boolean> {
+    return this.publish(topic, 'welcome', 'welcome', {
+      g: group.id,
+      name: group.name,
+      o: group.organizer,
+      mrev: group.memberRev,
+    });
   }
 
   // ---- leaving / removing --------------------------------------------------------------------
@@ -780,6 +904,9 @@ export class GroupService {
         if (env.t !== 'welcome' || !w.success || w.data.g !== group.id || w.data.o !== from) {
           return reject('malformed welcome');
         }
+        if (group.status !== 'joining') {
+          return; // a repeated welcome: already in
+        }
         if (!gate('welcome')) {
           return;
         }
@@ -790,6 +917,8 @@ export class GroupService {
           joinedAt: now,
         });
         this.notice(`You joined "${w.data.name}"`);
+        // The join topic has done its job; the group's own topics take over.
+        await this.dropJoinSubs(group.id);
         await this.reconcile();
         return;
       }
@@ -915,6 +1044,14 @@ export class GroupService {
     }
   }
 
+  private async dropJoinSubs(groupId: string): Promise<void> {
+    for (const s of this.d.pubsub.getSnapshot().subscriptions) {
+      if (s.topic.startsWith(`tm/1/${groupId}/${GroupChannel.join}/`)) {
+        await this.d.pubsub.unsubscribe(s.subId);
+      }
+    }
+  }
+
   private async dropOrganizerSubs(group: Group): Promise<void> {
     for (const s of this.d.pubsub.getSnapshot().subscriptions) {
       if (s.provider === group.organizer && s.topic.startsWith(`tm/1/${group.id}/`)) {
@@ -1003,8 +1140,10 @@ export class GroupService {
       return;
     }
     if (parsed.kind === 'beacon') {
-      const open = Object.keys(this.rt.nearbyUntil).some(g => this.nearbyOpen(g));
-      await (open ? this.d.pubsub.acceptRequest(r.subId) : this.d.pubsub.rejectRequest(r.subId));
+      // Always admitted: a beacon is only published while a group is open, so a follower learns
+      // nothing until then, and hears the beacon the moment the organizer opens. Refusing it made
+      // every joiner nearby subscribe again on each reconcile, crowding the link a join needs.
+      await this.d.pubsub.acceptRequest(r.subId);
       return;
     }
     const group = await this.d.groups.get(parsed.groupId);
@@ -1053,21 +1192,43 @@ export class GroupService {
       }
       autoApprove = !!invite?.autoApprove || check.rejoin;
     }
+    // Admit the subscription now and decide on the person afterwards. Left with the SDK, the
+    // request is rejected after 60 s (approval_timeout), often before the organizer has seen it.
+    // Admission gives the joiner nothing: only the welcome is ever published on this topic.
+    const accepted = await this.d.pubsub.acceptRequest(r.subId);
+    if (!accepted.ok) {
+      log.warn(`join request from ${shortAddress(r.sender)} could not be admitted`);
+      return;
+    }
     const existing = await this.d.groups.member(group.id, r.sender);
     const req: JoinRequest = {
       subId: r.subId,
       groupId: group.id,
       groupName: group.name,
       sender: r.sender,
+      name: nameFromParams(r.params),
       nearby: token === NEARBY_TOKEN,
       tokenHash,
+      topic: r.topic,
       at: now,
     };
+    this.held.set(r.subId, req);
     if (autoApprove || existing?.state === 'active') {
       await this.admit(req);
       return;
     }
-    this.setRt({ joinRequests: [...this.rt.joinRequests.filter(x => x.subId !== r.subId), req] });
+    // One card per person: a retried attempt replaces the one it follows, whose subscription the
+    // joiner has already given up (its lease lapses on its own).
+    const older = this.rt.joinRequests.filter(
+      x => x.groupId === req.groupId && x.sender === req.sender && x.subId !== r.subId,
+    );
+    older.forEach(x => this.held.delete(x.subId));
+    this.setRt({
+      joinRequests: [
+        ...this.rt.joinRequests.filter(x => x.subId !== r.subId && !older.includes(x)),
+        req,
+      ],
+    });
   }
 
   // ---- subscription lifecycle ----------------------------------------------------------------
@@ -1081,18 +1242,49 @@ export class GroupService {
       if (c.state === 'active') {
         await this.pushCurrent(parsed, c);
       } else if (c.state === 'ended') {
+        this.held.delete(c.subId);
         this.setRt({ joinRequests: this.rt.joinRequests.filter(r => r.subId !== c.subId) });
       }
       return;
+    }
+    if (c.state === 'active') {
+      const sub = this.d.pubsub.getSnapshot().subscriptions.find(s => s.subId === c.subId);
+      this.misses.delete(`${sub?.provider ?? c.peer}|${c.topic}`);
     }
     if (parsed.kind !== 'group') {
       return;
     }
     if (parsed.channel === GroupChannel.join && c.state === 'ended') {
+      // Only the attempt still open counts: a cancelled one can report its end after a retry.
+      if (!this.d.pubsub.getSnapshot().subscriptions.some(s => s.subId === c.subId)) {
+        return;
+      }
+      await this.d.pubsub.unsubscribe(c.subId);
       const group = await this.d.groups.get(parsed.groupId);
+      if (
+        group?.status === 'joining' &&
+        RETRY_JOIN_REASONS.has(c.reason) &&
+        this.d.clock.now() - group.createdAt < JOIN_RETRY_WINDOW_MS
+      ) {
+        // The SDK gives a subscription 120 s to be answered. Over a slow link (Android replying to
+        // an iPhone took 3-4 minutes on devices) the first secure-session handshake alone takes
+        // longer, so the attempt ends just before the organizer would see it. The session it
+        // started survives, so asking again is a small frame that gets through quickly.
+        log.info(`join attempt ended (${c.reason}); asking ${shortAddress(group.organizer)} again`);
+        const again = await this.d.pubsub.subscribe({
+          provider: group.organizer,
+          serviceId: GROUP_SERVICE_ID,
+          topic: c.topic,
+          mode: 'latest',
+          params: await this.joinParams(),
+        });
+        if (again.ok) {
+          return;
+        }
+      }
       if (group?.status === 'joining') {
         await this.d.groups.purge(group.id);
-        this.notice(`Could not join "${group.name}": the organizer did not accept the request`);
+        this.notice(`Could not join "${group.name}": ${joinEndReason(c.reason)}`);
       }
       return;
     }
@@ -1131,11 +1323,9 @@ export class GroupService {
         group.role === 'organizer' &&
         members.some(m => m.address === c.peer && m.state === 'active')
       ) {
-        await this.publish(
+        await this.publishWelcome(
+          group,
           groupTopic(group.id, GroupChannel.join, parsed.detail ?? undefined),
-          'welcome',
-          'welcome',
-          { g: group.id, name: group.name, o: group.organizer, mrev: group.memberRev },
         );
       }
       return;
@@ -1191,7 +1381,7 @@ export class GroupService {
           }
           if (g.role === 'member' && g.status === 'active') {
             for (const ch of ORGANIZER_CHANNELS) {
-              await this.ensureSub(g.organizer, groupTopic(g.id, ch), false);
+              await this.ensureSub(g.organizer, groupTopic(g.id, ch));
             }
           }
           if (g.role === 'organizer') {
@@ -1200,7 +1390,7 @@ export class GroupService {
                 continue;
               }
               for (const ch of MEMBER_CHANNELS) {
-                await this.ensureSub(m.address, groupTopic(g.id, ch), false);
+                await this.ensureSub(m.address, groupTopic(g.id, ch));
               }
             }
           }
@@ -1211,7 +1401,7 @@ export class GroupService {
     }
   }
 
-  private async ensureSub(provider: string, topic: string, force: boolean): Promise<void> {
+  private async ensureSub(provider: string, topic: string): Promise<void> {
     const tracked = this.d.pubsub
       .getSnapshot()
       .subscriptions.find(s => s.provider === provider && s.topic === topic);
@@ -1224,11 +1414,25 @@ export class GroupService {
       .getSnapshot()
       .peers.some(p => p.address === provider && p.state === 'nearby');
     // A provider that is not in range may still be reachable over several hops, so try anyway,
-    // but not more than once a minute (a pending subscription times out after 120 s).
-    if (!nearby && !force && now - (this.lastAttempt.get(key) ?? -Infinity) < RETRY_MS) {
+    // but not more than once a minute (a pending subscription times out after 120 s). One in range
+    // is asked at once the first time; after it ended one (refused, dropped), not straight away
+    // again, or every reconcile sends it another subscribe over the same Bluetooth link.
+    if (nearby) {
+      this.misses.delete(key);
+    }
+    const missed = this.misses.get(key) ?? 0;
+    const wait = !nearby
+      ? Math.min(RETRY_MS * 2 ** missed, MAX_FAR_RETRY_MS)
+      : tracked
+      ? NEARBY_RETRY_MS
+      : 0;
+    if (now - (this.lastAttempt.get(key) ?? -Infinity) < wait) {
       return;
     }
     this.lastAttempt.set(key, now);
+    if (!nearby && tracked) {
+      this.misses.set(key, missed + 1);
+    }
     if (tracked) {
       await this.d.pubsub.unsubscribe(tracked.subId);
     }

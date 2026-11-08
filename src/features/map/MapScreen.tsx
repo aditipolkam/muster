@@ -5,24 +5,21 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, AppState, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BBox } from '../../domain/geo';
-import { fixToLatLon, gpsStatus, GpsStatus, describeAccuracy } from '../../domain/location/fix';
+import { fixToLatLon, gpsStatus } from '../../domain/location/fix';
 import {
-  PERMISSION_COPY,
   canTrackLocation,
   effectivePermission,
   permissionAction,
 } from '../../domain/location/permission';
 import { defaultMarkerName } from '../../domain/markers/marker';
-import { covers, needsRegionBanner, selectActiveRegions } from '../../domain/maps/coverage';
+import { covers, selectActiveRegions } from '../../domain/maps/coverage';
 import { useLocationStore } from '../../platform/locationStore';
 import {
   useAdventures,
-  useGroupMembers,
-  useNavPrefs,
-  useGroupPresence,
   useGroups,
   useMarkers,
   useMesh,
+  useNavPrefs,
   useRegions,
   useVisibleMeetingPoints,
 } from '../../runtime/hooks';
@@ -33,9 +30,8 @@ import { OSM_ATTRIBUTION } from '../../shared/attribution';
 import { perf } from '../../shared/perf';
 import { useNow } from '../../ui/useNow';
 import { canEditAdventure } from '../../domain/adventures/authorize';
-import { AdventureBanners, AdventureChip, useAdventureMapState } from './AdventureOverlay';
-import { MeshStatusSheet } from './MeshStatusSheet';
-import { Banner, Card, IconButton, IconTile, ListRow, StatusPill, Text } from '../../ui/components';
+import { useAdventureMapState } from './AdventureOverlay';
+import { Icon, IconButton, Text } from '../../ui/components';
 import { radius, space, useTheme } from '../../ui/theme';
 import { MapCanvas } from './MapCanvas';
 import { AreaDownloadSheet } from './AreaDownloadSheet';
@@ -43,54 +39,39 @@ import { PlaceSearchSheet } from './PlaceSearchSheet';
 import { MarkerSheet } from './MarkerSheet';
 import { MeetingDraft, MeetingPointEditor } from './MeetingPointEditor';
 import { MeetingPointSheet } from './MeetingPointSheet';
+import { NavigationBar, NavTarget } from './NavigationBar';
+import { PinSheet } from './PinSheet';
 import { buildStyle } from './StyleBuilder';
 import {
   accuracyCircle,
+  guideLine,
   headingCone,
   markersCollection,
   meetingPointKey,
   meetingPointsCollection,
   mePuck,
   metresPerPixel,
+  pinCollection,
 } from './overlays';
 
 const log = createLogger('map');
 const MAX_ACTIVE_REGIONS = 3;
 const FOLLOW_ZOOM = 15;
+/** A tap on a marker can also reach the map; ignore the map tap that follows it. */
+const FEATURE_TAP_GUARD_MS = 350;
 
 type CameraMode = 'free' | 'follow' | 'follow-heading';
 type Props = BottomTabScreenProps<RootTabParamList, 'Map'>;
 
-function gpsLabel(
-  status: GpsStatus,
-  accM: number | null,
-  ageS: number | null,
-): { text: string; tone: 'good' | 'warn' | 'bad' | 'neutral' } {
-  switch (status) {
-    case 'unavailable':
-      return { text: 'Location off', tone: 'bad' };
-    case 'acquiring':
-      return { text: 'Acquiring GPS…', tone: 'warn' };
-    case 'ok':
-      return { text: `GPS ${describeAccuracy(accM ?? NaN)}`, tone: 'good' };
-    case 'poor':
-      return { text: `GPS weak ${describeAccuracy(accM ?? NaN)}`, tone: 'warn' };
-    case 'lost':
-      return { text: `GPS lost · last fix ${ageS ?? '?'} s ago`, tone: 'bad' };
-  }
-}
-
+/**
+ * The map and nothing else: search, download, an offline-coverage icon and recenter. Everything
+ * about groups, mesh and adventures lives in its own tab; selecting something on the map opens a
+ * sheet with its actions (including "Start navigation").
+ */
 export function MapScreen({ navigation, route }: Props) {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
-  const {
-    style,
-    points,
-    location,
-    packs,
-    groups: groupService,
-    adventures: adventureService,
-  } = useServices();
+  const { style, points, location, packs, groups: groupService } = useServices();
   const markers = useMarkers();
   const meetingPoints = useVisibleMeetingPoints();
   const groupList = useGroups();
@@ -132,11 +113,12 @@ export function MapScreen({ navigation, route }: Props) {
   const [draft, setDraft] = useState<MeetingDraft | null>(null);
   const [draftBusy, setDraftBusy] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
-  const [styleFailed, setStyleFailed] = useState(false);
+  const [pin, setPin] = useState<{ lat: number; lon: number } | null>(null);
+  const [navTarget, setNavTarget] = useState<NavTarget | null>(null);
+  const [mapReady, setMapReady] = useState(false);
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const lastFeatureTap = useRef(0);
 
   // Which installed regions are loaded as sources (A-13: capped).
   const center = view
@@ -156,14 +138,8 @@ export function MapScreen({ navigation, route }: Props) {
     setAreaBbox(view?.bounds ?? null);
     setAreaOpen(true);
   }, [view?.bounds]);
-  const useOnline = !!onlineUri && !covers(installed, center);
-  // Streaming the online map is network use: an adventure running now no longer counts as offline.
-  const runningNow = adv.current?.adventure.status === 'active';
-  useEffect(() => {
-    if (useOnline && runningNow) {
-      void adventureService.noteNetworkUse();
-    }
-  }, [useOnline, runningNow, adventureService]);
+  const availableOffline = covers(installed, center);
+  const useOnline = !!onlineUri && !availableOffline;
   const mapStyle = useMemo(() => {
     const ids = activeKey ? activeKey.split(',') : [];
     const regions = ids
@@ -197,7 +173,6 @@ export function MapScreen({ navigation, route }: Props) {
 
   // Centre once on the first fix after launch, unless the user already moved the map or a
   // deep link asked for somewhere else.
-  const [mapReady, setMapReady] = useState(false);
   const autoCentered = useRef(false);
   const userMoved = useRef(false);
   useEffect(() => {
@@ -239,8 +214,8 @@ export function MapScreen({ navigation, route }: Props) {
     });
   }, [fix, headingDeg]);
 
-  // Deep-link from the Saved tab / region list. Applied once per navigation, even if the data
-  // it refers to finishes loading after the screen mounted.
+  // Deep-link from the Saved tab / region list / a group's meeting point. Applied once per
+  // navigation, even if the data it refers to finishes loading after the screen mounted.
   const handledFocus = useRef<string | null>(null);
   useEffect(() => {
     const id = route.params?.focusMarkerId;
@@ -260,12 +235,14 @@ export function MapScreen({ navigation, route }: Props) {
     if (mp) {
       setMode('free');
       setSelectedId(null);
+      setPin(null);
       setSelectedMeeting(mpk ?? null);
       cameraRef.current?.flyTo({ center: [mp.lon, mp.lat], zoom: 16, duration: 800 });
     }
     if (m) {
       setMode('free');
       setSelectedId(m.id);
+      setPin(null);
       cameraRef.current?.flyTo({ center: [m.lon, m.lat], zoom: 16, duration: 800 });
     }
     if (r) {
@@ -350,12 +327,13 @@ export function MapScreen({ navigation, route }: Props) {
   }, []);
 
   const addMarker = useCallback(
-    async ([lon, lat]: [number, number]) => {
+    async ([lon, lat]: [number, number], name?: string) => {
       if (moving || movingMeeting) {
         return;
       }
       try {
-        const m = await points.create({ name: defaultMarkerName(markers), lat, lon });
+        const m = await points.create({ name: name ?? defaultMarkerName(markers), lat, lon });
+        setPin(null);
         setSelectedId(m.id);
         setSelectedMeeting(null);
       } catch (e) {
@@ -397,7 +375,7 @@ export function MapScreen({ navigation, route }: Props) {
               {
                 text: `Checkpoint: ${checkpointTarget.name}`,
                 onPress: () =>
-                  navigation.navigate('More', {
+                  navigation.navigate('Activity', {
                     screen: 'CheckpointEditor',
                     params: { adventureId: checkpointTarget.id, lat, lon },
                   }),
@@ -418,6 +396,30 @@ export function MapScreen({ navigation, route }: Props) {
     [addMarker, checkpointTarget, moving, movingMeeting, navigation, organized],
   );
 
+  // Tap on empty map: clear a selection, otherwise drop a temporary pin.
+  const onMapPress = useCallback(
+    ([lon, lat]: [number, number]) => {
+      if (moving || movingMeeting || Date.now() - lastFeatureTap.current < FEATURE_TAP_GUARD_MS) {
+        return;
+      }
+      if (selectedId || selectedMeeting || pin) {
+        setSelectedId(null);
+        setSelectedMeeting(null);
+        setPin(null);
+        return;
+      }
+      setPin({ lat, lon });
+    },
+    [moving, movingMeeting, pin, selectedId, selectedMeeting],
+  );
+
+  const startNavigation = useCallback((target: NavTarget) => {
+    setNavTarget(target);
+    setSelectedId(null);
+    setSelectedMeeting(null);
+    setPin(null);
+  }, []);
+
   const submitDraft = useCallback(
     async (d: MeetingDraft) => {
       setDraftBusy(true);
@@ -435,11 +437,6 @@ export function MapScreen({ navigation, route }: Props) {
       setDraft(null);
       setSelectedId(null);
       setSelectedMeeting(meetingPointKey(r.value.point));
-      setInfo(
-        r.value.delivered
-          ? 'Meeting point shared.'
-          : 'Saved. Members receive it when they are in range of you.',
-      );
     },
     [groupService],
   );
@@ -456,13 +453,9 @@ export function MapScreen({ navigation, route }: Props) {
         { name: selectedPoint.name, note: selectedPoint.note, lat: ctr[1], lon: ctr[0] },
         selectedPoint.id,
       );
-      setInfo(
-        !r.ok
-          ? r.error.userMessage
-          : r.value.delivered
-          ? 'Meeting point moved.'
-          : 'Saved. Members receive it when they are in range of you.',
-      );
+      if (!r.ok) {
+        Alert.alert('Could not move the meeting point', r.error.userMessage);
+      }
     }
   }, [groupService, selectedPoint]);
 
@@ -554,21 +547,20 @@ export function MapScreen({ navigation, route }: Props) {
   );
   const markerData = useMemo(() => markersCollection(markers), [markers]);
   const meetingData = useMemo(() => meetingPointsCollection(meetingPoints), [meetingPoints]);
+  const guide = useMemo(
+    () => guideLine(fix ? { lat: fix.lat, lon: fix.lon } : null, navTarget),
+    [fix, navTarget],
+  );
+  const pinData = useMemo(() => pinCollection(pin ?? navTarget), [pin, navTarget]);
 
-  const activeGroup = groupList.find(g => g.status === 'active') ?? null;
-  const activeMembers = useGroupMembers(activeGroup?.id ?? '');
-  const presence = useGroupPresence(activeGroup, activeMembers, now);
-  const [meshSheet, setMeshSheet] = useState(false);
   const navPrefs = useNavPrefs();
-  const sheetOpen = !!(selected || selectedPoint || moving || movingMeeting);
-  const showChip = !!adv.current && !sheetOpen && !meshSheet;
-  const chipBottom = activeGroup ? 100 : space.md;
-  const lift = showChip ? 84 : 0;
-  const ageS = fix ? Math.max(0, Math.round((now - fix.fixAt) / 1000)) : null;
-  const label = gpsLabel(gps, fix?.accM ?? null, ageS);
-  const showCoverageBanner =
-    !bannerDismissed && !!view && needsRegionBanner(installed, center, view.zoom);
-  const showFirstRun = !bannerDismissed && installed.length === 0 && !showCoverageBanner;
+  const sheetOpen = !!(selected || selectedPoint || pin || moving || movingMeeting);
+  const bottomClear = sheetOpen ? 250 : navTarget ? 96 : space.sm;
+  const offlineLabel = availableOffline
+    ? 'Available offline'
+    : useOnline
+    ? 'Online map · not saved'
+    : 'No offline map for this area';
 
   return (
     <View style={[styles.root, { backgroundColor: c.bg }]}>
@@ -581,17 +573,23 @@ export function MapScreen({ navigation, route }: Props) {
         checkpoints={adv.checkpoints}
         route={adv.route}
         pulse={adv.pulse}
-        onCheckpointPress={id =>
-          adv.shownId &&
-          navigation.navigate('More', {
-            screen: 'CheckpointDetails',
-            params: { adventureId: adv.shownId, checkpointId: id },
-          })
-        }
+        guide={guide}
+        pin={pinData}
+        onCheckpointPress={id => {
+          lastFeatureTap.current = Date.now();
+          if (adv.shownId) {
+            navigation.navigate('Activity', {
+              screen: 'CheckpointDetails',
+              params: { adventureId: adv.shownId, checkpointId: id },
+            });
+          }
+        }}
         selectedMeetingKey={selectedMeeting}
         onMeetingPointPress={key => {
+          lastFeatureTap.current = Date.now();
           setSelectedMeeting(key);
           setSelectedId(null);
+          setPin(null);
           setMoving(false);
           setMovingMeeting(false);
         }}
@@ -600,128 +598,55 @@ export function MapScreen({ navigation, route }: Props) {
         cameraRef={cameraRef}
         onLongPress={onLongPress}
         onMarkerPress={id => {
+          lastFeatureTap.current = Date.now();
           setSelectedId(id);
+          setPin(null);
           setMoving(false);
         }}
-        onMapPress={() => {
-          if (!moving && !movingMeeting) {
-            setSelectedId(null);
-            setSelectedMeeting(null);
-          }
-        }}
+        onMapPress={onMapPress}
         onRegionChange={onRegionChange}
         onStyleLoaded={() => {
           perf.mark('map.styleLoaded');
           setMapReady(true);
-          setStyleFailed(false);
         }}
-        onLoadFailed={() => setStyleFailed(true)}
+        onLoadFailed={() => log.warn('map style failed to load')}
       />
 
       <View style={[styles.top, { top: insets.top + space.sm }]} pointerEvents="box-none">
-        <StatusPill label={label.text} tone={label.tone} />
         <Pressable
-          onPress={() => setMeshSheet(true)}
-          accessibilityRole="button"
-          accessibilityLabel={`${presence.status.label}. Tap for details`}
-          testID="mesh-pill"
-          hitSlop={8}
+          testID="map-search-button"
+          accessibilityRole="search"
+          accessibilityLabel="Search for a place"
+          onPress={() => setSearchOpen(true)}
+          style={[styles.search, { backgroundColor: c.surface, borderColor: c.border }]}
         >
-          <StatusPill label={presence.status.label} tone={presence.status.tone} />
+          <Icon name="search" size={20} color={c.textMuted} />
+          <Text muted numberOfLines={1} style={{ flex: 1 }}>
+            Search places
+          </Text>
         </Pressable>
-        {useOnline ? (
-          <StatusPill label="Online map · not saved" tone="warn" testID="online-pill" />
-        ) : null}
-        {permAction !== 'none' ? (
-          <Banner
-            tone={permission === 'approximate' ? 'warn' : 'info'}
-            title={PERMISSION_COPY[permission].title}
-            body={PERMISSION_COPY[permission].body}
-            actionLabel={permAction === 'request' ? 'Allow' : 'Settings'}
-            onAction={() =>
-              permAction === 'request'
-                ? void location.requestPermission()
-                : void location.openSettings()
-            }
-          />
-        ) : null}
-        {styleFailed ? (
-          <Banner
-            tone="error"
-            title="Map style failed to load"
-            body="Check Settings > Diagnostics for details."
-          />
-        ) : null}
-        {showCoverageBanner ? (
-          <Banner
-            tone="warn"
-            title="No offline map for this area"
-            body="Your markers and location still work. Download or import a map for this area."
-            actionLabel="Download this area"
-            onAction={openArea}
-            onDismiss={() => setBannerDismissed(true)}
-          />
-        ) : null}
-        {showFirstRun ? (
-          <Banner
-            title="No offline maps yet"
-            body="Download a region while you have a connection so the map works without one."
-            actionLabel="Download this area"
-            onAction={openArea}
-            onDismiss={() => setBannerDismissed(true)}
-          />
-        ) : null}
-        {info ? <Banner title={info} onDismiss={() => setInfo(null)} /> : null}
-        <AdventureBanners
-          onOpenAchievements={() => navigation.navigate('More', { screen: 'Achievements' })}
-          onOpenCheckpoint={(adventureId, checkpointId) =>
-            navigation.navigate('More', {
-              screen: 'CheckpointDetails',
-              params: { adventureId, checkpointId },
-            })
-          }
-          onOpenSummary={adventureId =>
-            navigation.navigate('More', {
-              screen: 'AdventureSummary',
-              params: { adventureId },
-            })
-          }
-        />
-        {movingMeeting ? (
-          <Banner
-            tone="info"
-            title="Move meeting point"
-            body="Pan the map so the crosshair is on the new position, then confirm. Everyone in the group will see it."
-          />
-        ) : null}
-        {moving ? (
-          <Banner
-            tone="info"
-            title="Move marker"
-            body="Pan the map so the crosshair is on the new position, then confirm."
-          />
-        ) : null}
       </View>
 
-      {moving || movingMeeting ? (
-        <View style={styles.crosshairWrap} pointerEvents="none">
-          <View style={[styles.crossH, { backgroundColor: c.danger }]} />
-          <View style={[styles.crossV, { backgroundColor: c.danger }]} />
-        </View>
-      ) : null}
-
-      <View
-        style={[
-          styles.controls,
-          { bottom: (sheetOpen ? 250 : activeGroup ? 112 : space.xl) + lift },
-        ]}
-        pointerEvents="box-none"
-      >
+      <View style={[styles.controls, { bottom: bottomClear + 28 }]} pointerEvents="box-none">
         <IconButton
-          testID="map-search-button"
-          icon="search"
-          label="Search for a place"
-          onPress={() => setSearchOpen(true)}
+          testID="map-offline-indicator"
+          icon={availableOffline ? 'offline' : 'online'}
+          label={offlineLabel}
+          active={availableOffline}
+          onPress={() =>
+            availableOffline
+              ? Alert.alert('Available offline', 'This area is saved on your device.')
+              : Alert.alert(
+                  offlineLabel,
+                  useOnline
+                    ? 'This map is streamed and is not available without internet. Download the area to keep it.'
+                    : 'Download this area to use the map without internet.',
+                  [
+                    { text: 'Not now', style: 'cancel' },
+                    { text: 'Download this area', onPress: openArea },
+                  ],
+                )
+          }
         />
         <IconButton
           testID="map-download-button"
@@ -744,11 +669,15 @@ export function MapScreen({ navigation, route }: Props) {
         />
       </View>
 
+      {moving || movingMeeting ? (
+        <View style={styles.crosshairWrap} pointerEvents="none">
+          <View style={[styles.crossH, { backgroundColor: c.danger }]} />
+          <View style={[styles.crossV, { backgroundColor: c.danger }]} />
+        </View>
+      ) : null}
+
       <View
-        style={[
-          styles.attribution,
-          { bottom: (sheetOpen ? 244 : activeGroup ? 92 : space.sm) + lift },
-        ]}
+        style={[styles.attribution, { bottom: bottomClear }]}
         pointerEvents="none"
         testID="attribution"
       >
@@ -757,51 +686,25 @@ export function MapScreen({ navigation, route }: Props) {
         </Text>
       </View>
 
-      {meshSheet && !sheetOpen ? (
-        <MeshStatusSheet
-          status={presence.status}
-          groupName={activeGroup?.name ?? null}
-          members={presence.members}
-          onClose={() => setMeshSheet(false)}
-          onDiagnostics={() => {
-            setMeshSheet(false);
-            navigation.navigate('More', { screen: 'Mesh' });
-          }}
+      {navTarget && !sheetOpen ? (
+        <NavigationBar
+          target={navTarget}
+          fix={fix}
+          units={navPrefs.units}
+          onEnd={() => setNavTarget(null)}
         />
       ) : null}
 
-      {showChip && adv.current ? (
-        <AdventureChip
-          detail={adv.current}
-          now={now}
-          bottom={chipBottom}
-          onPress={() =>
-            navigation.navigate('More', {
-              screen: 'AdventureDetails',
-              params: { adventureId: adv.current?.adventure.id as string },
-            })
-          }
+      {pin && !moving && !movingMeeting ? (
+        <PinSheet
+          pin={pin}
+          fix={fix}
+          units={navPrefs.units}
+          onNavigate={() => startNavigation({ name: 'Dropped pin', lat: pin.lat, lon: pin.lon })}
+          onSave={() => void addMarker([pin.lon, pin.lat])}
+          onClose={() => setPin(null)}
         />
       ) : null}
-
-      {activeGroup && !sheetOpen && !meshSheet ? (
-        <Card style={styles.groupCard} testID="map-group-card">
-          <ListRow
-            title={activeGroup.name}
-            subtitle={presence.status.label}
-            leading={<IconTile name="group" />}
-            chevron
-            divider={false}
-            onPress={() =>
-              navigation.navigate('Groups', {
-                screen: 'GroupDetails',
-                params: { groupId: activeGroup.id },
-              })
-            }
-          />
-        </Card>
-      ) : null}
-
       {selected && !moving ? (
         <MarkerSheet
           marker={selected}
@@ -810,6 +713,9 @@ export function MapScreen({ navigation, route }: Props) {
           onRename={name => void points.update(selected.id, { name })}
           onMove={() => setMoving(true)}
           onDelete={confirmDelete}
+          onNavigate={() =>
+            startNavigation({ name: selected.name, lat: selected.lat, lon: selected.lon })
+          }
           onClose={() => setSelectedId(null)}
         />
       ) : null}
@@ -836,21 +742,14 @@ export function MapScreen({ navigation, route }: Props) {
           onAcknowledge={() => {
             void groupService
               .acknowledge(selectedPoint.groupId, selectedPoint.id)
-              .then(r =>
-                setInfo(
-                  !r.ok
-                    ? r.error.userMessage
-                    : r.value
-                    ? 'The organizer has been told.'
-                    : 'Saved. It is sent when you are in range of the organizer.',
-                ),
-              );
+              .then(r => !r.ok && Alert.alert('Could not tell the organizer', r.error.userMessage));
           }}
           units={navPrefs.units}
           onNavigate={() =>
-            navigation.navigate('Navigate', {
-              groupId: selectedPoint.groupId,
-              pointId: selectedPoint.id,
+            startNavigation({
+              name: selectedPoint.name,
+              lat: selectedPoint.lat,
+              lon: selectedPoint.lon,
             })
           }
           onDetails={() =>
@@ -895,12 +794,12 @@ export function MapScreen({ navigation, route }: Props) {
         }}
         onBrowse={() => {
           setAreaOpen(false);
-          navigation.navigate('More', { screen: 'Download' });
+          navigation.navigate('Profile', { screen: 'Download' });
         }}
-        onStarted={name => {
+        onStarted={() => {
           setAreaOpen(false);
           setAreaBbox(null);
-          setInfo(`Downloading "${name}". Follow progress in More > Offline maps.`);
+          navigation.navigate('Profile', { screen: 'Downloaded' });
         }}
       />
       <MeetingPointEditor
@@ -934,22 +833,21 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: space.md,
     right: space.md,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: space.sm,
-    alignItems: 'stretch',
+  },
+  search: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    minHeight: 48,
+    paddingHorizontal: space.md,
+    borderRadius: radius.input,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   controls: { position: 'absolute', right: space.md, gap: space.sm },
-  groupCard: {
-    position: 'absolute',
-    left: space.md,
-    right: space.md,
-    bottom: space.md,
-    paddingVertical: space.xs,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-  },
   attribution: { position: 'absolute', right: space.sm },
   attributionText: {
     backgroundColor: 'rgba(255,255,255,0.8)',

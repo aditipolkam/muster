@@ -90,7 +90,14 @@ export type MessageHandler = (
   meta: { topic: string; from: string; key: string | null; snapshot: boolean },
 ) => void;
 
-type Desired = { provider: string; serviceId: string; topic: string; mode: SubscriptionMode };
+type Desired = {
+  provider: string;
+  serviceId: string;
+  topic: string;
+  mode: SubscriptionMode;
+  /** Attached to the request and seen by the provider (`service_subscribe_received.params`). */
+  params?: string;
+};
 
 const keyOf = (d: Desired) => `${d.provider}|${d.serviceId}|${d.topic}|${d.mode}`;
 
@@ -223,7 +230,14 @@ export class PubSub {
     const k = keyOf(d);
     const existing = this.desired.get(k);
     if (existing?.subId) {
-      return ok(existing.subId);
+      const tracked = this.snap.subscriptions.find(s => s.subId === existing.subId);
+      if (tracked && tracked.state !== 'ended') {
+        return ok(existing.subId);
+      }
+      // It ended (rejected, timed out, unreachable). Handing back its id would leave the caller
+      // waiting on a subscription the SDK no longer holds, and nothing would reach the provider.
+      this.desired.delete(k);
+      this.set({ subscriptions: this.snap.subscriptions.filter(s => s.subId !== existing.subId) });
     }
     try {
       const subId = await this.deps.mesh.services.subscribe(
@@ -231,6 +245,7 @@ export class PubSub {
         d.serviceId,
         d.topic,
         d.mode,
+        d.params,
       );
       this.desired.set(k, { ...d, subId });
       this.upsertSub({ subId, ...d, state: 'pending', desired: true });
@@ -325,10 +340,8 @@ export class PubSub {
     );
   }
 
-  async endSubscriber(subId: string): Promise<Result<void>> {
-    return this.answer(subId, () =>
-      this.deps.mesh.services.endSubscriber(subId, 'removed by user'),
-    );
+  async endSubscriber(subId: string, reason = 'removed by user'): Promise<Result<void>> {
+    return this.answer(subId, () => this.deps.mesh.services.endSubscriber(subId, reason));
   }
 
   async publish(input: {
@@ -520,7 +533,7 @@ export class PubSub {
     }
     for (const [k, { subId: oldId, ...d }] of [...this.desired]) {
       try {
-        const subId = await s.subscribe(d.provider, d.serviceId, d.topic, d.mode);
+        const subId = await s.subscribe(d.provider, d.serviceId, d.topic, d.mode, d.params);
         this.desired.set(k, { ...d, subId });
         this.set({ subscriptions: this.snap.subscriptions.filter(x => x.subId !== oldId) });
         this.upsertSub({ subId, ...d, state: 'pending', desired: true });

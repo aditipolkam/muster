@@ -118,7 +118,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
-  - MeshSdk (0.31.0):
+  - MeshSdk (0.32.0):
     - React-Core
   - op-sqlite (19.0.3):
     - boost
@@ -2844,7 +2844,7 @@ SPEC CHECKSUMS:
   glog: 5683914934d5b6e4240e497e0f4a3b42d1854183
   hermes-engine: 9f4dfe93326146a1c99eb535b1cb0b857a3cd172
   MapLibreReactNative: a364683808b1b2ae72300eabc243a20d32d041ff
-  MeshSdk: 9769231fa3fdc15695e88a54ddff6132d2d29c0b
+  MeshSdk: bbf99510ff2fc47d16c910f087e62069282daa25
   op-sqlite: e461d0d48c43272dd402220e93195c7458d59062
   RCT-Folly: 846fda9475e61ec7bcbf8a3fe81edfcaeb090669
   RCTDeprecation: 5eb1d2eeff5fb91151e8a8eef45b6c7658b6c897

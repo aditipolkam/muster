@@ -5,12 +5,12 @@ import { bearingDeg, distanceM, formatCoord, formatDistance } from '../../domain
 import { Marker } from '../../domain/markers/marker';
 import { useLocationStore } from '../../platform/locationStore';
 import { useMarkers } from '../../runtime/hooks';
-import { MoreStackParamList } from '../../runtime/navigation';
+import { ProfileStackParamList } from '../../runtime/navigation';
 import { useServices } from '../../runtime/services';
 import { Button, Card, EmptyState, Row, Screen, Text } from '../../ui/components';
 import { space, useTheme } from '../../ui/theme';
 
-type Props = NativeStackScreenProps<MoreStackParamList, 'Saved'>;
+type Props = NativeStackScreenProps<ProfileStackParamList, 'Saved'>;
 
 export function SavedScreen({ navigation }: Props) {
   const { c } = useTheme();

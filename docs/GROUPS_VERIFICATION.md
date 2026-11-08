@@ -8,6 +8,7 @@ Preparation: build and install the app on every device, grant Bluetooth, locatio
 |---|---|---|---|---|
 | G1 | Create a group | 1 | Groups > Create group, enter names | Group listed as Organizer; roster shows you; survives app kill and relaunch |
 | G2 | Join by QR (approval) | 2 | A: Group Details > Show invitation QR. B: Join group > Scan QR code > Join. A approves | B reaches Group Details within 60 s; both rosters list both people with the same names |
+| G2b | Late approval (ADR 0012) | 2 | As G2, but A waits 2 minutes before approving | The card stays on A; B still shows "Waiting"; after Approve B joins. Cancel on B instead removes the card on A |
 | G3 | Join by QR (auto-approve) | 2 | As G2 with the auto-approve switch on | No prompt on A; B joins |
 | G4 | Three joiners, mixed OS | 4 | Repeat G2 for three phones | Rosters identical on all four |
 | G5 | Reuse and expiry | 3 | After G2, scan the **same** QR on a third phone. Separately wait past expiry (or set the clock forward on A) | Third phone is refused and never appears in A's roster; expired code refused |

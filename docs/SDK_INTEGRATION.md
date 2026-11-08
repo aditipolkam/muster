@@ -96,7 +96,9 @@ Same mechanism as the SDK's own examples (`examples/react-native-app/package.jso
 
 iOS: autolinking resolves `MeshSdk.podspec` at the package root, `pod install`. Android: autolinking via `react-native.config.js`. [SDK]
 
-### 2.4 Switching to the published package later (requirement)
+### 2.4 Switching to the published package (done: 0.32.0, ADR 0012)
+
+**Current mode: `local`, temporarily.** TrailMesh moved to the published `0.32.0` (ADR 0012), then back to the checkout for the session-probe back-off fix, which no release has yet. Switch with `scripts/sdk-source.sh npm <version>` once one does. In npm mode check `ls -la node_modules/@offline-protocol/`: `mesh-sdk` must be a directory, not a symlink. Never ship a build made from a checkout whose natives were built for diagnosis (for example with engine logging patched in): such a build can write the engine's log, peer addresses included, to the device log. Build the checkout's natives from its committed source before a build anyone else installs. Editing the version in `package.json` alone is not enough: the lockfile entry keeps `"link": true` and `npm install` keeps the symlink to the checkout, whose natives may be older than its JavaScript. Always switch with the script.
 
 Three rules keep the swap to a one-line change:
 

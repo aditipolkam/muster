@@ -1,6 +1,6 @@
 # ADR 0006: The SDK is consumed from the local checkout through a `file:` dependency, behind one import site
 
-Status: Accepted (Phase 2). iOS simulator build and Android arm64 debug APK build verified; no device behaviour verified (`PROGRESS.md`).
+Status: Superseded for the dependency by ADR 0012 (2026-11-08): TrailMesh uses the published `@offline-protocol/mesh-sdk@0.32.0`. The one import site, the Metro detection and `scripts/sdk-source.sh` stay; `local` mode remains for SDK development.
 
 ## Context
 

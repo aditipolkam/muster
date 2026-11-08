@@ -108,17 +108,36 @@ describe('MapScreen', () => {
     expect(JSON.stringify(style)).not.toMatch(/https?:\/\/(?!www\.openstreetmap)/);
   });
 
-  it('shows the first-run banner with no regions, linking to the download screen', async () => {
+  it('shows only search, download, offline status and recenter on top of the map', async () => {
     const t = await makeTestServices();
     await renderMap(t);
-    expect(screen.getByText('No offline maps yet')).toBeTruthy();
-    fireEvent.press(screen.getByText('Download this area'));
-    expect(await screen.findByTestId('area-sheet')).toBeTruthy();
-    fireEvent.press(screen.getByText('Hide'));
+    for (const id of [
+      'map-search-button',
+      'map-offline-indicator',
+      'map-download-button',
+      'locate-button',
+    ]) {
+      expect(screen.getByTestId(id)).toBeTruthy();
+    }
+    for (const id of ['mesh-pill', 'online-pill', 'map-group-card', 'adventure-chip']) {
+      expect(screen.queryByTestId(id)).toBeNull();
+    }
     expect(screen.queryByText('No offline maps yet')).toBeNull();
   });
 
-  it('streams the online map, and says so, until a downloaded map covers the view', async () => {
+  it('the offline icon says nothing is saved here and opens the download sheet', async () => {
+    const t = await makeTestServices();
+    await renderMap(t);
+    const icon = screen.getByTestId('map-offline-indicator');
+    expect(icon.props.accessibilityLabel).toBe('No offline map for this area');
+    fireEvent.press(icon);
+    const buttons = alertSpy.mock.calls.at(-1)![2] as { text: string; onPress?: () => void }[];
+    expect(alertSpy.mock.calls.at(-1)![0]).toBe('No offline map for this area');
+    act(() => buttons.find(b => b.text === 'Download this area')!.onPress!());
+    expect(await screen.findByTestId('area-sheet')).toBeTruthy();
+  });
+
+  it('streams the online map, and says so on the offline icon, until a downloaded map covers the view', async () => {
     const t = await makeTestServices();
     await t.kv.setJson('catalog.cache', {
       catalogVersion: 1,
@@ -127,17 +146,21 @@ describe('MapScreen', () => {
       regions: [],
     });
     await renderMap(t);
-    expect(await screen.findByTestId('online-pill')).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByTestId('map-offline-indicator').props.accessibilityLabel).toBe(
+        'Online map · not saved',
+      ),
+    );
     expect(mockMap.props!.mapStyle.sources['src-online']).toBeTruthy();
   });
 
   it('shows no online map when no source is known', async () => {
     const t = await makeTestServices();
     await renderMap(t);
-    expect(screen.queryByTestId('online-pill')).toBeNull();
+    expect(mockMap.props!.mapStyle.sources['src-online']).toBeUndefined();
   });
 
-  it('outside installed coverage: banner appears, yet location and markers still render (AC6)', async () => {
+  it('outside installed coverage the icon says so, yet location and markers still render (AC6)', async () => {
     const t = await makeTestServices();
     await t.regions.upsert({
       id: 'ben',
@@ -165,70 +188,106 @@ describe('MapScreen', () => {
     });
     await renderMap(t);
     await waitFor(() => expect(mockMap.props).not.toBeNull());
-    act(() => {
-      mockMap.props!.onRegionDidChange({
-        nativeEvent: {
-          center: [-100, 40],
-          zoom: 11,
-          bearing: 0,
-          pitch: 0,
-          animated: false,
-          userInteraction: true,
-          bounds: [0, 0, 0, 0],
-        },
+    const move = (center: [number, number]) =>
+      act(() => {
+        mockMap.props!.onRegionDidChange({
+          nativeEvent: {
+            center,
+            zoom: 11,
+            bearing: 0,
+            pitch: 0,
+            animated: false,
+            userInteraction: true,
+            bounds: [0, 0, 0, 0],
+          },
+        });
       });
-    });
-    expect(await screen.findByText('No offline map for this area')).toBeTruthy();
+    move([-100, 40]);
+    await waitFor(() =>
+      expect(screen.getByTestId('map-offline-indicator').props.accessibilityLabel).toBe(
+        'No offline map for this area',
+      ),
+    );
     expect(screen.getByTestId('src-me-puck').props.children).toBeDefined();
-    expect(screen.getByText(/GPS ±8 m/)).toBeTruthy();
-    // moving into coverage clears it
-    act(() => {
-      mockMap.props!.onRegionDidChange({
-        nativeEvent: {
-          center: [-5.0, 56.8],
-          zoom: 11,
-          bearing: 0,
-          pitch: 0,
-          animated: false,
-          userInteraction: true,
-          bounds: [0, 0, 0, 0],
-        },
-      });
-    });
-    await waitFor(() => expect(screen.queryByText('No offline map for this area')).toBeNull());
+    // moving into coverage flips it
+    move([-5.0, 56.8]);
+    await waitFor(() =>
+      expect(screen.getByTestId('map-offline-indicator').props.accessibilityLabel).toBe(
+        'Available offline',
+      ),
+    );
   });
 
-  it('GPS chip walks through acquiring -> ok -> lost (15 s) -> recovered (AC4 logic)', async () => {
-    jest.useFakeTimers({ now: 1_000_000 });
-    const t = await makeTestServices();
-    granted(t);
-    useLocationStore.setState({ permission: 'granted' });
-    await renderMap(t);
-    expect(await screen.findByText('Acquiring GPS…')).toBeTruthy();
-    act(() => useLocationStore.setState({ fix: { lat: 1, lon: 1, accM: 12, fixAt: Date.now() } }));
-    expect(screen.getByText('GPS ±12 m')).toBeTruthy();
-    act(() => void jest.advanceTimersByTime(16_000));
-    expect(screen.getByText(/GPS lost/)).toBeTruthy();
-    act(() => useLocationStore.setState({ fix: { lat: 1, lon: 1, accM: 9, fixAt: Date.now() } }));
-    expect(screen.getByText('GPS ±9 m')).toBeTruthy();
-  });
-
-  it('permission states offer the right action', async () => {
+  it('recenter asks for permission, then opens Settings when it is blocked', async () => {
     const t = await makeTestServices();
     t.loc.perm = { status: 'denied', canAskAgain: true, coarseOnly: false, servicesEnabled: true };
     t.loc.nextRequestResult = GRANTED;
     useLocationStore.setState({ permission: 'denied' });
     await renderMap(t);
-    expect(screen.getByText('Location permission denied')).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByText('Allow'));
+      fireEvent.press(screen.getByTestId('locate-button'));
     });
     await waitFor(() => expect(useLocationStore.getState().permission).toBe('granted'));
     expect(t.loc.watchStarts).toBe(1);
 
-    act(() => useLocationStore.setState({ permission: 'blocked' }));
-    fireEvent.press(await screen.findByText('Settings'));
+    act(() => useLocationStore.setState({ permission: 'blocked', fix: null }));
+    fireEvent.press(screen.getByTestId('locate-button'));
     await waitFor(() => expect(t.loc.settingsOpened).toBe(1));
+  });
+
+  it('tapping the map drops a pin; Start navigation draws the straight line and End clears it', async () => {
+    const t = await makeTestServices();
+    useLocationStore.setState({
+      permission: 'granted',
+      fix: { lat: 54.5, lon: -3.0, accM: 5, fixAt: Date.now() },
+    });
+    await renderMap(t);
+    act(() => mockMap.props!.onPress({ nativeEvent: { lngLat: [-3.0, 54.51] } }));
+    expect(await screen.findByTestId('pin-sheet')).toBeTruthy();
+    expect(screen.getByTestId('pin-distance').props.children).toMatch(/1\.11 km straight line/);
+    expect(await t.points.list()).toHaveLength(0);
+
+    fireEvent.press(screen.getByTestId('pin-navigate'));
+    expect(screen.queryByTestId('pin-sheet')).toBeNull();
+    expect(await screen.findByTestId('navigation-bar')).toBeTruthy();
+    expect(screen.getByText('Dropped pin')).toBeTruthy();
+    expect(screen.getByTestId('navigation-distance').props.children).toMatch(/1\.11 km/);
+
+    fireEvent.press(screen.getByTestId('navigation-end'));
+    expect(screen.queryByTestId('navigation-bar')).toBeNull();
+  });
+
+  it('a second tap dismisses the pin, and Save keeps it as a marker', async () => {
+    const t = await makeTestServices();
+    await renderMap(t);
+    act(() => mockMap.props!.onPress({ nativeEvent: { lngLat: [-3.0, 54.51] } }));
+    await screen.findByTestId('pin-sheet');
+    act(() => mockMap.props!.onPress({ nativeEvent: { lngLat: [-3.1, 54.6] } }));
+    expect(screen.queryByTestId('pin-sheet')).toBeNull();
+
+    act(() => mockMap.props!.onPress({ nativeEvent: { lngLat: [-3.0, 54.51] } }));
+    await screen.findByTestId('pin-sheet');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('pin-save'));
+    });
+    await waitFor(async () => expect(await t.points.list()).toHaveLength(1));
+    expect(await screen.findByTestId('marker-sheet')).toBeTruthy();
+  });
+
+  it('a saved marker can start navigation too', async () => {
+    const t = await makeTestServices();
+    const m = await t.points.create({ name: 'Camp', lat: 10, lon: 10 });
+    render(
+      <Harness services={t.services}>
+        <MapScreen
+          navigation={fakeNav().nav as never}
+          route={{ key: 'Map', name: 'Map', params: { focusMarkerId: m.id } } as never}
+        />
+      </Harness>,
+    );
+    fireEvent.press(await screen.findByTestId('marker-navigate'));
+    expect(await screen.findByTestId('navigation-bar')).toBeTruthy();
+    expect(screen.getByText('Camp')).toBeTruthy();
   });
 
   it('long-press drops a persisted marker and shows lat/lon and distance from GPS', async () => {
@@ -287,7 +346,7 @@ describe('MapScreen', () => {
     );
     await screen.findByTestId('marker-sheet');
     fireEvent.press(screen.getByTestId('marker-move'));
-    expect(await screen.findByText('Move marker')).toBeTruthy();
+    await screen.findByLabelText('Set marker here');
     await act(async () => {
       fireEvent.press(screen.getByLabelText('Set marker here'));
     });
@@ -522,37 +581,8 @@ describe('SettingsScreen', () => {
   });
 });
 
-describe('NavigateScreen', () => {
-  it('shows distance and bearing to a saved place, and an empty state without one', async () => {
-    const { NavigateScreen } = require('../src/features/navigate/NavigateScreen');
-    const t = await makeTestServices();
-    useLocationStore.setState({
-      permission: 'granted',
-      fix: { lat: 54.5, lon: -3.0, accM: 5, fixAt: Date.now() },
-    });
-    const { nav } = fakeNav();
-    const m = await t.points.create({ name: 'Hut', lat: 54.51, lon: -3.0 });
-    const ui = (params?: object) => (
-      <Harness services={t.services}>
-        <NavigateScreen
-          navigation={nav as never}
-          route={{ key: 'n', name: 'Navigate', params } as never}
-        />
-      </Harness>
-    );
-    const { unmount } = render(ui({ markerId: m.id }));
-    expect(await screen.findByTestId('nav-distance')).toBeTruthy();
-    expect(screen.getByText('Hut')).toBeTruthy();
-    expect(screen.getByText(/N 0°/)).toBeTruthy();
-    expect(screen.getByText('Straight line · terrain not considered')).toBeTruthy();
-    unmount();
-    render(ui());
-    expect(await screen.findByText('Nothing to navigate to')).toBeTruthy();
-  });
-});
-
 describe('OnboardingScreen', () => {
-  it('lists the benefits and continues on Get started', () => {
+  const open = () => {
     const { OnboardingScreen } = require('../src/features/onboarding/OnboardingScreen');
     const done = jest.fn();
     render(
@@ -560,9 +590,25 @@ describe('OnboardingScreen', () => {
         <OnboardingScreen onDone={done} />
       </Harness>,
     );
+    return done;
+  };
+
+  it('lists the benefits and asks for a name before continuing', () => {
+    const done = open();
     expect(screen.getByText('Offline maps')).toBeTruthy();
     expect(screen.getByText('Group sync')).toBeTruthy();
+    expect(screen.getByText('What should your group call you?')).toBeTruthy();
+    expect(screen.getByTestId('onboarding-start').props.accessibilityState.disabled).toBe(true);
+    fireEvent.changeText(screen.getByTestId('onboarding-name'), '   ');
+    expect(screen.getByTestId('onboarding-start').props.accessibilityState.disabled).toBe(true);
+    expect(done).not.toHaveBeenCalled();
+  });
+
+  it('continues with the trimmed name', () => {
+    const done = open();
+    fireEvent.changeText(screen.getByTestId('onboarding-name'), '  Alex ');
+    expect(screen.getByTestId('onboarding-start').props.accessibilityState.disabled).toBeFalsy();
     fireEvent.press(screen.getByText('Get started'));
-    expect(done).toHaveBeenCalled();
+    expect(done).toHaveBeenCalledWith('Alex');
   });
 });
