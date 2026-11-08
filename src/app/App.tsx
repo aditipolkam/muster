@@ -27,6 +27,8 @@ import {
   CheckpointDetailsScreen,
   CheckpointEditorScreen,
 } from '../features/adventures/CheckpointScreens';
+import { AddPhaseScreen, PhaseAddedScreen } from '../features/adventures/ActivityScreens';
+import { ActivityCompletedScreen } from '../features/adventures/ActivityRunScreens';
 import { AchievementsScreen, AdventureSummaryScreen } from '../features/adventures/RecapScreens';
 import { DownloadScreen } from '../features/maps-manager/DownloadScreen';
 import { RegionsScreen } from '../features/maps-manager/RegionsScreen';
@@ -78,6 +80,9 @@ function ActivityNavigator() {
       <ActivityStack.Screen name="AdventureEditor" component={AdventureEditorScreen} />
       <ActivityStack.Screen name="AdventureDetails" component={AdventureDetailsScreen} />
       <ActivityStack.Screen name="CheckpointEditor" component={CheckpointEditorScreen} />
+      <ActivityStack.Screen name="AddPhase" component={AddPhaseScreen} />
+      <ActivityStack.Screen name="PhaseAdded" component={PhaseAddedScreen} />
+      <ActivityStack.Screen name="ActivityCompleted" component={ActivityCompletedScreen} />
       <ActivityStack.Screen name="CheckpointDetails" component={CheckpointDetailsScreen} />
       <ActivityStack.Screen name="AdventureSummary" component={AdventureSummaryScreen} />
       <ActivityStack.Screen name="Achievements" component={AchievementsScreen} />
