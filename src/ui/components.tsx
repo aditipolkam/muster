@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import React from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   StyleProp,
   StyleSheet,
@@ -10,7 +11,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { radius, space, useTheme } from './theme';
 
 type TextVariant =
@@ -51,6 +52,12 @@ const GLYPHS = {
   online: 'cloud-outline',
   profile: 'person-outline',
   more: 'ellipsis-horizontal',
+  menu: 'ellipsis-vertical',
+  qr: 'qr-code-outline',
+  exit: 'exit-outline',
+  sync: 'sync-outline',
+  stop: 'stop-circle-outline',
+  radio: 'radio-outline',
   back: 'chevron-back',
   chevron: 'chevron-forward',
   layers: 'layers-outline',
@@ -72,6 +79,22 @@ const GLYPHS = {
   download: 'download-outline',
   search: 'search-outline',
   bluetooth: 'bluetooth',
+  grip: 'reorder-two-outline',
+  up: 'chevron-up',
+  down: 'chevron-down',
+  flower: 'flower-outline',
+  camera: 'camera-outline',
+  image: 'image-outline',
+  list: 'list-outline',
+  send: 'send-outline',
+  time: 'time-outline',
+  info: 'information-circle-outline',
+  lock: 'lock-closed-outline',
+  circle: 'ellipse-outline',
+  done: 'checkmark-circle',
+  region: 'scan-outline',
+  rules: 'document-text-outline',
+  ribbon: 'ribbon-outline',
 } as const;
 export type IconName = keyof typeof GLYPHS;
 
@@ -402,14 +425,24 @@ export function SegmentedTabs<T extends string>({
   options,
   value,
   onChange,
+  fill,
+  testID,
 }: {
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
+  /** Share the row equally between the tabs, so several fit at phone width. */
+  fill?: boolean;
+  /** Each tab gets `${testID}-${value}`. */
+  testID?: string;
 }) {
   const { c } = useTheme();
   return (
-    <View style={{ flexDirection: 'row', gap: space.sm }} accessibilityRole="tablist">
+    <View
+      style={{ flexDirection: 'row', gap: fill ? space.xs : space.sm }}
+      accessibilityRole="tablist"
+      testID={testID}
+    >
       {options.map(o => {
         const on = o.value === value;
         return (
@@ -418,12 +451,19 @@ export function SegmentedTabs<T extends string>({
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
             onPress={() => onChange(o.value)}
+            testID={testID ? `${testID}-${o.value}` : undefined}
             style={[
               styles.segment,
+              fill && styles.segmentFill,
               { backgroundColor: on ? c.primary : c.surfaceAlt, borderColor: c.border },
             ]}
           >
-            <Text variant="caption" color={on ? c.onPrimary : c.text} style={{ fontWeight: '600' }}>
+            <Text
+              variant="caption"
+              color={on ? c.onPrimary : c.text}
+              style={{ fontWeight: '600' }}
+              numberOfLines={1}
+            >
               {o.label}
             </Text>
           </Pressable>
@@ -582,6 +622,79 @@ export function IconButton({
   );
 }
 
+export type MenuItem = {
+  label: string;
+  icon?: IconName;
+  onPress: () => void;
+  destructive?: boolean;
+  disabled?: boolean;
+  testID?: string;
+};
+
+/**
+ * A small pop-up list under a header's top-right button (the overflow menu). Tapping outside,
+ * or picking an item, closes it; the item runs after the menu is gone.
+ */
+export function Menu({
+  visible,
+  onClose,
+  items,
+  testID,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  items: MenuItem[];
+  testID?: string;
+}) {
+  const { c } = useTheme();
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close menu">
+        <View
+          testID={testID}
+          accessibilityRole="menu"
+          style={[
+            styles.menu,
+            { top: insets.top + 56, backgroundColor: c.surface, borderColor: c.border },
+          ]}
+        >
+          {items.map((it, i) => {
+            const fg = it.destructive ? c.danger : c.text;
+            return (
+              <Pressable
+                key={it.label}
+                testID={it.testID}
+                accessibilityRole="menuitem"
+                accessibilityState={{ disabled: !!it.disabled }}
+                onPress={
+                  it.disabled
+                    ? undefined
+                    : () => {
+                        onClose();
+                        it.onPress();
+                      }
+                }
+                style={({ pressed }) => [
+                  styles.menuItem,
+                  i > 0 && { borderTopColor: c.border, borderTopWidth: StyleSheet.hairlineWidth },
+                  { backgroundColor: pressed ? c.surfaceAlt : 'transparent' },
+                  it.disabled && { opacity: 0.45 },
+                ]}
+              >
+                {it.icon ? <Icon name={it.icon} size={18} color={fg} /> : null}
+                <Text variant="body" color={fg}>
+                  {it.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
@@ -641,6 +754,27 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
   },
+  menu: {
+    position: 'absolute',
+    right: space.gutter,
+    minWidth: 200,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: space.xs,
+    shadowColor: '#000',
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    minHeight: 44,
+  },
+  segmentFill: { flex: 1, paddingHorizontal: space.xs, alignItems: 'center' },
   badge: {
     paddingHorizontal: space.sm,
     paddingVertical: 2,
