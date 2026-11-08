@@ -70,6 +70,8 @@ const log = createLogger('groups');
 const RETRY_MS = 60_000;
 /** A provider in range that refused or dropped a subscription is asked again at most this often. */
 const NEARBY_RETRY_MS = 10_000;
+/** The longest a provider out of range waits between attempts (doubling from `RETRY_MS`). */
+const MAX_FAR_RETRY_MS = 30 * 60_000;
 const POLL_MS = 30_000;
 const MAX_DISCOVERY_PEERS = 8;
 const STALE_JOINING_MS = 5 * 60_000;
@@ -164,6 +166,13 @@ export class GroupService {
   private readonly unsubs: Unsubscribe[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly lastAttempt = new Map<string, number>();
+  /**
+   * Out-of-range attempts per provider and topic that never became active. Each doubles the wait
+   * before the next, so a member that is gone for good (an uninstalled app is a new identity) is
+   * not sent four subscribe frames a minute forever; every one the SDK retries and offers to each
+   * neighbor. Cleared when the provider is in range or a subscription to it turns active.
+   */
+  private readonly misses = new Map<string, number>();
   private discovering = false;
   private reconciling = false;
   private dirty = false;
@@ -1238,6 +1247,10 @@ export class GroupService {
       }
       return;
     }
+    if (c.state === 'active') {
+      const sub = this.d.pubsub.getSnapshot().subscriptions.find(s => s.subId === c.subId);
+      this.misses.delete(`${sub?.provider ?? c.peer}|${c.topic}`);
+    }
     if (parsed.kind !== 'group') {
       return;
     }
@@ -1404,11 +1417,22 @@ export class GroupService {
     // but not more than once a minute (a pending subscription times out after 120 s). One in range
     // is asked at once the first time; after it ended one (refused, dropped), not straight away
     // again, or every reconcile sends it another subscribe over the same Bluetooth link.
-    const wait = !nearby ? RETRY_MS : tracked ? NEARBY_RETRY_MS : 0;
+    if (nearby) {
+      this.misses.delete(key);
+    }
+    const missed = this.misses.get(key) ?? 0;
+    const wait = !nearby
+      ? Math.min(RETRY_MS * 2 ** missed, MAX_FAR_RETRY_MS)
+      : tracked
+      ? NEARBY_RETRY_MS
+      : 0;
     if (now - (this.lastAttempt.get(key) ?? -Infinity) < wait) {
       return;
     }
     this.lastAttempt.set(key, now);
+    if (!nearby && tracked) {
+      this.misses.set(key, missed + 1);
+    }
     if (tracked) {
       await this.d.pubsub.unsubscribe(tracked.subId);
     }

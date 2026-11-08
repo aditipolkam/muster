@@ -219,6 +219,56 @@ describe('slow links', () => {
   });
 });
 
+describe('members that are gone', () => {
+  it('a member out of range is asked less and less often, and at once when back', async () => {
+    const net = new FakeNetwork();
+    const { org, bob, g, invite, all } = await setup(net, true);
+    await bob.groups.joinFromInvite(invite);
+    await settle(all);
+    expect((await org.groupsRepo.member(g.id, 'off1bob'))?.state).toBe('active');
+    // Bob uninstalls: nothing answers any more, and the SDK ends each attempt (its 120 s
+    // pending timeout, or the provider being unreachable).
+    net.nodes.delete('off1bob');
+    const endBobSubs = async () => {
+      for (const s of org.pubsub
+        .getSnapshot()
+        .subscriptions.filter(x => x.provider === 'off1bob' && x.state !== 'ended')) {
+        (org.mesh as unknown as { subChanges: { emit(c: object): void } }).subChanges.emit({
+          subId: s.subId,
+          role: 'consumer',
+          serviceId: s.serviceId,
+          topic: s.topic,
+          peer: 'off1bob',
+          state: 'ended',
+          reason: 'no_reply',
+        });
+      }
+      await settle(all);
+    };
+    await endBobSubs();
+    const subscribe = jest.spyOn(org.mesh.services, 'subscribe');
+    const bobCalls = () => subscribe.mock.calls.filter(c => c[0] === 'off1bob').length;
+    // Polled every minute for 16 minutes. Without the back-off that is 16 rounds of four
+    // subscribes; with waits of 1, 2, 4, 8 minutes it is four.
+    const counts: number[] = [];
+    for (let i = 0; i < 16; i++) {
+      org.clock.advance(60_000);
+      await org.groups.resumeNow();
+      await settle(all);
+      counts.push(bobCalls());
+      await endBobSubs();
+    }
+    const rounds = new Set([0, ...counts]).size - 1;
+    expect(rounds).toBeGreaterThan(0);
+    expect(rounds).toBeLessThanOrEqual(4);
+    // Back in range: asked straight away.
+    const before = counts[counts.length - 1]!;
+    org.mesh.simulatePeer('off1bob');
+    await settle(all);
+    expect(subscribe.mock.calls.filter(c => c[0] === 'off1bob').length).toBeGreaterThan(before);
+  });
+});
+
 describe('nearby discovery', () => {
   it('follows a nearby phone once, and hears its beacon the moment its group opens', async () => {
     const net = new FakeNetwork();
