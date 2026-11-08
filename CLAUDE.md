@@ -16,7 +16,7 @@ workspace/
   trailmesh/              this app
 ```
 
-- The SDK is consumed as the **published npm package `@offline-protocol/mesh-sdk@0.32.0`** (pinned; ADR 0012), never copied into this repo. `node_modules/@offline-protocol/mesh-sdk` must be a real directory, not a symlink to the checkout. Switch with `scripts/sdk-source.sh` only. See `docs/SDK_INTEGRATION.md` §2.
+- The SDK is consumed as the **published npm package `@offline-protocol/mesh-sdk`**, pinned exactly (ADR 0012), never copied into this repo. **Temporarily** the dependency is the local checkout (`file:`), because the session-probe back-off fix is not released yet; return to `scripts/sdk-source.sh npm <version>` with the first release that has it. In npm mode `node_modules/@offline-protocol/mesh-sdk` must be a real directory, not a symlink. Switch with `scripts/sdk-source.sh` only. See `docs/SDK_INTEGRATION.md` §2.
 - Building SDK natives writes artifacts into the SDK tree. That is allowed; editing SDK source is not. Check `git status` in the SDK before and after.
 - Only `src/mesh/sdk.ts` may import `@offline-protocol/mesh-sdk`. Everything else uses `MeshPort`. This keeps the local->npm switch a config change (`scripts/sdk-source.sh`).
 

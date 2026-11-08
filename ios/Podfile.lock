@@ -2568,7 +2568,7 @@ DEPENDENCIES:
   - glog (from `../node_modules/react-native/third-party-podspecs/glog.podspec`)
   - hermes-engine (from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`)
   - "MapLibreReactNative (from `../node_modules/@maplibre/maplibre-react-native`)"
-  - "MeshSdk (from `../node_modules/@offline-protocol/mesh-sdk`)"
+  - MeshSdk (from `../../offline-protocol-sdk/bindings/react-native`)
   - "op-sqlite (from `../node_modules/@op-engineering/op-sqlite`)"
   - RCT-Folly (from `../node_modules/react-native/third-party-podspecs/RCT-Folly.podspec`)
   - RCTDeprecation (from `../node_modules/react-native/ReactApple/Libraries/RCTFoundation/RCTDeprecation`)
@@ -2687,7 +2687,7 @@ EXTERNAL SOURCES:
   MapLibreReactNative:
     :path: "../node_modules/@maplibre/maplibre-react-native"
   MeshSdk:
-    :path: "../node_modules/@offline-protocol/mesh-sdk"
+    :path: "../../offline-protocol-sdk/bindings/react-native"
   op-sqlite:
     :path: "../node_modules/@op-engineering/op-sqlite"
   RCT-Folly:
