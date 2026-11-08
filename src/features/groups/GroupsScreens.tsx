@@ -5,11 +5,11 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Modal,
   Pressable,
   ScrollView,
   Share,
   StyleSheet,
-  Switch,
   TextInput,
   View,
 } from 'react-native';
@@ -17,9 +17,9 @@ import { buildInviteLink, parseInviteLink } from '../../domain/groups/invite';
 import { presenceText, sortByPresence } from '../../domain/groups/presence';
 import { Group, GroupMember, GROUP_NAME_MAX, shortAddress } from '../../domain/groups/model';
 import {
-  useAdventures,
   useGroup,
   useGroupMembers,
+  useAdventures,
   useGroupPoints,
   useGroupRuntime,
   useGroups,
@@ -35,17 +35,21 @@ import {
   Card,
   Divider,
   EmptyState,
+  Menu,
   Icon,
+  IconButton,
   IconName,
   IconTile,
   ListRow,
   Row,
   Screen,
+  SegmentedTabs,
   StatusPill,
   Text,
 } from '../../ui/components';
 import { useNow } from '../../ui/useNow';
 import { QrCode } from '../../ui/QrCode';
+import { ToggleRow } from '../../ui/activity';
 import { radius, space, useTheme } from '../../ui/theme';
 import { QrScanner } from './QrScanner';
 
@@ -108,6 +112,12 @@ function MeshBanner() {
   );
 }
 
+/** "23 h", "8 min": how long something still lasts, rounded up so it never reads 0 early. */
+function timeLeft(ms: number): string {
+  const min = Math.max(1, Math.ceil(ms / 60_000));
+  return min >= 60 ? `${Math.ceil(min / 60)} h` : `${min} min`;
+}
+
 function ago(ms: number): string {
   const min = Math.floor(Math.max(0, ms) / 60000);
   if (min < 1) {
@@ -121,7 +131,16 @@ function ago(ms: number): string {
 }
 
 type FeedEvent =
-  | { kind: 'meeting'; key: string; at: number; title: string; name: string; pointId: string }
+  | {
+      kind: 'meeting';
+      key: string;
+      at: number;
+      title: string;
+      name: string;
+      pointId: string;
+      /** This phone wrote the revision, so it sits on the right like a sent message. */
+      mine: boolean;
+    }
   | { kind: 'member'; key: string; at: number; text: string }
   | { kind: 'day'; key: string; at: number; text: string };
 
@@ -144,7 +163,7 @@ const clock = (at: number) =>
 /** Newest first (for an inverted list, so the newest sits at the bottom like a chat). */
 export function buildFeed(
   members: GroupMember[],
-  points: { id: string; rev: number; name: string; updatedAt: number }[],
+  points: { id: string; rev: number; name: string; updatedAt: number; updatedBy: string }[],
   me: string | null,
   now: number,
 ): FeedEvent[] {
@@ -156,6 +175,7 @@ export function buildFeed(
       title: p.rev > 1 ? 'Meeting point updated' : 'Meeting point shared',
       name: p.name,
       pointId: p.id,
+      mine: me !== null && p.updatedBy === me,
     })),
     ...members.map<FeedEvent>(m => ({
       kind: 'member',
@@ -181,14 +201,18 @@ export function buildFeed(
   return withDays.reverse();
 }
 
-function Avatar({ name, dim }: { name: string; dim?: boolean }) {
+function Avatar({ name, dim, size = 36 }: { name: string; dim?: boolean; size?: number }) {
   const { c } = useTheme();
   return (
     <View
-      style={[styles.avatar, { backgroundColor: c.primarySoft, opacity: dim ? 0.5 : 1 }]}
+      style={[
+        styles.avatar,
+        { width: size, height: size, borderRadius: size / 2 },
+        { backgroundColor: c.primarySoft, opacity: dim ? 0.5 : 1 },
+      ]}
       accessibilityElementsHidden
     >
-      <Text variant="cardTitle" color={c.primary}>
+      <Text variant={size > 40 ? 'heading' : 'cardTitle'} color={c.primary}>
         {(name.trim()[0] ?? '?').toUpperCase()}
       </Text>
     </View>
@@ -272,8 +296,25 @@ export function GroupsScreen({ navigation }: Nav<'GroupsList'>) {
     (x, y) => statusRank(x.status) - statusRank(y.status) || y.createdAt - x.createdAt,
   );
   const rt = useGroupRuntime();
+  const [addOpen, setAddOpen] = useState(false);
+  const go = (screen: 'CreateGroup' | 'JoinGroup') => {
+    setAddOpen(false);
+    navigation.navigate(screen);
+  };
   return (
-    <Screen title="Groups">
+    <Screen
+      title="Groups"
+      right={
+        <IconButton
+          testID="groups-add"
+          icon="plus"
+          label="Create or join a group"
+          onPress={() => setAddOpen(true)}
+          active
+        />
+      }
+    >
+      <AddGroupSheet visible={addOpen} onClose={() => setAddOpen(false)} onPick={go} />
       <FlatList
         data={groups}
         keyExtractor={g => g.id}
@@ -319,24 +360,6 @@ export function GroupsScreen({ navigation }: Nav<'GroupsList'>) {
                 </Row>
               </Card>
             ))}
-            {groups.length > 0 ? (
-              <Row style={{ marginVertical: space.md }}>
-                <Button
-                  style={{ flex: 1 }}
-                  icon="plus"
-                  label="Create group"
-                  onPress={() => navigation.navigate('CreateGroup')}
-                  testID="groups-create"
-                />
-                <Button
-                  style={{ flex: 1 }}
-                  variant="secondary"
-                  label="Join group"
-                  onPress={() => navigation.navigate('JoinGroup')}
-                  testID="groups-join"
-                />
-              </Row>
-            ) : null}
           </>
         }
         ListEmptyComponent={
@@ -371,6 +394,51 @@ export function GroupsScreen({ navigation }: Nav<'GroupsList'>) {
         )}
       />
     </Screen>
+  );
+}
+
+/** The "+" on the Groups tab: one place to start a group or join one. */
+function AddGroupSheet({
+  visible,
+  onClose,
+  onPick,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onPick: (screen: 'CreateGroup' | 'JoinGroup') => void;
+}) {
+  const { c } = useTheme();
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable
+        style={[styles.sheetScrim, { backgroundColor: c.overlay }]}
+        onPress={onClose}
+        accessibilityLabel="Close"
+      >
+        <Pressable
+          style={[styles.sheet, { backgroundColor: c.bg }]}
+          onPress={() => undefined}
+          testID="groups-add-sheet"
+        >
+          <Text variant="heading">Add a group</Text>
+          <StartCard
+            icon="plus"
+            title="Start a group"
+            body="Name it, then invite people with a QR code."
+            onPress={() => onPick('CreateGroup')}
+            testID="groups-add-create"
+          />
+          <StartCard
+            icon="group"
+            title="Join a group"
+            body="Scan an invitation, or find a group open nearby."
+            onPress={() => onPick('JoinGroup')}
+            testID="groups-add-join"
+          />
+          <Button variant="ghost" label="Cancel" onPress={onClose} />
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -761,7 +829,12 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
               accessibilityRole="button"
               accessibilityLabel={`${e.title}: ${e.name}. Show on map`}
               onPress={() => showOnMap(e.pointId)}
-              style={[styles.bubble, { backgroundColor: c.surface, borderColor: c.border }]}
+              style={[
+                styles.bubble,
+                e.mine
+                  ? [styles.bubbleMine, { backgroundColor: c.primarySoft, borderColor: c.border }]
+                  : { backgroundColor: c.surface, borderColor: c.border },
+              ]}
             >
               <Row>
                 <IconTile name="flag" color={c.mapMeeting} bg={c.mapMeeting + '22'} />
@@ -802,6 +875,8 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
 
 // ---- Group info: members, meeting points, invitations ------------------------------------
 
+type InfoTab = 'members' | 'points' | 'invite' | 'activities';
+
 export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
   const { groupId, justCreated } = route.params;
   const { groups: service, mesh } = useServices();
@@ -810,9 +885,16 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
   const points = useGroupPoints(groupId);
   const rt = useGroupRuntime();
   const me = useMesh().localAddress;
-  const [invite, setInvite] = useState<{ link: string; expiresAt: number } | null>(null);
+  const [invite, setInvite] = useState<{
+    link: string;
+    expiresAt: number;
+    autoApprove: boolean;
+  } | null>(null);
   const [autoApprove, setAutoApprove] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A new group opens on its invitation, so the first thing to do is add people.
+  const [tab, setTab] = useState<InfoTab>(justCreated ? 'invite' : 'members');
   const { c } = useTheme();
   const now = useNow();
   const presence = useGroupPresence(group, members, now);
@@ -830,7 +912,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
       autoInvited.current = true;
       void service.createInvite(groupId, { autoApprove: false }).then(r => {
         if (r.ok) {
-          setInvite(r.value);
+          setInvite({ ...r.value, autoApprove: false });
         }
       });
     }
@@ -866,7 +948,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
   const createInvite = async () => {
     const r = await service.createInvite(group.id, { autoApprove });
     if (r.ok) {
-      setInvite(r.value);
+      setInvite({ ...r.value, autoApprove });
       setError(null);
     } else {
       setError(r.error.userMessage);
@@ -890,82 +972,169 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
       ],
     );
 
+  const canInvite = organizer && group.status === 'active';
+  const tabs: { value: InfoTab; label: string }[] = [
+    { value: 'members', label: 'Members' },
+    { value: 'points', label: 'Points' },
+    ...(canInvite ? [{ value: 'invite' as const, label: 'Invite' }] : []),
+    ...(group.status === 'active'
+      ? [{ value: 'activities' as const, label: 'Adventures' }]
+      : []),
+  ];
+  // The group can end, or the invite tab go away, while this screen is open.
+  const shown = tabs.some(t => t.value === tab) ? tab : 'members';
+
+  const nearbyOpen = nearbyUntil > now;
   const inviteSection = (
     <>
-      <Text variant="heading">Invite people</Text>
-      <Row>
-        <Switch
-          value={autoApprove}
-          onValueChange={setAutoApprove}
-          accessibilityLabel="Approve people who scan automatically"
-        />
-        <Text style={{ flex: 1 }}>Approve people who scan this code automatically</Text>
-      </Row>
-      <Button
-        variant="secondary"
-        label={invite ? 'New invitation' : 'Show invitation QR'}
-        onPress={() => void createInvite()}
-        testID="invite-create"
-      />
+      <Text variant="label" muted style={styles.sectionLabel}>
+        Invitation code
+      </Text>
       {invite ? (
-        <Card style={{ alignItems: 'center', gap: space.sm }}>
-          <QrCode value={invite.link} />
-          <Text variant="caption" muted>
-            Valid for 24 hours, for one person.
-          </Text>
+        <Card style={styles.inviteCard} testID="invite-card">
+          <View style={[styles.qrPlate, { borderColor: c.border }]}>
+            <QrCode value={invite.link} size={196} />
+          </View>
+          <View style={{ alignItems: 'center', gap: 2 }}>
+            <Text variant="cardTitle">Scan to join {group.name}</Text>
+            <Text variant="caption" muted testID="invite-terms">
+              One person · {invite.autoApprove ? 'joins straight away' : 'you approve'} · expires in{' '}
+              {timeLeft(invite.expiresAt - now)}
+            </Text>
+          </View>
+          <View style={styles.inviteActions}>
+            <Button
+              small
+              variant="secondary"
+              icon="share"
+              label="Share link"
+              style={{ flex: 1 }}
+              onPress={() => void Share.share({ message: invite.link })}
+            />
+            <Button
+              small
+              variant="ghost"
+              icon="sync"
+              label="New code"
+              style={{ flex: 1 }}
+              onPress={() => void createInvite()}
+              testID="invite-renew"
+            />
+          </View>
+        </Card>
+      ) : (
+        <Card style={styles.inviteCard}>
+          <IconTile name="qr" />
+          <View style={{ alignItems: 'center', gap: 2 }}>
+            <Text variant="cardTitle">No active code</Text>
+            <Text variant="caption" muted style={{ textAlign: 'center' }}>
+              A code adds one person and is valid for 24 hours. They scan it with TrailMesh; no
+              internet needed.
+            </Text>
+          </View>
           <Button
-            small
-            variant="ghost"
-            label="Share link"
-            onPress={() => void Share.share({ message: invite.link })}
+            icon="qr"
+            label="Create code"
+            onPress={() => void createInvite()}
+            style={{ alignSelf: 'stretch' }}
+            testID="invite-create"
           />
         </Card>
-      ) : null}
-      <Row>
-        <Switch
-          value={nearbyUntil > Date.now()}
-          onValueChange={on =>
-            void (on ? service.openNearby(group.id) : service.closeNearby(group.id))
+      )}
+
+      <Text variant="label" muted style={styles.sectionLabel}>
+        Joining
+      </Text>
+      <Card style={{ paddingVertical: space.xs }}>
+        <ToggleRow
+          title="Approve automatically"
+          body={
+            invite && invite.autoApprove !== autoApprove
+              ? 'Applies to the next code. Create a new code to use it.'
+              : 'Whoever scans the code joins without waiting for you.'
           }
-          accessibilityLabel="Let people nearby ask to join"
+          value={autoApprove}
+          onChange={setAutoApprove}
+          testID="invite-auto"
         />
-        <Text style={{ flex: 1 }}>Let people nearby ask to join (10 minutes)</Text>
-      </Row>
-      {rt.joinRequests
-        .filter(r => r.groupId === group.id)
-        .map(r => (
-          <Banner
-            key={r.subId}
-            title={`${r.name ?? shortAddress(r.sender)} wants to join`}
-            actionLabel="Approve"
-            onAction={() => void service.approveJoin(r.subId)}
-            onDismiss={() => void service.rejectJoin(r.subId)}
-          />
-        ))}
+        <Divider />
+        <ToggleRow
+          title="Open to people nearby"
+          body={
+            nearbyOpen
+              ? `Phones in Bluetooth range can ask to join · ${timeLeft(nearbyUntil - now)} left`
+              : 'For 10 minutes, phones in Bluetooth range can find this group and ask to join.'
+          }
+          value={nearbyOpen}
+          onChange={on => void (on ? service.openNearby(group.id) : service.closeNearby(group.id))}
+          testID="invite-nearby"
+        />
+      </Card>
     </>
   );
 
+  const menuItems = [
+    ...(!organizer && group.status === 'active'
+      ? [
+          {
+            label: 'Sync now',
+            icon: 'sync' as const,
+            onPress: () => void service.requestSync(group.id),
+            disabled: mesh.getSnapshot().lifecycle !== 'running',
+            testID: 'group-sync',
+          },
+        ]
+      : []),
+    {
+      label: organizer ? 'End group' : 'Leave group',
+      icon: organizer ? ('stop' as const) : ('exit' as const),
+      onPress: leave,
+      destructive: true,
+      testID: 'group-leave',
+    },
+  ];
+
   return (
-    <Screen title="Group info" onBack={back}>
+    <Screen
+      title="Group info"
+      onBack={back}
+      right={
+        <IconButton
+          icon="menu"
+          label="More options"
+          onPress={() => setMenuOpen(true)}
+          testID="info-menu"
+        />
+      }
+    >
+      <Menu
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        items={menuItems}
+        testID="info-menu-list"
+      />
       <ScrollView contentContainerStyle={styles.list}>
         <MeshBanner />
         <View style={styles.infoHead}>
-          <Avatar name={group.name} />
-          <Text variant="heading" testID="info-name">
-            {group.name}
-          </Text>
-          <StatusPill
-            style={{ alignSelf: 'center' }}
-            tone={presence.status.tone}
-            label={`${active.length} ${active.length === 1 ? 'member' : 'members'} · ${
-              presence.status.label
-            }`}
-          />
-          <Row>
-            <Badge label={organizer ? 'You organize this group' : 'Member'} tone="good" />
-            {group.status === 'closed' ? <Badge label="Ended by organizer" tone="warn" /> : null}
-            {group.status === 'joining' ? <Badge label="Waiting for approval" tone="warn" /> : null}
-          </Row>
+          <Avatar name={group.name} size={52} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="heading" numberOfLines={1} testID="info-name">
+              {group.name}
+            </Text>
+            <Text variant="caption" muted numberOfLines={1} testID="info-meta">
+              {active.length} {active.length === 1 ? 'member' : 'members'} ·{' '}
+              {organizer ? 'You organize' : 'Member'}
+            </Text>
+            <Row style={{ gap: space.xs }}>
+              {group.status === 'closed' ? (
+                <Badge label="Ended by organizer" tone="warn" />
+              ) : group.status === 'joining' ? (
+                <Badge label="Waiting for approval" tone="warn" />
+              ) : (
+                <StatusPill tone={presence.status.tone} label={presence.status.label} />
+              )}
+            </Row>
+          </View>
         </View>
         {justCreated ? (
           <Banner
@@ -976,106 +1145,139 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
           />
         ) : null}
         {error ? <Banner tone="error" title={error} /> : null}
-        {justCreated && organizer && group.status === 'active' ? inviteSection : null}
-        <Text variant="heading">Meeting points ({points.length})</Text>
-        {points.length === 0 ? (
-          <Text muted>
-            {organizer
-              ? 'Press and hold on the map, then choose "Meeting point" to share one.'
-              : 'None yet. Meeting points the organizer shares appear here and on your map.'}
-          </Text>
-        ) : (
-          <Card style={{ paddingVertical: space.xs }}>
-            {points.map((p, i) => (
-              <ListRow
-                key={p.id}
-                testID={`point-${p.id}`}
-                title={p.name}
-                divider={i < points.length - 1}
-                leading={<IconTile name="flag" color={c.mapMeeting} bg={c.mapMeeting + '22'} />}
-                subtitle={
-                  p.ackedRev >= p.rev
-                    ? 'Acknowledged'
-                    : organizer
-                    ? `Shared ${ago(now - p.updatedAt)}`
-                    : 'Not acknowledged'
-                }
-                chevron
-                onPress={() =>
-                  (
-                    navigation.getParent() as
-                      | { navigate: (n: string, p: object) => void }
-                      | undefined
-                  )?.navigate('Map', {
-                    focusMeetingPoint: `${groupId}:${p.id}`,
-                    nonce: Date.now(),
-                  })
-                }
-              />
-            ))}
-          </Card>
-        )}
-
-        <Text variant="heading">Members ({active.length})</Text>
-        <Card style={{ paddingVertical: space.xs }}>
-          {sortedMembers.map((m, i) => (
-            <ListRow
-              key={m.address}
-              testID={`member-${m.address}`}
-              divider={i < sortedMembers.length - 1}
-              leading={
-                <Avatar
-                  name={m.name}
-                  dim={
-                    m.state !== 'active' ||
-                    presenceOfMember.get(m.address)?.freshness === 'last_seen'
-                  }
+        {/* Above the tabs: a request is answered from any of them, never missed behind one. */}
+        {canInvite
+          ? rt.joinRequests
+              .filter(r => r.groupId === group.id)
+              .map(r => (
+                <Banner
+                  key={r.subId}
+                  title={`${r.name ?? shortAddress(r.sender)} wants to join`}
+                  actionLabel="Approve"
+                  onAction={() => void service.approveJoin(r.subId)}
+                  onDismiss={() => void service.rejectJoin(r.subId)}
                 />
-              }
-              title={`${m.name}${m.address === me ? ' (you)' : ''}`}
-              subtitle={
-                m.state !== 'active'
-                  ? m.state === 'left'
-                    ? 'Left the group'
-                    : 'Removed'
-                  : m.address === me
-                  ? m.role === 'organizer'
-                    ? 'Organizer'
-                    : 'This phone'
-                  : `${m.role === 'organizer' ? 'Organizer · ' : ''}${presenceText(
-                      presenceOfMember.get(m.address)!,
-                    )}`
-              }
-              trailing={
-                m.state === 'active' &&
-                m.address !== me &&
-                presenceOfMember.get(m.address)?.reachable ? (
-                  <StatusPill tone="good" label="In range" style={styles.flat} />
-                ) : organizer && m.state === 'active' && m.address !== me ? (
-                  <Button
-                    small
-                    variant="ghost"
-                    label="Remove"
+              ))
+          : null}
+        <SegmentedTabs<InfoTab>
+          fill
+          options={tabs}
+          value={shown}
+          onChange={setTab}
+          testID="info-tab"
+        />
+
+        {shown === 'invite' ? inviteSection : null}
+
+        {shown === 'points' ? (
+          <>
+            <Text variant="heading">Meeting points ({points.length})</Text>
+            {points.length === 0 ? (
+              <Text muted>
+                {organizer
+                  ? 'Press and hold on the map, then choose "Meeting point" to share one.'
+                  : 'None yet. Meeting points the organizer shares appear here and on your map.'}
+              </Text>
+            ) : (
+              <Card style={{ paddingVertical: space.xs }}>
+                {points.map((p, i) => (
+                  <ListRow
+                    key={p.id}
+                    testID={`point-${p.id}`}
+                    title={p.name}
+                    divider={i < points.length - 1}
+                    leading={<IconTile name="flag" color={c.mapMeeting} bg={c.mapMeeting + '22'} />}
+                    subtitle={
+                      p.ackedRev >= p.rev
+                        ? 'Acknowledged'
+                        : organizer
+                        ? `Shared ${ago(now - p.updatedAt)}`
+                        : 'Not acknowledged'
+                    }
+                    chevron
                     onPress={() =>
-                      Alert.alert('Remove member?', `${m.name} will be removed from the group.`, [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Remove',
-                          style: 'destructive',
-                          onPress: () => void service.removeMember(group.id, m.address),
-                        },
-                      ])
+                      (
+                        navigation.getParent() as
+                          | { navigate: (n: string, p: object) => void }
+                          | undefined
+                      )?.navigate('Map', {
+                        focusMeetingPoint: `${groupId}:${p.id}`,
+                        nonce: Date.now(),
+                      })
                     }
                   />
-                ) : null
-              }
-            />
-          ))}
-        </Card>
+                ))}
+              </Card>
+            )}
+          </>
+        ) : null}
 
-        {!justCreated && organizer && group.status === 'active' ? inviteSection : null}
+        {shown === 'members' ? (
+          <>
+            <Text variant="heading">Members ({active.length})</Text>
+            <Card style={{ paddingVertical: space.xs }}>
+              {sortedMembers.map((m, i) => (
+                <ListRow
+                  key={m.address}
+                  testID={`member-${m.address}`}
+                  divider={i < sortedMembers.length - 1}
+                  leading={
+                    <Avatar
+                      name={m.name}
+                      dim={
+                        m.state !== 'active' ||
+                        presenceOfMember.get(m.address)?.freshness === 'last_seen'
+                      }
+                    />
+                  }
+                  title={`${m.name}${m.address === me ? ' (you)' : ''}`}
+                  subtitle={
+                    m.state !== 'active'
+                      ? m.state === 'left'
+                        ? 'Left the group'
+                        : 'Removed'
+                      : m.address === me
+                      ? m.role === 'organizer'
+                        ? 'Organizer'
+                        : 'This phone'
+                      : `${m.role === 'organizer' ? 'Organizer · ' : ''}${presenceText(
+                          presenceOfMember.get(m.address)!,
+                        )}`
+                  }
+                  trailing={
+                    m.state === 'active' &&
+                    m.address !== me &&
+                    presenceOfMember.get(m.address)?.reachable ? (
+                      <StatusPill tone="good" label="In range" style={styles.flat} />
+                    ) : organizer && m.state === 'active' && m.address !== me ? (
+                      <Button
+                        small
+                        variant="ghost"
+                        label="Remove"
+                        onPress={() =>
+                          Alert.alert(
+                            'Remove member?',
+                            `${m.name} will be removed from the group.`,
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Remove',
+                                style: 'destructive',
+                                onPress: () => void service.removeMember(group.id, m.address),
+                              },
+                            ],
+                          )
+                        }
+                      />
+                    ) : null
+                  }
+                />
+              ))}
+            </Card>
+          </>
+        ) : null}
 
-        {group.status === 'active' ? (
+        {shown === 'activities' ? (
           <Card style={{ paddingVertical: space.xs }} testID="group-adventures">
             <ListRow
               title="Adventures"
@@ -1102,22 +1304,6 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
             ) : null}
           </Card>
         ) : null}
-
-        {!organizer && group.status === 'active' ? (
-          <Button
-            variant="secondary"
-            label="Sync now"
-            onPress={() => void service.requestSync(group.id)}
-            disabled={mesh.getSnapshot().lifecycle !== 'running'}
-            testID="group-sync"
-          />
-        ) : null}
-        <Button
-          variant="danger"
-          label={organizer ? 'End group' : 'Leave group'}
-          onPress={leave}
-          testID="group-leave"
-        />
       </ScrollView>
     </Screen>
   );
@@ -1257,6 +1443,13 @@ export function MeetingPointScreen({ navigation, route }: Nav<'MeetingPoint'>) {
 const styles = StyleSheet.create({
   list: { padding: space.gutter, paddingTop: 0, gap: space.md, paddingBottom: space.xxl },
   startWrap: { gap: space.md, paddingTop: space.xl },
+  sheetScrim: { flex: 1, justifyContent: 'flex-end' },
+  sheet: {
+    padding: space.gutter,
+    gap: space.md,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+  },
   groupCard: { marginBottom: space.md, paddingVertical: space.xs },
   pageHeader: {
     flexDirection: 'row',
@@ -1282,8 +1475,14 @@ const styles = StyleSheet.create({
     width: '85%',
     padding: space.md,
     borderRadius: radius.sheet,
+    borderBottomLeftRadius: radius.sm,
     borderWidth: StyleSheet.hairlineWidth,
     gap: space.xs,
+  },
+  bubbleMine: {
+    alignSelf: 'flex-end',
+    borderBottomLeftRadius: radius.sheet,
+    borderBottomRightRadius: radius.sm,
   },
   stamp: { alignSelf: 'flex-end' },
   actionBar: {
@@ -1293,7 +1492,16 @@ const styles = StyleSheet.create({
     padding: space.md,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  infoHead: { alignItems: 'center', gap: space.sm },
+  infoHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  sectionLabel: { textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: -space.xs },
+  inviteCard: { alignItems: 'center', gap: space.md, paddingVertical: space.xl },
+  qrPlate: {
+    padding: space.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  inviteActions: { flexDirection: 'row', gap: space.sm, alignSelf: 'stretch' },
   flat: { shadowOpacity: 0, elevation: 0, borderWidth: 0, paddingHorizontal: 0 },
   avatar: {
     width: 36,
