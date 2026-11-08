@@ -17,6 +17,7 @@ import { PointsRepo } from '../data/repositories/PointsRepo';
 import { RegionsRepo } from '../data/repositories/RegionsRepo';
 import { parseCatalog } from '../domain/maps/catalog';
 import { ensureStyleAssets } from '../features/map/styleAssets';
+import { createExpoPhotoPort } from '../platform/expoPhotoAdapter';
 import { PlaceSearch } from '../features/maps-manager/PlaceSearch';
 import { MapPackManager } from '../features/maps-manager/MapPackManager';
 import { createExpoHttpClient, HttpClient } from '../features/maps-manager/http';
@@ -195,6 +196,7 @@ export async function bootstrap(): Promise<Services> {
     pubsub,
     groupPubsub,
     fs,
+    photos: createExpoPhotoPort(),
     packs,
     places: new PlaceSearch(http),
     location,

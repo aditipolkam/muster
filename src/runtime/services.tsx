@@ -13,6 +13,7 @@ import type { AdventureTracker } from '../features/adventures/AdventureTracker';
 import type { GroupService } from '../features/groups/GroupService';
 import type { MeshPort } from '../mesh/types';
 import type { PubSub } from '../mesh/PubSub';
+import type { PhotoPort } from '../platform/PhotoPort';
 import type { PlaceSearch } from '../features/maps-manager/PlaceSearch';
 import type { MapPackManager } from '../features/maps-manager/MapPackManager';
 import type { InstalledStyleAssets } from '../features/map/styleAssets';
@@ -44,6 +45,8 @@ export type Services = {
   /** Second PubSub instance, scoped to the group service (`tm.group.*`). */
   groupPubsub: PubSub;
   fs: FilePort;
+  /** Attach a photo from the library to a phase; stays on this phone. */
+  photos: PhotoPort;
   packs: MapPackManager;
   /** Online place search for picking a region to download. */
   places: PlaceSearch;
