@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, Card, IconName, IconTile, ListRow, Text } from '../../ui/components';
+import { Button, Card, Icon, IconName, IconTile, ListRow, Text } from '../../ui/components';
 import { MEMBER_NAME_MAX } from '../../domain/groups/model';
 import { radius, space, useTheme } from '../../ui/theme';
 
@@ -45,14 +53,21 @@ function Scene() {
   );
 }
 
-/** Welcome, then ask for the name group members will see. It is required to continue. */
+/** Welcome, then a screen of its own for the name group members will see (required). */
 export function OnboardingScreen({ onDone }: { onDone: (name: string) => void }) {
+  const [step, setStep] = useState<'welcome' | 'name'>('welcome');
+  return step === 'welcome' ? (
+    <WelcomeStep onNext={() => setStep('name')} />
+  ) : (
+    <NameStep onBack={() => setStep('welcome')} onDone={onDone} />
+  );
+}
+
+function WelcomeStep({ onNext }: { onNext: () => void }) {
   const { c } = useTheme();
-  const [name, setName] = useState('');
-  const ready = name.trim().length > 0;
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }} testID="onboarding">
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.brand}>
           <Text variant="hero" color={c.deep} accessibilityRole="header">
             ▲ TrailMesh
@@ -73,8 +88,61 @@ export function OnboardingScreen({ onDone }: { onDone: (name: string) => void })
             />
           ))}
         </Card>
-        <View style={{ gap: space.sm }}>
-          <Text variant="cardTitle">What should your group call you?</Text>
+        <Button label="Get started" icon="navigate" onPress={onNext} testID="onboarding-start" />
+        <Text variant="caption" muted style={{ textAlign: 'center' }}>
+          No account needed. Location permission is asked later, when you open the map.
+        </Text>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+/** The name members of your groups will see. Required, and changeable later in Profile. */
+function NameStep({ onBack, onDone }: { onBack: () => void; onDone: (name: string) => void }) {
+  const { c } = useTheme();
+  const [name, setName] = useState('');
+  const trimmed = name.trim();
+  const ready = trimmed.length > 0;
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }} testID="onboarding-name-step">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+      >
+        <View style={styles.nameTop}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            onPress={onBack}
+            hitSlop={8}
+            testID="onboarding-back"
+          >
+            <Icon name="back" size={30} />
+          </Pressable>
+          <Text variant="label" muted>
+            Step 2 of 2
+          </Text>
+        </View>
+        <ScrollView
+          contentContainerStyle={styles.nameBody}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="none"
+        >
+          <View
+            style={[styles.avatar, { backgroundColor: c.primarySoft }]}
+            accessibilityElementsHidden
+          >
+            <Text variant="hero" color={c.primary}>
+              {(trimmed[0] ?? '?').toUpperCase()}
+            </Text>
+          </View>
+          <Text variant="title" style={{ textAlign: 'center' }} accessibilityRole="header">
+            What should your group call you?
+          </Text>
+          <Text muted style={{ textAlign: 'center' }}>
+            People in your groups see this name next to your location and updates. You can change it
+            later in Profile.
+          </Text>
           <TextInput
             testID="onboarding-name"
             value={name}
@@ -83,29 +151,25 @@ export function OnboardingScreen({ onDone }: { onDone: (name: string) => void })
             placeholder="Your name"
             placeholderTextColor={c.textMuted}
             autoCapitalize="words"
+            autoFocus
             returnKeyType="done"
-            onSubmitEditing={() => ready && onDone(name.trim())}
+            onSubmitEditing={() => ready && onDone(trimmed)}
             accessibilityLabel="Your name"
             style={[
               styles.input,
               { color: c.text, borderColor: c.border, backgroundColor: c.surface },
             ]}
           />
-          <Text variant="caption" muted>
-            Shown to people in your groups. You can change it later in Profile.
-          </Text>
+        </ScrollView>
+        <View style={styles.nameFooter}>
+          <Button
+            label="Continue"
+            disabled={!ready}
+            onPress={() => onDone(trimmed)}
+            testID="onboarding-continue"
+          />
         </View>
-        <Button
-          label="Get started"
-          icon="navigate"
-          disabled={!ready}
-          onPress={() => onDone(name.trim())}
-          testID="onboarding-start"
-        />
-        <Text variant="caption" muted style={{ textAlign: 'center' }}>
-          No account needed. Location permission is asked later, when you open the map.
-        </Text>
-      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -121,6 +185,28 @@ const styles = StyleSheet.create({
     minHeight: 52,
     fontSize: 15,
   },
+  nameTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: space.gutter,
+    paddingTop: space.md,
+  },
+  nameBody: {
+    padding: space.gutter,
+    gap: space.lg,
+    alignItems: 'stretch',
+    paddingTop: space.xl,
+  },
+  avatar: {
+    alignSelf: 'center',
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nameFooter: { padding: space.gutter },
   scene: { height: 160, borderRadius: 24, overflow: 'hidden' },
   hill: {
     position: 'absolute',

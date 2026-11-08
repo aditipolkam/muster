@@ -593,22 +593,34 @@ describe('OnboardingScreen', () => {
     return done;
   };
 
-  it('lists the benefits and asks for a name before continuing', () => {
-    const done = open();
+  it('welcome lists the benefits and does not ask for a name yet', () => {
+    open();
     expect(screen.getByText('Offline maps')).toBeTruthy();
     expect(screen.getByText('Group sync')).toBeTruthy();
+    expect(screen.queryByTestId('onboarding-name')).toBeNull();
+  });
+
+  it('Get started opens a separate name screen, and Back returns to the welcome', () => {
+    const done = open();
+    fireEvent.press(screen.getByTestId('onboarding-start'));
+    expect(screen.getByTestId('onboarding-name-step')).toBeTruthy();
     expect(screen.getByText('What should your group call you?')).toBeTruthy();
-    expect(screen.getByTestId('onboarding-start').props.accessibilityState.disabled).toBe(true);
-    fireEvent.changeText(screen.getByTestId('onboarding-name'), '   ');
-    expect(screen.getByTestId('onboarding-start').props.accessibilityState.disabled).toBe(true);
+    expect(screen.queryByText('Offline maps')).toBeNull();
+    fireEvent.press(screen.getByTestId('onboarding-back'));
+    expect(screen.getByText('Offline maps')).toBeTruthy();
     expect(done).not.toHaveBeenCalled();
   });
 
-  it('continues with the trimmed name', () => {
+  it('Continue stays disabled for a blank name and finishes with the trimmed name', () => {
     const done = open();
+    fireEvent.press(screen.getByTestId('onboarding-start'));
+    expect(screen.getByTestId('onboarding-continue').props.accessibilityState.disabled).toBe(true);
+    fireEvent.changeText(screen.getByTestId('onboarding-name'), '   ');
+    expect(screen.getByTestId('onboarding-continue').props.accessibilityState.disabled).toBe(true);
     fireEvent.changeText(screen.getByTestId('onboarding-name'), '  Alex ');
-    expect(screen.getByTestId('onboarding-start').props.accessibilityState.disabled).toBeFalsy();
-    fireEvent.press(screen.getByText('Get started'));
+    expect(screen.getByTestId('onboarding-continue').props.accessibilityState.disabled).toBeFalsy();
+    expect(screen.getByText('A', { includeHiddenElements: true })).toBeTruthy();
+    fireEvent.press(screen.getByTestId('onboarding-continue'));
     expect(done).toHaveBeenCalledWith('Alex');
   });
 });
