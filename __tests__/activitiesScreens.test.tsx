@@ -13,7 +13,7 @@ import {
   CheckpointDetailsScreen,
   CheckpointEditorScreen,
 } from '../src/features/adventures/CheckpointScreens';
-import { GroupInfoScreen } from '../src/features/groups/GroupsScreens';
+import { GroupInfoScreen, GroupsScreen } from '../src/features/groups/GroupsScreens';
 import { useLocationStore } from '../src/platform/locationStore';
 import { setFeature } from '../src/shared/features';
 import { Harness } from '../src/testing/componentHarness';
@@ -948,5 +948,70 @@ describe('Activity History', () => {
     expect(screen.getByText('2/2')).toBeTruthy();
     fireEvent.press(row);
     expect(calls).toContainEqual(['navigate', 'AdventureSummary', { adventureId: id }]);
+  });
+});
+
+describe('the group pages', () => {
+  it('group info lists the draft for the organizer and the activity as live after publishing', async () => {
+    const { t, groupId } = await organizer();
+    const a = await t.services.adventures.createAdventure(
+      { name: 'Flower hunt' },
+      { groupId, draft: true },
+    );
+    const id = a.ok ? a.value.id : '';
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={n} route={{ params: { groupId } } as any} />
+      </Harness>,
+    );
+    fireEvent.press(await screen.findByTestId('info-tab-activities'));
+    expect(await screen.findByText(/Draft · only you can see it/)).toBeTruthy();
+    await t.services.adventures.addCheckpoint(id, {
+      name: 'F',
+      kind: 'other',
+      type: 'task',
+      task: 'x',
+    });
+    await act(async () => {
+      await t.services.adventures.act(id, 'publish');
+    });
+    expect(await screen.findByText(/Live · tap to start/)).toBeTruthy();
+    fireEvent.press(screen.getByTestId(`activity-${id}`));
+    expect(calls).toContainEqual([
+      'navigate',
+      'Activity',
+      { screen: 'AdventureDetails', params: { adventureId: id } },
+    ]);
+  });
+
+  it('the groups list says when an activity is waiting, and when it is in progress', async () => {
+    const { t, groupId } = await organizer();
+    const a = await t.services.adventures.createAdventure(
+      { name: 'Flower hunt' },
+      { groupId, draft: true },
+    );
+    const id = a.ok ? a.value.id : '';
+    await t.services.adventures.addCheckpoint(id, {
+      name: 'F',
+      kind: 'other',
+      type: 'task',
+      task: 'x',
+    });
+    const { n } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupsScreen navigation={n} route={{} as any} />
+      </Harness>,
+    );
+    expect(await screen.findByText('1 draft')).toBeTruthy();
+    await act(async () => {
+      await t.services.adventures.act(id, 'publish');
+    });
+    expect(await screen.findByText('1 activity waiting')).toBeTruthy();
+    await act(async () => {
+      await t.services.adventures.join(id);
+    });
+    expect(await screen.findByText('In progress')).toBeTruthy();
   });
 });

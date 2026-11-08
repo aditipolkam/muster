@@ -13,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { ActivityStanding } from '../../domain/adventures/lifecycle';
 import { buildInviteLink, parseInviteLink } from '../../domain/groups/invite';
 import { presenceText, sortByPresence } from '../../domain/groups/presence';
 import { Group, GroupMember, GROUP_NAME_MAX, shortAddress } from '../../domain/groups/model';
@@ -20,6 +21,7 @@ import {
   useGroup,
   useGroupMembers,
   useAdventures,
+  useGroupActivities,
   useGroupPoints,
   useGroupRuntime,
   useGroups,
@@ -49,6 +51,7 @@ import {
 } from '../../ui/components';
 import { useNow } from '../../ui/useNow';
 import { QrCode } from '../../ui/QrCode';
+import { isEnabled } from '../../shared/features';
 import { ToggleRow } from '../../ui/activity';
 import { radius, space, useTheme } from '../../ui/theme';
 import { QrScanner } from './QrScanner';
@@ -228,6 +231,14 @@ export function nameOf(members: GroupMember[], address: string, me: string | nul
 
 // ---- Groups list --------------------------------------------------------------------------
 
+const STANDING_TEXT: Record<ActivityStanding, string> = {
+  draft: 'Draft · only you can see it',
+  waiting: 'Live · tap to start',
+  running: 'In progress',
+  finished: 'Finished',
+  closed: 'Ended by the organizer',
+};
+
 const statusRank = (s: Group['status']) => (s === 'active' ? 0 : s === 'joining' ? 1 : 2);
 
 function StartCard({
@@ -260,11 +271,15 @@ function StartCard({
 
 function GroupRow({ group: g, onPress }: { group: Group; onPress: () => void }) {
   const members = useGroupMembers(g.id).filter(m => m.state === 'active');
+  const activities = useGroupActivities(g.id).filter(() => isEnabled('groupActivities'));
+  const waiting = activities.filter(a => a.standing === 'waiting').length;
+  const running = activities.filter(a => a.standing === 'running').length;
+  const drafts = g.role === 'organizer' ? activities.filter(a => a.standing === 'draft').length : 0;
   const subtitle =
     g.status === 'active'
       ? `${members.length} ${members.length === 1 ? 'member' : 'members'}${
           g.role === 'organizer' ? ' · You organize' : ''
-        }`
+        }${running > 0 ? ' · Activity in progress' : ''}`
       : g.status === 'joining'
       ? 'Waiting for approval'
       : 'Ended by organizer';
@@ -283,6 +298,15 @@ function GroupRow({ group: g, onPress }: { group: Group; onPress: () => void }) 
             <Badge label="Waiting" tone="warn" />
           ) : g.status === 'closed' ? (
             <Badge label="Ended" tone="warn" />
+          ) : waiting > 0 ? (
+            <Badge
+              label={waiting === 1 ? '1 activity waiting' : `${waiting} activities waiting`}
+              tone="good"
+            />
+          ) : running > 0 ? (
+            <Badge label="In progress" tone="good" />
+          ) : drafts > 0 ? (
+            <Badge label={drafts === 1 ? '1 draft' : `${drafts} drafts`} tone="neutral" />
           ) : null
         }
       />
@@ -898,7 +922,13 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
   const { c } = useTheme();
   const now = useNow();
   const presence = useGroupPresence(group, members, now);
+  const activitiesOn = isEnabled('groupActivities');
   const groupAdventures = useAdventures().filter(a => a.groupId === groupId);
+  const activities = useGroupActivities(groupId);
+  // A draft is the organizer's alone; nobody else has it.
+  const visibleActivities = activities.filter(
+    a => a.standing !== 'draft' || group?.role === 'organizer',
+  );
   const openMore = (screen: string, params?: object) =>
     (navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined)?.navigate(
       'Activity',
@@ -978,7 +1008,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
     { value: 'points', label: 'Points' },
     ...(canInvite ? [{ value: 'invite' as const, label: 'Invite' }] : []),
     ...(group.status === 'active'
-      ? [{ value: 'activities' as const, label: 'Adventures' }]
+      ? [{ value: 'activities' as const, label: activitiesOn ? 'Activities' : 'Adventures' }]
       : []),
   ];
   // The group can end, or the invite tab go away, while this screen is open.
@@ -1277,7 +1307,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
           </>
         ) : null}
 
-        {shown === 'activities' ? (
+        {shown === 'activities' && !activitiesOn ? (
           <Card style={{ paddingVertical: space.xs }} testID="group-adventures">
             <ListRow
               title="Adventures"
@@ -1298,6 +1328,45 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
                 small
                 variant="ghost"
                 label="Plan a group adventure"
+                testID="plan-group-adventure"
+                onPress={() => openMore('AdventureEditor', { groupId: group.id })}
+              />
+            ) : null}
+          </Card>
+        ) : null}
+
+        {shown === 'activities' && activitiesOn ? (
+          <Card style={{ paddingVertical: space.xs }} testID="group-adventures">
+            <ListRow
+              title="Activities"
+              subtitle={
+                visibleActivities.length === 0
+                  ? organizer
+                    ? 'Plan a day out with phases for the group'
+                    : 'None published by the organizer yet'
+                  : `${visibleActivities.length} for this group`
+              }
+              leading={<IconTile name="trail" />}
+              divider={visibleActivities.length > 0}
+            />
+            {visibleActivities.map((a, i) => (
+              <ListRow
+                key={a.adventure.id}
+                testID={`activity-${a.adventure.id}`}
+                title={a.adventure.name}
+                subtitle={`${STANDING_TEXT[a.standing]}${
+                  a.total > 0 && a.standing !== 'draft' ? ` · ${a.done} of ${a.total} phases` : ''
+                }`}
+                chevron
+                divider={i < visibleActivities.length - 1}
+                onPress={() => openMore('AdventureDetails', { adventureId: a.adventure.id })}
+              />
+            ))}
+            {organizer ? (
+              <Button
+                small
+                variant="ghost"
+                label="Plan an activity"
                 testID="plan-group-adventure"
                 onPress={() => openMore('AdventureEditor', { groupId: group.id })}
               />
