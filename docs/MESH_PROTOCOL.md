@@ -78,7 +78,7 @@ Phase 3 carries groups and meeting points on the same service-subscription layer
 | `tm/1/<g>/member` | member | own address | `hello`, `leave` | `{name, appV}`; `leave`: `{addr}` |
 | `tm/1/<g>/ack` | member | point id | `ack` | `{pointId, rev}` |
 | `tm/1/<g>/sync` | member | `sync` | `sync_request` | `{mrev, points: [{id, rev}] (<= 15)}` |
-| `tm/1/<g>/j/<token>` | organizer (reply) | `welcome` | `welcome` | `{g, name, o, mrev}` |
+| `tm/1/<g>/j/<token>` | organizer (reply) | `welcome` | `welcome` | `{g, name, o, mrev, rg?}`; `rg` is the group's trip map (`{b: [w, s, e, n], n, z: [min, max]}`, ADR 0013), dropped if invalid without failing the join |
 | `tm/1/beacon` | organizer | `beacon` | `beacon` | `{g, n, o, until}` |
 
 `member` is one topic name used in both directions; direction is decided by the receiver's role for that group (an organizer reads `hello`/`leave`, a member reads `joined`/`left`/`removed`/`closed`). All envelopes are the section 4 envelope (<= 2 KB). A meeting point name is <= 60 characters and its note <= 280, so a worst-case multi-byte point still fits (tested).
