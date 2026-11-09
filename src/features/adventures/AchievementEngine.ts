@@ -6,7 +6,7 @@ import {
   AdventureFact,
   evaluate,
 } from '../../domain/adventures/achievements';
-import { elapsedMs } from '../../domain/adventures/lifecycle';
+import { completedAt, elapsedMs } from '../../domain/adventures/lifecycle';
 import { SOLO_ADDRESS } from '../../domain/adventures/model';
 import { qualifies } from '../../domain/adventures/stats';
 import type { Clock } from '../../shared/clock';
@@ -100,7 +100,8 @@ export class AchievementEngine {
     const me = this.d.address();
     const completed: AdventureFact[] = [];
     for (const a of await this.d.repo.list()) {
-      if (a.status !== 'completed' || a.endedAt === null) {
+      const endedAt = completedAt(a);
+      if (endedAt === null) {
         continue;
       }
       const self = a.groupId ? me : SOLO_ADDRESS;
@@ -108,18 +109,19 @@ export class AchievementEngine {
         continue;
       }
       const participants = await this.d.repo.participants(a.id);
-      if (a.groupId && participants.find(p => p.address === self)?.state !== 'joined') {
+      const mine = participants.find(p => p.address === self)?.state;
+      if (a.groupId && mine !== 'joined' && mine !== 'done') {
         // Someone else's adventure that this person did not take part in.
         continue;
       }
       const kinds = await this.d.repo.myCompletionKinds(a.id, self);
-      const activeMs = elapsedMs(a.progress, a.endedAt);
+      const activeMs = elapsedMs(a.progress, endedAt);
       completed.push({
         id: a.id,
         groupId: a.groupId,
-        endedAt: a.endedAt,
+        endedAt,
         tzOffsetMin: a.tzOffsetMin,
-        joinedCount: a.groupId ? participants.filter(p => p.state === 'joined').length : 1,
+        joinedCount: a.groupId ? participants.filter(p => p.state !== 'left').length : 1,
         qualifying: qualifies({
           myCheckpoints: kinds.length,
           activeMs,

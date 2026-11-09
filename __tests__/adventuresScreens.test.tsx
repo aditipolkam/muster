@@ -676,6 +676,7 @@ describe('Group and settings entry points', () => {
         />
       </Harness>,
     );
+    fireEvent.press(await screen.findByTestId('info-tab-activities'));
     fireEvent.press(await screen.findByTestId('plan-group-adventure'));
     expect(calls).toContainEqual([
       'navigate',

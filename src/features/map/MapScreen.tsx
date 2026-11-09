@@ -23,12 +23,20 @@ import {
   useRegions,
   useVisibleMeetingPoints,
 } from '../../runtime/hooks';
-import { RootTabParamList } from '../../runtime/navigation';
+import { PickedLocation, RootTabParamList } from '../../runtime/navigation';
 import { useServices } from '../../runtime/services';
 import { createLogger } from '../../shared/logger';
 import { OSM_ATTRIBUTION } from '../../shared/attribution';
 import { perf } from '../../shared/perf';
 import { useNow } from '../../ui/useNow';
+import {
+  boxAround,
+  boxSideKm,
+  DEFAULT_AREA_MAX_ZOOM,
+  DEFAULT_AREA_MIN_ZOOM,
+  DEFAULT_REGION_SIDE_KM,
+  estimateAreaBytes,
+} from '../../domain/adventures/area';
 import { canEditAdventure } from '../../domain/adventures/authorize';
 import { useAdventureMapState } from './AdventureOverlay';
 import { Icon, IconButton, Text } from '../../ui/components';
@@ -40,10 +48,12 @@ import { MarkerSheet } from './MarkerSheet';
 import { MeetingDraft, MeetingPointEditor } from './MeetingPointEditor';
 import { MeetingPointSheet } from './MeetingPointSheet';
 import { NavigationBar, NavTarget } from './NavigationBar';
+import { PickLocationOverlay, PickStep } from './PickLocation';
 import { PinSheet } from './PinSheet';
 import { buildStyle } from './StyleBuilder';
 import {
   accuracyCircle,
+  boxCollection,
   guideLine,
   headingCone,
   markersCollection,
@@ -116,6 +126,34 @@ export function MapScreen({ navigation, route }: Props) {
   const [pin, setPin] = useState<{ lat: number; lon: number } | null>(null);
   const [navTarget, setNavTarget] = useState<NavTarget | null>(null);
   const [mapReady, setMapReady] = useState(false);
+
+  // "Select Location": a place for a phase (and its offline region), or a meeting point to share
+  // with a group. Either way the place goes back to the screen that asked.
+  const phasePick = route.params?.pick ?? null;
+  const meetingPick = route.params?.pickMeeting ?? null;
+  const pickReq = useMemo(
+    () =>
+      phasePick ??
+      (meetingPick
+        ? { includeRegion: false, region: null, lat: meetingPick.lat, lon: meetingPick.lon }
+        : null),
+    [phasePick, meetingPick],
+  );
+  const [pickStep, setPickStep] = useState<PickStep>('pin');
+  const [pickPoint, setPickPoint] = useState<{ lat: number; lon: number } | null>(null);
+  const [pickSideKm, setPickSideKm] = useState(DEFAULT_REGION_SIDE_KM);
+  const pickKey = phasePick
+    ? `${phasePick.adventureId}|${phasePick.checkpointId ?? ''}|${route.params?.nonce ?? ''}`
+    : meetingPick
+    ? `meeting|${meetingPick.groupId}|${route.params?.nonce ?? ''}`
+    : null;
+  const pickRegion = useMemo(
+    () =>
+      pickReq?.includeRegion && pickStep === 'region' && pickPoint
+        ? boxAround(pickPoint, pickSideKm)
+        : null,
+    [pickReq?.includeRegion, pickStep, pickPoint, pickSideKm],
+  );
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const lastFeatureTap = useRef(0);
@@ -278,6 +316,89 @@ export function MapScreen({ navigation, route }: Props) {
     });
   }, [adv.bounds, adv.shownId, route.params?.showAdventure, route.params?.nonce]);
 
+  // A new request to pick a place starts at the pin step, near the phase's current place.
+  useEffect(() => {
+    if (!pickKey || !pickReq) {
+      return;
+    }
+    setPickStep('pin');
+    setPickPoint(null);
+    setPickSideKm(
+      pickReq.region ? Math.round(boxSideKm(pickReq.region).widthKm) : DEFAULT_REGION_SIDE_KM,
+    );
+    setSelectedId(null);
+    setSelectedMeeting(null);
+    setPin(null);
+    setMode('free');
+    if (pickReq.lat !== undefined && pickReq.lon !== undefined) {
+      cameraRef.current?.flyTo({ center: [pickReq.lon, pickReq.lat], zoom: 15, duration: 600 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickKey]);
+  useEffect(() => {
+    if (pickRegion) {
+      cameraRef.current?.fitBounds(pickRegion, {
+        duration: 300,
+        padding: { top: 160, bottom: 320, left: 40, right: 40 },
+      });
+    }
+  }, [pickRegion]);
+
+  const returnToEditor = useCallback(
+    (picked?: PickedLocation) => {
+      if (meetingPick) {
+        navigation.setParams({ pickMeeting: undefined });
+        navigation.navigate('Groups', {
+          screen: 'GroupDetails',
+          params: {
+            groupId: meetingPick.groupId,
+            picked: picked ? { lat: picked.lat, lon: picked.lon, nonce: picked.nonce } : undefined,
+          },
+        });
+        return;
+      }
+      if (!phasePick) {
+        return;
+      }
+      navigation.setParams({ pick: undefined });
+      navigation.navigate('Activity', {
+        screen: 'CheckpointEditor',
+        params: {
+          adventureId: phasePick.adventureId,
+          checkpointId: phasePick.checkpointId,
+          type: phasePick.type,
+          picked,
+        },
+      });
+    },
+    [navigation, phasePick, meetingPick],
+  );
+  const placePin = () => {
+    if (!view) {
+      return;
+    }
+    const at = { lat: view.center[1], lon: view.center[0] };
+    if (pickReq?.includeRegion) {
+      setPickPoint(at);
+      setPickStep('region');
+    } else {
+      returnToEditor({ ...at, region: null, nonce: Date.now() });
+    }
+  };
+  const confirmPick = () => {
+    if (pickPoint) {
+      returnToEditor({ ...pickPoint, region: pickRegion, nonce: Date.now() });
+    }
+  };
+  const pickBack = () => {
+    if (pickStep === 'region') {
+      setPickStep('pin');
+      setPickPoint(null);
+    } else {
+      returnToEditor();
+    }
+  };
+
   // Re-check permission when returning from system Settings.
   useFocusEffect(
     useCallback(() => {
@@ -344,8 +465,6 @@ export function MapScreen({ navigation, route }: Props) {
     [markers, moving, movingMeeting, points],
   );
 
-  // Long-press: an organizer chooses between a personal marker and a meeting point for the group.
-  const organized = groupList.filter(g => g.role === 'organizer' && g.status === 'active');
   // The adventure a long-press can add a checkpoint to: the one in progress, else a planned one.
   const currentAdventureId = adv.current?.adventure.id;
   const checkpointTarget = useMemo(() => {
@@ -362,10 +481,11 @@ export function MapScreen({ navigation, route }: Props) {
   }, [adventureList, groupList, myAddress, currentAdventureId]);
   const onLongPress = useCallback(
     ([lon, lat]: [number, number]) => {
-      if (moving || movingMeeting) {
+      if (moving || movingMeeting || pickReq) {
         return;
       }
-      if (organized.length === 0 && !checkpointTarget) {
+      // Meeting points are shared from the group page, not from here.
+      if (!checkpointTarget) {
         void addMarker([lon, lat]);
         return;
       }
@@ -382,24 +502,22 @@ export function MapScreen({ navigation, route }: Props) {
               },
             ]
           : []),
-        ...organized.slice(0, 2).map(g => ({
-          text: `Meeting point: ${g.name}`,
-          onPress: () => {
-            setDraftError(null);
-            setDraft({ groupId: g.id, groupName: g.name, name: '', note: '', lat, lon });
-          },
-        })),
         { text: 'Personal marker', onPress: () => void addMarker([lon, lat]) },
         { text: 'Cancel', style: 'cancel' as const },
       ]);
     },
-    [addMarker, checkpointTarget, moving, movingMeeting, navigation, organized],
+    [addMarker, checkpointTarget, moving, movingMeeting, navigation, pickReq],
   );
 
   // Tap on empty map: clear a selection, otherwise drop a temporary pin.
   const onMapPress = useCallback(
     ([lon, lat]: [number, number]) => {
-      if (moving || movingMeeting || Date.now() - lastFeatureTap.current < FEATURE_TAP_GUARD_MS) {
+      if (
+        moving ||
+        movingMeeting ||
+        pickReq ||
+        Date.now() - lastFeatureTap.current < FEATURE_TAP_GUARD_MS
+      ) {
         return;
       }
       if (selectedId || selectedMeeting || pin) {
@@ -410,7 +528,7 @@ export function MapScreen({ navigation, route }: Props) {
       }
       setPin({ lat, lon });
     },
-    [moving, movingMeeting, pin, selectedId, selectedMeeting],
+    [moving, movingMeeting, pickReq, pin, selectedId, selectedMeeting],
   );
 
   const startNavigation = useCallback((target: NavTarget) => {
@@ -545,17 +663,21 @@ export function MapScreen({ navigation, route }: Props) {
     }),
     [fix, headingDeg, stale, zoom],
   );
+  const regionBoxData = useMemo(() => boxCollection(pickRegion), [pickRegion]);
   const markerData = useMemo(() => markersCollection(markers), [markers]);
   const meetingData = useMemo(() => meetingPointsCollection(meetingPoints), [meetingPoints]);
   const guide = useMemo(
     () => guideLine(fix ? { lat: fix.lat, lon: fix.lon } : null, navTarget),
     [fix, navTarget],
   );
-  const pinData = useMemo(() => pinCollection(pin ?? navTarget), [pin, navTarget]);
+  const pinData = useMemo(
+    () => pinCollection(pickReq ? (pickStep === 'region' ? pickPoint : null) : pin ?? navTarget),
+    [pickReq, pickStep, pickPoint, pin, navTarget],
+  );
 
   const navPrefs = useNavPrefs();
   const sheetOpen = !!(selected || selectedPoint || pin || moving || movingMeeting);
-  const bottomClear = sheetOpen ? 250 : navTarget ? 96 : space.sm;
+  const bottomClear = pickReq ? 250 : sheetOpen ? 250 : navTarget ? 96 : space.sm;
   const offlineLabel = availableOffline
     ? 'Available offline'
     : useOnline
@@ -575,6 +697,7 @@ export function MapScreen({ navigation, route }: Props) {
         pulse={adv.pulse}
         guide={guide}
         pin={pinData}
+        regionBox={regionBoxData}
         onCheckpointPress={id => {
           lastFeatureTap.current = Date.now();
           if (adv.shownId) {
@@ -612,62 +735,91 @@ export function MapScreen({ navigation, route }: Props) {
         onLoadFailed={() => log.warn('map style failed to load')}
       />
 
-      <View style={[styles.top, { top: insets.top + space.sm }]} pointerEvents="box-none">
-        <Pressable
-          testID="map-search-button"
-          accessibilityRole="search"
-          accessibilityLabel="Search for a place"
-          onPress={() => setSearchOpen(true)}
-          style={[styles.search, { backgroundColor: c.surface, borderColor: c.border }]}
-        >
-          <Icon name="search" size={20} color={c.textMuted} />
-          <Text muted numberOfLines={1} style={{ flex: 1 }}>
-            Search places
-          </Text>
-        </Pressable>
-      </View>
+      {pickReq ? (
+        <PickLocationOverlay
+          step={pickStep}
+          top={insets.top + space.sm}
+          center={view ? { lat: view.center[1], lon: view.center[0] } : null}
+          includeRegion={pickReq.includeRegion}
+          hint={
+            meetingPick
+              ? 'Move the map and place the pin at the meeting point.'
+              : 'Move the map and place the pin at the checkpoint location.'
+          }
+          region={pickRegion}
+          sideKm={pickSideKm}
+          sizeBytes={
+            pickRegion
+              ? estimateAreaBytes(pickRegion, DEFAULT_AREA_MIN_ZOOM, DEFAULT_AREA_MAX_ZOOM)
+              : 0
+          }
+          onSideKm={setPickSideKm}
+          onSearch={() => setSearchOpen(true)}
+          onLocate={cycleMode}
+          onPlace={placePin}
+          onConfirm={confirmPick}
+          onBack={pickBack}
+        />
+      ) : (
+        <>
+          <View style={[styles.top, { top: insets.top + space.sm }]} pointerEvents="box-none">
+            <Pressable
+              testID="map-search-button"
+              accessibilityRole="search"
+              accessibilityLabel="Search for a place"
+              onPress={() => setSearchOpen(true)}
+              style={[styles.search, { backgroundColor: c.surface, borderColor: c.border }]}
+            >
+              <Icon name="search" size={20} color={c.textMuted} />
+              <Text muted numberOfLines={1} style={{ flex: 1 }}>
+                Search places
+              </Text>
+            </Pressable>
+          </View>
 
-      <View style={[styles.controls, { bottom: bottomClear + 28 }]} pointerEvents="box-none">
-        <IconButton
-          testID="map-offline-indicator"
-          icon={availableOffline ? 'offline' : 'online'}
-          label={offlineLabel}
-          active={availableOffline}
-          onPress={() =>
-            availableOffline
-              ? Alert.alert('Available offline', 'This area is saved on your device.')
-              : Alert.alert(
-                  offlineLabel,
-                  useOnline
-                    ? 'This map is streamed and is not available without internet. Download the area to keep it.'
-                    : 'Download this area to use the map without internet.',
-                  [
-                    { text: 'Not now', style: 'cancel' },
-                    { text: 'Download this area', onPress: openArea },
-                  ],
-                )
-          }
-        />
-        <IconButton
-          testID="map-download-button"
-          icon="download"
-          label="Download offline maps"
-          onPress={openArea}
-        />
-        <IconButton
-          testID="locate-button"
-          icon={mode === 'follow-heading' ? 'follow' : 'locate'}
-          label={
-            mode === 'free'
-              ? 'Center on my location'
-              : mode === 'follow'
-              ? 'Follow with heading'
-              : 'Stop following'
-          }
-          active={mode !== 'free'}
-          onPress={cycleMode}
-        />
-      </View>
+          <View style={[styles.controls, { bottom: bottomClear + 28 }]} pointerEvents="box-none">
+            <IconButton
+              testID="map-offline-indicator"
+              icon={availableOffline ? 'offline' : 'online'}
+              label={offlineLabel}
+              active={availableOffline}
+              onPress={() =>
+                availableOffline
+                  ? Alert.alert('Available offline', 'This area is saved on your device.')
+                  : Alert.alert(
+                      offlineLabel,
+                      useOnline
+                        ? 'This map is streamed and is not available without internet. Download the area to keep it.'
+                        : 'Download this area to use the map without internet.',
+                      [
+                        { text: 'Not now', style: 'cancel' },
+                        { text: 'Download this area', onPress: openArea },
+                      ],
+                    )
+              }
+            />
+            <IconButton
+              testID="map-download-button"
+              icon="download"
+              label="Download offline maps"
+              onPress={openArea}
+            />
+            <IconButton
+              testID="locate-button"
+              icon={mode === 'follow-heading' ? 'follow' : 'locate'}
+              label={
+                mode === 'free'
+                  ? 'Center on my location'
+                  : mode === 'follow'
+                  ? 'Follow with heading'
+                  : 'Stop following'
+              }
+              active={mode !== 'free'}
+              onPress={cycleMode}
+            />
+          </View>
+        </>
+      )}
 
       {moving || movingMeeting ? (
         <View style={styles.crosshairWrap} pointerEvents="none">
@@ -780,6 +932,11 @@ export function MapScreen({ navigation, route }: Props) {
         onClose={() => setSearchOpen(false)}
         onPick={place => {
           setSearchOpen(false);
+          if (pickReq) {
+            // Choosing a spot for a phase: go to the place, then the organizer places the pin.
+            cameraRef.current?.flyTo({ center: [place.lon, place.lat], zoom: 15, duration: 800 });
+            return;
+          }
           cameraRef.current?.fitBounds(place.bbox, { duration: 800 });
           setAreaBbox(place.bbox);
           setAreaOpen(true);

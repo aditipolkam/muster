@@ -62,6 +62,7 @@ const nav = () => {
     navigate: (...a: unknown[]) => calls.push(['navigate', ...a]),
     replace: (...a: unknown[]) => calls.push(['replace', ...a]),
     goBack: () => calls.push(['goBack']),
+    setParams: (...a: unknown[]) => calls.push(['setParams', ...a]),
     getParent: () => n,
   };
   return { n, calls };
@@ -123,6 +124,24 @@ describe('Groups screen', () => {
       ['navigate', 'CreateGroup'],
       ['navigate', 'JoinGroup'],
     ]);
+  });
+
+  it('the + opens one sheet to start or join a group', async () => {
+    const { t } = await twoDevices('organizer');
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupsScreen navigation={n} route={{} as never} />
+      </Harness>,
+    );
+    expect(screen.queryByTestId('groups-add-sheet')).toBeNull();
+    fireEvent.press(screen.getByTestId('groups-add'));
+    expect(screen.getByTestId('groups-add-sheet')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('groups-add-join'));
+    expect(calls).toEqual([['navigate', 'JoinGroup']]);
+    fireEvent.press(screen.getByTestId('groups-add'));
+    fireEvent.press(screen.getByTestId('groups-add-create'));
+    expect(calls[1]).toEqual(['navigate', 'CreateGroup']);
   });
 
   it('lists groups with the role and lets the organizer approve a request', async () => {
@@ -331,7 +350,7 @@ describe('buildFeed', () => {
     const now = at('2026-11-03T12:00:00');
     const feed = buildFeed(
       [member('a', 'Ana', at('2026-11-02T09:00:00')), member('b', 'Bo', at('2026-11-03T08:00:00'))],
-      [{ id: 'p', rev: 2, name: 'Hut', updatedAt: at('2026-11-03T10:00:00') }],
+      [{ id: 'p', rev: 2, name: 'Hut', updatedAt: at('2026-11-03T10:00:00'), updatedBy: 'b' }],
       'a',
       now,
     );
@@ -344,6 +363,26 @@ describe('buildFeed', () => {
     ]);
     expect(feed[0]).toMatchObject({ title: 'Meeting point updated', name: 'Hut' });
     expect(feed.find(e => e.kind === 'member' && e.text === 'You joined')).toBeTruthy();
+  });
+
+  it('marks a meeting point as mine only when this phone wrote that revision', () => {
+    const now = at('2026-11-03T12:00:00');
+    const point = (id: string, updatedBy: string) => ({
+      id,
+      rev: 1,
+      name: id,
+      updatedAt: at('2026-11-03T10:00:00'),
+      updatedBy,
+    });
+    const feed = buildFeed([], [point('mine', 'a'), point('theirs', 'b')], 'a', now);
+    const mine = Object.fromEntries(
+      feed.flatMap(e => (e.kind === 'meeting' ? [[e.name, e.mine]] : [])),
+    );
+    expect(mine).toEqual({ mine: true, theirs: false });
+    // Before the mesh reports an address nothing is mine.
+    expect(
+      buildFeed([], [point('x', 'a')], null, now).some(e => e.kind === 'meeting' && e.mine),
+    ).toBe(false);
   });
 });
 
@@ -405,7 +444,7 @@ describe('Group page (updates)', () => {
     expect(calls.at(-1)).toEqual(['navigate', 'GroupInfo', { groupId: g.id }]);
   });
 
-  it('organizers get a hint to share meeting points from the map; members do not', async () => {
+  it('organizers can share a location from the group page', async () => {
     const org = await twoDevices('organizer');
     render(
       <Harness services={org.t.services}>
@@ -415,10 +454,11 @@ describe('Group page (updates)', () => {
         />
       </Harness>,
     );
-    expect(await screen.findByTestId('group-open-map')).toBeTruthy();
+    expect(await screen.findByTestId('group-share-location')).toBeTruthy();
+    expect(screen.getByTestId('group-open-map')).toBeTruthy();
   });
 
-  it('members do not get the organizer hint', async () => {
+  it('members cannot share a location (only the organizer publishes points)', async () => {
     const mem = await twoDevices('member');
     render(
       <Harness services={mem.t.services}>
@@ -429,6 +469,7 @@ describe('Group page (updates)', () => {
       </Harness>,
     );
     await screen.findByTestId('group-title');
+    expect(screen.queryByTestId('group-share-location')).toBeNull();
     expect(screen.queryByTestId('group-open-map')).toBeNull();
   });
 
@@ -460,10 +501,21 @@ describe('Group info screen', () => {
     );
     expect(await screen.findByText('Members (2)')).toBeTruthy();
     expect(screen.getByText('Me (you)')).toBeTruthy();
-    expect(screen.getByText('You organize this group')).toBeTruthy();
+    expect(screen.getByTestId('info-meta').props.children.join('')).toMatch(/You organize/);
+    // The invitation lives on its own tab.
+    expect(screen.queryByTestId('invite-create')).toBeNull();
+    fireEvent.press(screen.getByTestId('info-tab-invite'));
     fireEvent.press(screen.getByTestId('invite-create'));
     expect(await screen.findByTestId('qr-code')).toBeTruthy();
+    expect(screen.getByTestId('invite-terms').props.children.join('')).toMatch(
+      /One person · you approve · expires in \d+ (h|min)/,
+    );
+    // Switching approval only takes effect on the next code, and the screen says so.
+    fireEvent(screen.getByTestId('invite-auto'), 'valueChange', true);
+    expect(screen.getByText(/Create a new code to use it/)).toBeTruthy();
 
+    // Ending the group lives in the menu at the top right, not on the page.
+    fireEvent.press(screen.getByTestId('info-menu'));
     fireEvent.press(screen.getByTestId('group-leave'));
     const buttons = alertSpy.mock.calls.at(-1)![2] as { text: string; onPress?: () => void }[];
     await act(async () => {
@@ -492,6 +544,29 @@ describe('Group info screen', () => {
     expect(calls.at(-1)).toEqual(['navigate', 'GroupDetails', { groupId: g.id }]);
   });
 
+  it('opens on members and shows one tab at a time, keeping the header and menu on each', async () => {
+    const { t, g } = await twoDevices('organizer');
+    const { n } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    expect(await screen.findByText(/Members \(/)).toBeTruthy();
+    expect(screen.queryByText(/Meeting points \(/)).toBeNull();
+    expect(screen.queryByTestId('qr-code')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('info-tab-points'));
+    expect(await screen.findByText('Meeting points (0)')).toBeTruthy();
+    expect(screen.queryByText(/Members \(/)).toBeNull();
+    expect(screen.getByTestId('info-name')).toBeTruthy();
+    expect(screen.getByTestId('info-menu')).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('info-tab-invite'));
+    expect(screen.getByTestId('invite-create')).toBeTruthy();
+    expect(screen.queryByText(/Meeting points \(/)).toBeNull();
+  });
+
   it('lists meeting points and opens one directly on the map', async () => {
     const { t, other, all, g } = await twoDevices('member');
     const p = await other.groups.publishPoint(g.id, { name: 'Hut', lat: 56.8, lon: -5.1 });
@@ -502,6 +577,7 @@ describe('Group info screen', () => {
         <GroupInfoScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
       </Harness>,
     );
+    fireEvent.press(await screen.findByTestId('info-tab-points'));
     expect(await screen.findByText('Meeting points (1)')).toBeTruthy();
     fireEvent.press(screen.getByTestId(`point-${p.ok ? p.value.point.id : ''}`));
     expect(calls.at(-1)).toEqual([
@@ -520,7 +596,11 @@ describe('Group info screen', () => {
       </Harness>,
     );
     expect(await screen.findByText('Members (2)')).toBeTruthy();
+    // Only the organizer invites.
+    expect(screen.queryByTestId('info-tab-invite')).toBeNull();
     expect(screen.queryByTestId('invite-create')).toBeNull();
+    fireEvent.press(screen.getByTestId('info-menu'));
+    expect(screen.getByTestId('group-sync')).toBeTruthy();
     fireEvent.press(screen.getByTestId('group-leave'));
     const buttons = alertSpy.mock.calls.at(-1)![2] as { text: string; onPress?: () => void }[];
     await act(async () => {
@@ -590,6 +670,106 @@ describe('Meeting Point details', () => {
   });
 });
 
+describe('Share location (group page)', () => {
+  /** Organizer with one member who has joined, so a shared point reaches someone. */
+  const withMember = async () => {
+    const { t, other, g, all } = await twoDevices('organizer');
+    const inv = await t.services.groups.createInvite(g.id, { autoApprove: true });
+    const parsed = inv.ok ? parseInviteLink(inv.value.link) : null;
+    await other.groups.joinFromInvite(parsed && parsed.ok ? parsed.invite : (undefined as never));
+    await settle(all);
+    return { t, other, g, all };
+  };
+  const open = (t: Awaited<ReturnType<typeof makeTestServices>>, params: object) => {
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={n} route={{ params } as never} />
+      </Harness>,
+    );
+    return calls;
+  };
+  const fixAt = (lat: number, lon: number, accM = 6) =>
+    useLocationStore.setState({
+      permission: 'granted',
+      fix: { lat, lon, accM, fixAt: Date.now() },
+      watchingSince: Date.now(),
+    });
+
+  it('sends the current location as a named meeting point to the group', async () => {
+    const { t, other, g, all } = await withMember();
+    fixAt(56.7968, -5.0035);
+    open(t, { groupId: g.id });
+    fireEvent.press(await screen.findByTestId('group-share-location'));
+    expect(screen.getByTestId('share-location-sheet')).toBeTruthy();
+    expect(screen.getByText(/Accurate to ±6 m/)).toBeTruthy();
+    fireEvent.press(screen.getByTestId('share-here'));
+    expect(screen.getByText('Name this meeting point')).toBeTruthy();
+    expect(screen.getByTestId('share-submit').props.accessibilityState.disabled).toBe(true);
+    fireEvent.changeText(screen.getByTestId('share-name'), 'Lake junction');
+    fireEvent.changeText(screen.getByTestId('share-note'), 'Lunch at noon');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('share-submit'));
+      await settle(all);
+    });
+    expect(await other.points.list(g.id)).toMatchObject([
+      { name: 'Lake junction', note: 'Lunch at noon', lat: 56.7968, lon: -5.0035 },
+    ]);
+    // It shows in the feed as this phone's own message.
+    expect(await screen.findByText('Lake junction')).toBeTruthy();
+    expect(screen.queryByTestId('share-location-sheet')).toBeNull();
+  });
+
+  it('without a GPS fix the current location cannot be sent yet', async () => {
+    const { t, g } = await twoDevices('organizer');
+    useLocationStore.setState({ permission: 'granted', fix: null });
+    open(t, { groupId: g.id });
+    fireEvent.press(await screen.findByTestId('group-share-location'));
+    expect(screen.getByText('Finding your location…')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('share-here'));
+    expect(screen.queryByText('Name this meeting point')).toBeNull();
+  });
+
+  it('offers saved places, with the name filled in', async () => {
+    const { t, other, g, all } = await withMember();
+    await t.services.points.create({ name: 'Car park', lat: 56.81, lon: -5.11 });
+    open(t, { groupId: g.id });
+    fireEvent.press(await screen.findByTestId('group-share-location'));
+    const [m] = await t.services.points.list();
+    fireEvent.press(await screen.findByTestId(`share-saved-${m!.id}`));
+    expect(screen.getByTestId('share-name').props.value).toBe('Car park');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('share-submit'));
+      await settle(all);
+    });
+    expect(await other.points.list(g.id)).toMatchObject([
+      { name: 'Car park', lat: 56.81, lon: -5.11 },
+    ]);
+  });
+
+  it('Choose on the map opens the pin picker for this group', async () => {
+    const { t, g } = await twoDevices('organizer');
+    const calls = open(t, { groupId: g.id });
+    fireEvent.press(await screen.findByTestId('group-share-location'));
+    fireEvent.press(screen.getByTestId('share-on-map'));
+    const go = calls.find(c => c[0] === 'navigate' && c[1] === 'Map');
+    expect(go?.[2]).toMatchObject({ pickMeeting: { groupId: g.id } });
+    expect(screen.queryByTestId('share-location-sheet')).toBeNull();
+  });
+
+  it('back from the map, it opens on the chosen place ready to name and share', async () => {
+    const { t, other, g, all } = await withMember();
+    open(t, { groupId: g.id, picked: { lat: 56.8, lon: -5.1, nonce: 1 } });
+    expect(await screen.findByText('Name this meeting point')).toBeTruthy();
+    fireEvent.changeText(screen.getByTestId('share-name'), 'Hut');
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('share-submit'));
+      await settle(all);
+    });
+    expect(await other.points.list(g.id)).toMatchObject([{ name: 'Hut', lat: 56.8, lon: -5.1 }]);
+  });
+});
+
 describe('Map: meeting point controls', () => {
   const renderMap = async (t: Awaited<ReturnType<typeof makeTestServices>>) => {
     const { n, calls } = nav();
@@ -626,44 +806,16 @@ describe('Map: meeting point controls', () => {
     expect(alertSpy).not.toHaveBeenCalled();
   });
 
-  it('an organizer long-presses, names the point and publishes it to the group', async () => {
-    const { t, other, g, all } = await twoDevices('organizer');
-    const inv = await t.services.groups.createInvite(g.id, { autoApprove: true });
-    const parsed = inv.ok ? parseInviteLink(inv.value.link) : null;
-    await other.groups.joinFromInvite(parsed && parsed.ok ? parsed.invite : (undefined as never));
+  it("an organizer's long-press no longer offers a meeting point: it drops a marker", async () => {
+    const { t, all } = await twoDevices('organizer');
     await settle(all);
     await renderMap(t);
-    await waitFor(() => expect(mockMap.map).not.toBeNull());
     await act(async () => {
       mockMap.map!.onLongPress({ nativeEvent: { lngLat: [-5.0035, 56.7968] } });
     });
-    const buttons = await waitFor(() => {
-      const b = alertSpy.mock.calls.at(-1)?.[2] as
-        | { text: string; onPress?: () => void }[]
-        | undefined;
-      expect(b).toBeDefined();
-      return b!;
-    });
-    expect(buttons.map(b => b.text)).toEqual([
-      'Meeting point: Ridge walk',
-      'Personal marker',
-      'Cancel',
-    ]);
-    await act(async () => {
-      buttons[0]!.onPress!();
-    });
-    fireEvent.changeText(await screen.findByTestId('meeting-name-input'), 'Lake junction');
-    fireEvent.changeText(screen.getByTestId('meeting-note-input'), 'Lunch at noon');
-    await act(async () => {
-      fireEvent.press(screen.getByTestId('meeting-submit'));
-      await settle(all);
-    });
-    const received = await other.points.list(g.id);
-    expect(received).toMatchObject([
-      { name: 'Lake junction', note: 'Lunch at noon', lat: 56.7968, lon: -5.0035 },
-    ]);
-    expect(await t.services.points.list()).toEqual([]);
-    expect(await screen.findByTestId('meeting-sheet')).toBeTruthy();
+    await waitFor(async () => expect(await t.services.points.list()).toHaveLength(1));
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('meeting-editor')).toBeNull();
   });
 
   it('a member sees a received point at its coordinates and can acknowledge it', async () => {

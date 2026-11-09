@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Emitter } from '../data/events';
+import type { PhaseRecord } from '../data/repositories/AdventuresRepo';
 import {
   AchievementDef,
   AchievementProgress,
@@ -14,6 +15,7 @@ import type {
   StatusLogEntry,
   TrackPoint,
 } from '../domain/adventures/model';
+import { ActivityStanding, activityStanding } from '../domain/adventures/lifecycle';
 import { SOLO_ADDRESS } from '../domain/adventures/model';
 import type { Group, GroupMember, MeetingPoint, PointAck } from '../domain/groups/model';
 import { DEFAULT_PACE_KMH, Units, clampPace } from '../domain/geo/pace';
@@ -225,6 +227,60 @@ export function useAdventures(): Adventure[] {
     [adventuresRepo.changes as Emitter<unknown>],
     () => adventuresRepo.list(),
     [],
+  );
+}
+
+/** This person's own notes and photos for the phases of one adventure, by phase id. */
+export function usePhaseRecords(adventureId: string): Record<string, PhaseRecord> {
+  const { adventuresRepo } = useServices();
+  return useLiveQuery<Record<string, PhaseRecord>>(
+    [adventuresRepo.changes as Emitter<unknown>],
+    async () =>
+      Object.fromEntries(
+        (await adventuresRepo.phaseRecords(adventureId)).map(r => [r.checkpointId, r]),
+      ),
+    {},
+    [adventureId],
+  );
+}
+
+export type GroupActivity = {
+  adventure: Adventure;
+  standing: ActivityStanding;
+  /** Phases this person has completed, and the phases in total. */
+  done: number;
+  total: number;
+};
+
+/** The activities of one group as this person sees them, newest first. */
+export function useGroupActivities(groupId: string): GroupActivity[] {
+  const { adventuresRepo, adventures } = useServices();
+  const myAddress = useMesh().localAddress;
+  return useLiveQuery<GroupActivity[]>(
+    [adventuresRepo.changes as Emitter<unknown>],
+    async () => {
+      const out: GroupActivity[] = [];
+      for (const adventure of await adventuresRepo.list()) {
+        if (adventure.groupId !== groupId || !adventure.activity) {
+          continue;
+        }
+        const self = adventures.selfFor(adventure);
+        const mine = self ? (await adventuresRepo.participant(adventure.id, self))?.state : null;
+        const phases = await adventuresRepo.checkpoints(adventure.id);
+        const done = self
+          ? (await adventuresRepo.completions(adventure.id)).filter(c => c.address === self)
+          : [];
+        out.push({
+          adventure,
+          standing: activityStanding(adventure, mine),
+          done: phases.filter(p => done.some(d => d.checkpointId === p.id)).length,
+          total: phases.length,
+        });
+      }
+      return out;
+    },
+    [],
+    [groupId, myAddress],
   );
 }
 

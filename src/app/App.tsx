@@ -27,6 +27,8 @@ import {
   CheckpointDetailsScreen,
   CheckpointEditorScreen,
 } from '../features/adventures/CheckpointScreens';
+import { AddPhaseScreen, PhaseAddedScreen } from '../features/adventures/ActivityScreens';
+import { ActivityCompletedScreen } from '../features/adventures/ActivityRunScreens';
 import { AchievementsScreen, AdventureSummaryScreen } from '../features/adventures/RecapScreens';
 import { DownloadScreen } from '../features/maps-manager/DownloadScreen';
 import { RegionsScreen } from '../features/maps-manager/RegionsScreen';
@@ -78,6 +80,9 @@ function ActivityNavigator() {
       <ActivityStack.Screen name="AdventureEditor" component={AdventureEditorScreen} />
       <ActivityStack.Screen name="AdventureDetails" component={AdventureDetailsScreen} />
       <ActivityStack.Screen name="CheckpointEditor" component={CheckpointEditorScreen} />
+      <ActivityStack.Screen name="AddPhase" component={AddPhaseScreen} />
+      <ActivityStack.Screen name="PhaseAdded" component={PhaseAddedScreen} />
+      <ActivityStack.Screen name="ActivityCompleted" component={ActivityCompletedScreen} />
       <ActivityStack.Screen name="CheckpointDetails" component={CheckpointDetailsScreen} />
       <ActivityStack.Screen name="AdventureSummary" component={AdventureSummaryScreen} />
       <ActivityStack.Screen name="Achievements" component={AchievementsScreen} />
@@ -103,7 +108,7 @@ const tabIcon =
   ({ color, focused }: { color: string; focused: boolean }) =>
     <Icon name={name} size={24} color={color} filled={focused} />;
 
-/** The Map tab is the app's home: a raised, filled button in the middle of the bar. */
+/** The Map tab is a raised, filled button in the middle of the bar; the app opens on Groups. */
 function MapTabButton(props: BottomTabBarButtonProps) {
   const { onPress, testID } = props;
   const { c } = useTheme();
@@ -174,7 +179,7 @@ function Shell() {
   const { c, dark } = useTheme();
   const insets = useSafeAreaInsets();
   const navRef = useNavigationContainerRef<RootTabParamList>();
-  const [tab, setTab] = useState<string | undefined>('Map');
+  const [tab, setTab] = useState<string | undefined>('Groups');
   const { mesh, kv } = useServices();
   useEffect(() => bindMeshToAppState(mesh), [mesh]);
   // null = still reading the flag; the first launch shows onboarding once.
@@ -215,7 +220,7 @@ function Shell() {
       }}
     >
       <Tab.Navigator
-        initialRouteName="Map"
+        initialRouteName="Groups"
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: c.primary,

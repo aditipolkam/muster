@@ -1,8 +1,16 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { achievementById } from '../../domain/adventures/achievements';
-import { AdventureAction, actionsFor, elapsedMs, isFinal } from '../../domain/adventures/lifecycle';
+import {
+  AdventureAction,
+  actionsFor,
+  completedAt,
+  elapsedMs,
+  endedFor,
+  isFinal,
+  isOverFor,
+} from '../../domain/adventures/lifecycle';
 import { ADVENTURE_DESC_MAX, ADVENTURE_NAME_MAX, Adventure } from '../../domain/adventures/model';
 import {
   buildTimeline,
@@ -11,7 +19,6 @@ import {
   nextCheckpoint,
   progressCounts,
   progressLabel,
-  TimelineEntry,
 } from '../../domain/adventures/stats';
 import { formatDistanceIn } from '../../domain/geo/pace';
 import { canEditAdventure } from '../../domain/adventures/authorize';
@@ -39,17 +46,32 @@ import {
   Button,
   Card,
   EmptyState,
+  Icon,
   IconButton,
   IconTile,
   ListRow,
+  Row,
   Screen,
   SegmentedTabs,
   Text,
 } from '../../ui/components';
+import { isEnabled } from '../../shared/features';
+import { CoverArt } from '../../ui/activity';
+import { isActivity } from './activityFlag';
 import { AnimatedProgress } from '../../ui/motion';
 import { radius, space, useTheme } from '../../ui/theme';
 import { useNow } from '../../ui/useNow';
-import { KIND_ICON, STATUS_LABEL, STATUS_TONE, formatDate, formatTime } from './format';
+import { ActivityHome, clockText } from './ActivityRunScreens';
+import { EditActivity } from './ActivityScreens';
+import {
+  KIND_ICON,
+  STATUS_LABEL,
+  STATUS_TONE,
+  formatDate,
+  formatTime,
+  phaseSummary,
+  timelineText,
+} from './format';
 
 type Nav<T extends keyof ActivityStackParamList> = NativeStackScreenProps<
   ActivityStackParamList,
@@ -70,6 +92,7 @@ type Row = { adventure: Adventure; done: number; total: number };
 
 /** The Activity tab: planned and active adventures, the journal, and achievements. */
 export function AdventuresScreen({ navigation }: Nav<'Adventures'>) {
+  const { c } = useTheme();
   const adventures = useAdventures();
   const achievements = useAchievements();
   const { adventuresRepo, adventures: service } = useServices();
@@ -94,15 +117,15 @@ export function AdventuresScreen({ navigation }: Nav<'Adventures'>) {
     [],
   );
   void adventures;
-  const open = rows.filter(r => !isFinal(r.adventure.status));
-  const past = rows.filter(r => isFinal(r.adventure.status));
+  const open = rows.filter(r => !isOverFor(r.adventure));
+  const past = rows.filter(r => isOverFor(r.adventure));
   const earned = achievements.filter(a => a.unlockedAt !== null).length;
 
   const line = (r: Row) =>
     [
       r.adventure.groupId ? 'Group' : 'Solo',
       `${r.done} of ${r.total} checkpoints`,
-      r.adventure.status === 'completed' || r.adventure.status === 'cancelled'
+      isOverFor(r.adventure)
         ? r.adventure.progress.distanceM > 0
           ? formatDistanceIn(r.adventure.progress.distanceM, units)
           : null
@@ -182,29 +205,58 @@ export function AdventuresScreen({ navigation }: Nav<'Adventures'>) {
             body="Finished adventures are kept here, on this device only, with their route and checkpoints."
           />
         ) : (
-          <Card style={styles.flatCard}>
-            {past.map((r, i) => (
-              <ListRow
-                key={r.adventure.id}
-                testID={`journal-${r.adventure.id}`}
-                title={r.adventure.name}
-                subtitle={`${formatDate(r.adventure.endedAt ?? r.adventure.createdAt)} · ${line(
-                  r,
-                )}`}
-                leading={<IconTile name="trail" />}
-                trailing={
-                  r.adventure.status === 'cancelled' ? (
-                    <Badge label="Cancelled" tone="neutral" />
-                  ) : undefined
-                }
-                chevron
-                divider={i < past.length - 1}
-                onPress={() =>
-                  navigation.navigate('AdventureSummary', { adventureId: r.adventure.id })
-                }
-              />
-            ))}
-          </Card>
+          <View style={{ gap: space.md }} testID="journal-list">
+            {past.map(r => {
+              const cancelled =
+                r.adventure.status === 'cancelled' && completedAt(r.adventure) === null;
+              const end = endedFor(r.adventure);
+              return (
+                <Pressable
+                  key={r.adventure.id}
+                  testID={`journal-${r.adventure.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={r.adventure.name}
+                  onPress={() =>
+                    navigation.navigate('AdventureSummary', { adventureId: r.adventure.id })
+                  }
+                >
+                  <Card style={styles.historyCard}>
+                    <CoverArt size={64} />
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <Text variant="cardTitle" numberOfLines={1}>
+                        {r.adventure.name}
+                      </Text>
+                      <Text variant="caption" muted>
+                        {cancelled ? 'Cancelled' : 'Completed'} ·{' '}
+                        {formatDate(end ?? r.adventure.createdAt)}
+                      </Text>
+                      <View style={styles.historyFacts}>
+                        <Icon name="pin" size={14} color={c.textMuted} />
+                        <Text variant="caption" muted>
+                          {r.adventure.progress.distanceM > 0
+                            ? formatDistanceIn(r.adventure.progress.distanceM, units)
+                            : '–'}
+                        </Text>
+                        <Icon name="time" size={14} color={c.textMuted} />
+                        <Text variant="caption" muted style={{ fontVariant: ['tabular-nums'] }}>
+                          {clockText(elapsedMs(r.adventure.progress, end ?? r.adventure.createdAt))}
+                        </Text>
+                        <Icon name="done" size={14} color={c.textMuted} />
+                        <Text variant="caption" muted>
+                          {r.done}/{r.total}
+                        </Text>
+                      </View>
+                    </View>
+                    {cancelled ? (
+                      <Badge label="Cancelled" tone="neutral" />
+                    ) : (
+                      <Icon name="done" size={26} color={c.primary} />
+                    )}
+                  </Card>
+                </Pressable>
+              );
+            })}
+          </View>
         )}
       </ScrollView>
     </Screen>
@@ -223,10 +275,14 @@ export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEdito
   const [label, setLabel] = useState('');
   const [start, setStart] = useState<{ lat: number; lon: number } | null>(null);
   const [groupId, setGroupId] = useState<string>(route.params?.groupId ?? '');
+  const [ordered, setOrdered] = useState(false);
+  const [isDraft, setIsDraft] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fix = useLocationStore(s => s.fix);
   const saved = useMarkers().slice(0, 4);
+  // With group activities on, a group's adventure is an activity: a private draft until published.
+  const asActivity = isEnabled('groupActivities') && groupId !== '';
 
   React.useEffect(() => {
     if (!editingId) {
@@ -240,6 +296,8 @@ export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEdito
         setStart(
           a.startLat !== null && a.startLon !== null ? { lat: a.startLat, lon: a.startLon } : null,
         );
+        setOrdered(a.ordered === true);
+        setIsDraft(a.status === 'draft');
       }
     });
   }, [adventuresRepo, editingId]);
@@ -249,8 +307,11 @@ export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEdito
     setError(null);
     const body = { name, description, start: start ? { ...start, label } : null };
     const r = editingId
-      ? await service.updateAdventure(editingId, body)
-      : await service.createAdventure(body, { groupId: groupId || undefined });
+      ? await service.updateAdventure(editingId, body, isDraft ? { ordered } : {})
+      : await service.createAdventure(body, {
+          groupId: groupId || undefined,
+          ...(asActivity ? { draft: true, ordered } : {}),
+        });
     setBusy(false);
     if (!r.ok) {
       setError(r.error.userMessage);
@@ -265,7 +326,15 @@ export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEdito
 
   return (
     <Screen
-      title={editingId ? 'Edit adventure' : 'New adventure'}
+      title={
+        editingId
+          ? isDraft
+            ? 'Edit activity'
+            : 'Edit adventure'
+          : asActivity
+          ? 'New activity'
+          : 'New adventure'
+      }
       onBack={() => navigation.goBack()}
     >
       <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
@@ -362,7 +431,12 @@ export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEdito
               value={groupId}
               onChange={setGroupId}
             />
-            {groupId ? (
+            {asActivity ? (
+              <Text variant="caption" muted>
+                Only you see it until you publish. Publishing starts it for the group: each person
+                presses Start for their own timer. Nobody's location is shared by this.
+              </Text>
+            ) : groupId ? (
               <Text variant="caption" muted>
                 Everyone in the group can see it and choose to join. You decide when it starts and
                 ends. Nobody's location is shared by this.
@@ -370,10 +444,30 @@ export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEdito
             ) : null}
           </>
         ) : null}
+        {asActivity || isDraft ? (
+          <Card testID="ordered-card">
+            <Row>
+              <View style={{ flex: 1 }}>
+                <Text variant="cardTitle">Do the phases in order</Text>
+                <Text variant="caption" muted>
+                  {ordered
+                    ? 'Each phase unlocks when the one before it is done.'
+                    : 'People can do the phases in any order.'}
+                </Text>
+              </View>
+              <Switch
+                testID="ordered-switch"
+                value={ordered}
+                onValueChange={setOrdered}
+                accessibilityLabel="Do the phases in order"
+              />
+            </Row>
+          </Card>
+        ) : null}
         {error ? <Banner tone="error" title={error} /> : null}
         <Button
           testID="adventure-save"
-          label={editingId ? 'Save' : 'Create adventure'}
+          label={editingId ? 'Save' : asActivity ? 'Create draft' : 'Create adventure'}
           onPress={() => void save()}
           loading={busy}
           disabled={!name.trim()}
@@ -386,6 +480,7 @@ export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEdito
 // ---- Details and active progress ---------------------------------------------------------------------
 
 const ACTION_LABEL: Record<AdventureAction, string> = {
+  publish: 'Publish',
   start: 'Start adventure',
   pause: 'Pause',
   resume: 'Resume',
@@ -406,6 +501,13 @@ export function AdventureDetailsScreen({ navigation, route }: Nav<'AdventureDeta
         />
       </Screen>
     );
+  }
+  // The organizer's private draft has its own editor; everything else is the shared page.
+  if (isActivity(detail.adventure) && detail.adventure.status === 'draft') {
+    return <EditActivity detail={detail} navigation={navigation} />;
+  }
+  if (isActivity(detail.adventure)) {
+    return <ActivityHome detail={detail} navigation={navigation} />;
   }
   return <Details detail={detail} navigation={navigation} />;
 }
@@ -441,6 +543,11 @@ function Details({
   const earnedHere = useUnlocksFor(a.id);
 
   const canEdit = canEditAdventure(a, group, mesh.localAddress);
+  const activity = isActivity(a);
+  const isDraft = a.status === 'draft';
+  // A published activity is fixed: the organizer can only cancel it.
+  const editable = canEdit && !isFinal(a.status) && (!activity || isDraft);
+  const noun = activity ? 'activity' : 'adventure';
   const statuses = checkpointStatuses(checkpoints, completions, participants, self);
   const counts = progressCounts(statuses, self);
   const next = nextCheckpoint(statuses);
@@ -500,20 +607,58 @@ function Details({
     ]);
   };
 
+  const publish = () =>
+    Alert.alert(
+      'Publish this activity?',
+      `It goes live for ${
+        group?.name ?? 'the group'
+      } right away. You cannot change it afterwards; to change it, cancel it and publish a new one.`,
+      [
+        { text: 'Not yet', style: 'cancel' },
+        { text: 'Publish', onPress: () => void run('publish') },
+      ],
+    );
+
+  const discard = () =>
+    Alert.alert('Discard this draft?', 'Nobody has seen it. It will be deleted.', [
+      { text: 'Keep it', style: 'cancel' },
+      {
+        text: 'Discard',
+        style: 'destructive',
+        onPress: () =>
+          void service.deleteAdventure(a.id).then(r => {
+            if (r.ok) {
+              navigation.goBack();
+            } else {
+              setError(r.error.userMessage);
+            }
+          }),
+      },
+    ]);
+
   const participate = async (join: boolean) => {
     const r = join ? await service.join(a.id) : await service.leave(a.id);
     setError(r.ok ? null : r.error.userMessage);
   };
 
-  const actions = canEdit ? actionsFor(a.status) : [];
-  const primary: AdventureAction | undefined =
-    a.status === 'planned'
-      ? 'start'
-      : a.status === 'paused'
-      ? 'resume'
-      : a.status === 'active'
-      ? 'pause'
-      : undefined;
+  const actions: AdventureAction[] = !canEdit
+    ? []
+    : activity
+    ? isDraft
+      ? []
+      : isFinal(a.status)
+      ? []
+      : ['cancel']
+    : actionsFor(a.status);
+  const primary: AdventureAction | undefined = activity
+    ? undefined
+    : a.status === 'planned'
+    ? 'start'
+    : a.status === 'paused'
+    ? 'resume'
+    : a.status === 'active'
+    ? 'pause'
+    : undefined;
 
   return (
     <Screen title={a.name} onBack={() => navigation.goBack()}>
@@ -533,11 +678,26 @@ function Details({
           </Text>
         ) : null}
         {error ? <Banner tone="error" title={error} /> : null}
-        {a.groupId && a.status !== 'planned' && !joined && !isFinal(a.status) ? (
+        {isDraft ? (
           <Banner
             tone="info"
-            title="You have not joined this adventure"
-            body="Your time, distance and checkpoints are only recorded after you join."
+            title="Draft · only you can see it"
+            body={`Add phases, then publish. Publishing starts it for ${
+              group?.name ?? 'the group'
+            }; each person presses Start for their own timer.`}
+          />
+        ) : null}
+        {a.groupId && !isDraft && a.status !== 'planned' && !joined && !isOverFor(a) ? (
+          <Banner
+            tone="info"
+            title={
+              activity ? 'Press Start when you are ready' : 'You have not joined this adventure'
+            }
+            body={
+              activity
+                ? 'Your timer starts when you do, and stops when you finish your last phase.'
+                : 'Your time, distance and checkpoints are only recorded after you join.'
+            }
           />
         ) : null}
         {rt.hint && rt.hint.adventureId === a.id ? (
@@ -554,40 +714,48 @@ function Details({
           />
         ) : null}
 
-        <Card testID="progress-panel">
-          <Text variant="label" muted>
-            Your progress
-          </Text>
-          <View style={styles.metrics}>
-            <Metric label="Elapsed" value={formatClock(elapsed)} testID="metric-elapsed" />
-            <Metric
-              label="Distance"
-              value={a.progress.distanceM > 0 ? formatDistanceIn(a.progress.distanceM, units) : '–'}
-              testID="metric-distance"
+        {isDraft ? null : (
+          <Card testID="progress-panel">
+            <Text variant="label" muted>
+              Your progress
+            </Text>
+            <View style={styles.metrics}>
+              <Metric label="Elapsed" value={formatClock(elapsed)} testID="metric-elapsed" />
+              <Metric
+                label="Distance"
+                value={
+                  a.progress.distanceM > 0 ? formatDistanceIn(a.progress.distanceM, units) : '–'
+                }
+                testID="metric-distance"
+              />
+              <Metric
+                label="Remaining"
+                value={String(counts.remaining)}
+                testID="metric-remaining"
+              />
+            </View>
+            <Text variant="cardTitle" testID="progress-label">
+              {progressLabel(counts)}
+            </Text>
+            <AnimatedProgress
+              value={counts.total === 0 ? 0 : counts.mine / counts.total}
+              color={c.primary}
+              track={c.surfaceAlt}
+              testID="progress-bar"
             />
-            <Metric label="Remaining" value={String(counts.remaining)} testID="metric-remaining" />
-          </View>
-          <Text variant="cardTitle" testID="progress-label">
-            {progressLabel(counts)}
-          </Text>
-          <AnimatedProgress
-            value={counts.total === 0 ? 0 : counts.mine / counts.total}
-            color={c.primary}
-            track={c.surfaceAlt}
-            testID="progress-bar"
-          />
-          {running && a.progress.distanceM === 0 ? (
-            <Text variant="caption" muted>
-              Distance is recorded from GPS while the adventure is active. Standing still adds
-              nothing.
-            </Text>
-          ) : null}
-          {a.groupId ? (
-            <Text variant="caption" muted>
-              Group: {counts.everyone} of {counts.total} reached by everyone who joined
-            </Text>
-          ) : null}
-        </Card>
+            {running && a.progress.distanceM === 0 ? (
+              <Text variant="caption" muted>
+                Distance is recorded from GPS while the adventure is active. Standing still adds
+                nothing.
+              </Text>
+            ) : null}
+            {a.groupId ? (
+              <Text variant="caption" muted>
+                Group: {counts.everyone} of {counts.total} reached by everyone who joined
+              </Text>
+            ) : null}
+          </Card>
+        )}
 
         {earnedHere.length > 0 ? (
           <Banner
@@ -599,7 +767,23 @@ function Details({
         ) : null}
 
         <View style={styles.actions}>
-          {a.groupId && !isFinal(a.status) ? (
+          {isDraft && canEdit ? (
+            <>
+              <Button
+                testID="action-publish"
+                label={`Publish to ${group?.name ?? 'the group'}`}
+                onPress={publish}
+                loading={busy}
+                disabled={statuses.length === 0}
+              />
+              {statuses.length === 0 ? (
+                <Text variant="caption" muted>
+                  Add at least one phase to publish.
+                </Text>
+              ) : null}
+            </>
+          ) : null}
+          {a.groupId && !isDraft && !isOverFor(a) ? (
             joined ? (
               !canEdit ? (
                 <Button
@@ -611,7 +795,7 @@ function Details({
             ) : (
               <Button
                 testID="join-adventure"
-                label="Join adventure"
+                label={activity ? 'Start activity' : 'Join adventure'}
                 onPress={() => void participate(true)}
               />
             )
@@ -633,7 +817,7 @@ function Details({
               variant={primary === 'pause' ? 'primary' : 'secondary'}
             />
           ) : null}
-          {isFinal(a.status) ? (
+          {isOverFor(a) ? (
             <Button
               testID="view-recap"
               label="View recap"
@@ -643,8 +827,8 @@ function Details({
         </View>
 
         <View style={styles.sectionHead}>
-          <Text variant="heading">Checkpoints</Text>
-          {canEdit && !isFinal(a.status) ? (
+          <Text variant="heading">{activity ? 'Phases' : 'Checkpoints'}</Text>
+          {editable ? (
             <Button
               testID="add-checkpoint"
               small
@@ -657,8 +841,9 @@ function Details({
         </View>
         {statuses.length === 0 ? (
           <Text muted>
-            No checkpoints yet. Add places to explore, or long-press the map and choose
-            "Checkpoint".
+            {activity
+              ? 'No phases yet. A phase can be a place to reach, a task to do, or both.'
+              : 'No checkpoints yet. Add places to explore, or long-press the map and choose "Checkpoint".'}
           </Text>
         ) : (
           <Card style={styles.flatCard}>
@@ -668,7 +853,9 @@ function Details({
                 testID={`checkpoint-${s.checkpoint.id}`}
                 title={s.checkpoint.name}
                 subtitle={
-                  s.mine
+                  isDraft
+                    ? phaseSummary(s.checkpoint)
+                    : s.mine
                     ? `Reached ${formatTime(s.mine.at)}${
                         s.mine.method === 'manual' ? ' · confirmed by you' : ''
                       }`
@@ -694,10 +881,13 @@ function Details({
                 chevron
                 divider={i < statuses.length - 1}
                 onPress={() =>
-                  navigation.navigate('CheckpointDetails', {
-                    adventureId: a.id,
-                    checkpointId: s.checkpoint.id,
-                  })
+                  navigation.navigate(
+                    isDraft && canEdit ? 'CheckpointEditor' : 'CheckpointDetails',
+                    {
+                      adventureId: a.id,
+                      checkpointId: s.checkpoint.id,
+                    },
+                  )
                 }
               />
             ))}
@@ -744,8 +934,16 @@ function Details({
                     } of ${statuses.length} checkpoints`}
                     trailing={
                       <Badge
-                        label={p.state === 'joined' ? 'Joined' : 'Left'}
-                        tone={p.state === 'joined' ? 'good' : 'neutral'}
+                        label={
+                          p.state === 'joined'
+                            ? activity
+                              ? 'Started'
+                              : 'Joined'
+                            : p.state === 'done'
+                            ? 'Finished'
+                            : 'Left'
+                        }
+                        tone={p.state === 'left' ? 'neutral' : 'good'}
                       />
                     }
                     divider={i < participants.length - 1}
@@ -778,8 +976,9 @@ function Details({
         ) : null}
 
         <View style={styles.rowGap}>
-          {canEdit && !isFinal(a.status) ? (
+          {editable ? (
             <Button
+              testID="edit-details"
               variant="ghost"
               label="Edit details"
               onPress={() => navigation.navigate('AdventureEditor', { adventureId: a.id })}
@@ -794,12 +993,20 @@ function Details({
               )?.navigate('Map', { showAdventure: a.id, nonce: Date.now() })
             }
           />
-          {canEdit && !isFinal(a.status) ? (
+          {canEdit && !isFinal(a.status) && !isDraft ? (
             <Button
               testID="action-cancel"
               variant="ghost"
-              label="Cancel adventure"
+              label={`Cancel ${noun}`}
               onPress={() => confirm('cancel')}
+            />
+          ) : null}
+          {isDraft && canEdit ? (
+            <Button
+              testID="action-discard"
+              variant="ghost"
+              label="Discard draft"
+              onPress={discard}
             />
           ) : null}
         </View>
@@ -821,29 +1028,11 @@ function Metric({ label, value, testID }: { label: string; value: string; testID
   );
 }
 
-export function timelineText(
-  e: TimelineEntry,
-  nameOf: (addr: string) => string,
-  cps: { id: string; name: string }[],
-): string {
-  const cp = cps.find(c => c.id === e.checkpointId)?.name ?? 'a checkpoint';
-  switch (e.kind) {
-    case 'created':
-      return 'Adventure planned';
-    case 'status':
-      return `Adventure ${e.status === 'active' ? 'started or resumed' : e.status}`;
-    case 'joined':
-      return `${nameOf(e.address ?? '')} joined`;
-    case 'left':
-      return `${nameOf(e.address ?? '')} left`;
-    case 'reached':
-      return `${nameOf(e.address ?? '')} reached ${cp}`;
-    case 'all_reached':
-      return `Everyone has reached ${cp}`;
-  }
-}
+export { timelineText } from './format';
 
 const styles = StyleSheet.create({
+  historyCard: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  historyFacts: { flexDirection: 'row', alignItems: 'center', gap: space.xs, flexWrap: 'wrap' },
   list: { padding: space.gutter, paddingTop: 0, gap: space.md, paddingBottom: space.xxl },
   flatCard: { paddingVertical: space.xs },
   input: {

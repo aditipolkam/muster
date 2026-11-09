@@ -22,6 +22,7 @@ import { LocationService } from '../platform/LocationService';
 import { Clock } from '../shared/clock';
 import { FakeHttp } from './FakeHttp';
 import { FakeLocation } from './FakeLocation';
+import { FakePhotos } from './FakePhotos';
 import { MemoryFs } from './MemoryFs';
 import { openNodeSqlite } from './nodeSqlite';
 
@@ -138,6 +139,7 @@ export async function makeTestServices(
     sources: [meetingPoints.changes as Emitter<unknown>],
   });
   const places = new PlaceSearch(http, () => clock.now());
+  const photos = new FakePhotos();
   const loc = new FakeLocation();
   const location = new LocationService(loc, clock);
   const services: Services = {
@@ -158,6 +160,7 @@ export async function makeTestServices(
     pubsub,
     groupPubsub,
     fs,
+    photos,
     packs,
     places,
     location,
@@ -172,6 +175,7 @@ export async function makeTestServices(
     http,
     loc,
     progress,
+    photos,
     packs,
     regions,
     points,

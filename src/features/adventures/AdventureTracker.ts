@@ -5,7 +5,7 @@ import {
   DwellState,
   DEFAULT_RADIUS_M,
 } from '../../domain/adventures/arrival';
-import { Adventure, Checkpoint } from '../../domain/adventures/model';
+import { Adventure, Checkpoint, placeOf } from '../../domain/adventures/model';
 import { appendFix, emptyTrack, TrackState } from '../../domain/adventures/track';
 import type { Fix } from '../../domain/location/fix';
 import type { Clock } from '../../shared/clock';
@@ -144,15 +144,22 @@ export class AdventureTracker {
         if (r.done.has(cp.id)) {
           continue;
         }
+        const place = placeOf(cp);
+        if (!place) {
+          continue; // a task phase has no place to arrive at
+        }
         const key = `${r.adv.id}:${cp.id}`;
-        const prox = proximity({ fix, target: cp, radiusM: this.radiusM, now });
+        const prox = proximity({ fix, target: place, radiusM: cp.radiusM ?? this.radiusM, now });
+        // Only a plain location checkpoint completes by itself. A phase that needs a photo or
+        // collects something is completed by the person, who gets a hint when they are close.
+        const auto = cp.type === 'checkpoint' && !cp.requirePhoto;
         const step = stepDwell(this.dwell.get(key) ?? null, prox, now);
         if (step.next) {
           this.dwell.set(key, step.next);
         } else {
           this.dwell.delete(key);
         }
-        if (step.confirmed) {
+        if (step.confirmed && auto) {
           const res = await this.d.service.confirmArrival(r.adv.id, cp.id, 'auto');
           if (res.ok) {
             r.done.add(cp.id);

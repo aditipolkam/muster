@@ -228,6 +228,82 @@ export const MIGRATIONS: Migration[] = [
       )`);
     },
   },
+  {
+    version: 5,
+    name: 'group_activities',
+    up: async tx => {
+      // Re-runnable: skip what an earlier, half-recorded run already did.
+      const columns = async (table: string) =>
+        (await tx.all<{ name: string }>(`PRAGMA table_info(${table})`)).map(c => c.name);
+      // Activities: ordered flag and the map area to download (JSON, validated on read).
+      const adv = await columns('adventures');
+      if (!adv.includes('ordered')) {
+        await tx.run('ALTER TABLE adventures ADD COLUMN ordered INTEGER NOT NULL DEFAULT 0');
+      }
+      if (!adv.includes('activity')) {
+        await tx.run('ALTER TABLE adventures ADD COLUMN activity INTEGER NOT NULL DEFAULT 0');
+      }
+      if (!adv.includes('finished_at')) {
+        await tx.run('ALTER TABLE adventures ADD COLUMN finished_at INTEGER');
+      }
+      if (!adv.includes('region')) {
+        await tx.run('ALTER TABLE adventures ADD COLUMN region TEXT');
+      }
+      // A phase may be a task with no place, so lat/lon become nullable. SQLite cannot drop
+      // NOT NULL in place: rebuild the table and keep every row.
+      if (!(await columns('adventure_checkpoints')).includes('task')) {
+        await tx.run('DROP TABLE IF EXISTS adventure_checkpoints_v5');
+        await tx.run(`CREATE TABLE adventure_checkpoints_v5 (
+          adventure_id TEXT NOT NULL,
+          id TEXT NOT NULL,
+          rev INTEGER NOT NULL,
+          ord INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT,
+          kind TEXT NOT NULL,
+          lat REAL,
+          lon REAL,
+          task TEXT,
+          deleted INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (adventure_id, id)
+        )`);
+        await tx.run(`INSERT INTO adventure_checkpoints_v5(adventure_id, id, rev, ord, name,
+            description, kind, lat, lon, task, deleted)
+          SELECT adventure_id, id, rev, ord, name, description, kind, lat, lon, NULL, deleted
+          FROM adventure_checkpoints`);
+        await tx.run('DROP TABLE adventure_checkpoints');
+        await tx.run('ALTER TABLE adventure_checkpoints_v5 RENAME TO adventure_checkpoints');
+      }
+    },
+  },
+  {
+    version: 6,
+    name: 'activity_phases',
+    up: async tx => {
+      // Re-runnable: add only the columns that are missing.
+      const cols = (await tx.all<{ name: string }>('PRAGMA table_info(adventure_checkpoints)')).map(
+        c => c.name,
+      );
+      const add = async (name: string, ddl: string) => {
+        if (!cols.includes(name)) {
+          await tx.run(`ALTER TABLE adventure_checkpoints ADD COLUMN ${ddl}`);
+        }
+      };
+      await add('type', "type TEXT NOT NULL DEFAULT 'checkpoint'");
+      await add('radius_m', 'radius_m INTEGER');
+      await add('require_photo', 'require_photo INTEGER NOT NULL DEFAULT 0');
+      await add('region', 'region TEXT');
+      // This person's own note and photo for a phase. Never sent; the photo is a file here.
+      await tx.run(`CREATE TABLE IF NOT EXISTS phase_records (
+        adventure_id TEXT NOT NULL,
+        checkpoint_id TEXT NOT NULL,
+        note TEXT,
+        photo_uri TEXT,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (adventure_id, checkpoint_id)
+      )`);
+    },
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;

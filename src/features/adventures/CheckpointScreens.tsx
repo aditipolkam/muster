@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { proximity } from '../../domain/adventures/arrival';
 import { canEditAdventure } from '../../domain/adventures/authorize';
+import { isPhaseUnlocked } from '../../domain/adventures/phases';
 import { isFinal } from '../../domain/adventures/lifecycle';
 import {
   CHECKPOINT_DESC_MAX,
@@ -10,6 +11,7 @@ import {
   CHECKPOINT_NAME_MAX,
   CheckpointKind,
   kindLabel,
+  placeOf,
 } from '../../domain/adventures/model';
 import { bearingDeg, distanceM, formatCoord } from '../../domain/geo';
 import { cardinalOf, formatDistanceIn } from '../../domain/geo/pace';
@@ -35,6 +37,9 @@ import {
   Text,
 } from '../../ui/components';
 import { PulseRing } from '../../ui/motion';
+import { PhaseScreen } from './ActivityRunScreens';
+import { PhaseEditor } from './ActivityScreens';
+import { isActivity } from './activityFlag';
 import { radius, space, useTheme } from '../../ui/theme';
 import { useNow } from '../../ui/useNow';
 import { KIND_ICON, SAFETY_NOTE, formatDate, formatTime } from './format';
@@ -44,7 +49,16 @@ type Nav<T extends keyof ActivityStackParamList> = NativeStackScreenProps<
   T
 >;
 
-export function CheckpointEditorScreen({ navigation, route }: Nav<'CheckpointEditor'>) {
+/** Activities use the phase editor; plain adventures keep the simple checkpoint form below. */
+export function CheckpointEditorScreen(props: Nav<'CheckpointEditor'>) {
+  const detail = useAdventureDetail(props.route.params.adventureId);
+  if (detail && isActivity(detail.adventure)) {
+    return <PhaseEditor {...props} />;
+  }
+  return <CheckpointForm {...props} />;
+}
+
+function CheckpointForm({ navigation, route }: Nav<'CheckpointEditor'>) {
   const { adventureId, checkpointId } = route.params;
   const { adventures: service, adventuresRepo } = useServices();
   const { c } = useTheme();
@@ -73,19 +87,43 @@ export function CheckpointEditorScreen({ navigation, route }: Nav<'CheckpointEdi
         setName(cp.name);
         setDescription(cp.description ?? '');
         setKind(cp.kind);
-        setPos({ lat: cp.lat, lon: cp.lon });
+        setPos(placeOf(cp));
       }
     });
   }, [adventureId, checkpointId, adventuresRepo]);
 
+  // Back from "Select Location" on the map.
+  const picked = route.params.picked;
+  useEffect(() => {
+    if (picked) {
+      setPos({ lat: picked.lat, lon: picked.lon });
+    }
+  }, [picked?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const chooseOnMap = () =>
+    (navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined)?.navigate(
+      'Map',
+      {
+        pick: {
+          adventureId,
+          checkpointId,
+          type: 'checkpoint',
+          lat: pos?.lat,
+          lon: pos?.lon,
+          includeRegion: false,
+        },
+        nonce: Date.now(),
+      },
+    );
+
   const save = async () => {
     if (!pos) {
-      setError('Choose where it is: use your location, or long-press the map.');
+      setError('Choose where it is: search on the map, or use your location.');
       return;
     }
     setBusy(true);
     setError(null);
-    const body = { name, description, kind, ...pos };
+    const body = { name, description, kind, region: null, ...pos };
     const r = checkpointId
       ? await service.updateCheckpoint(adventureId, checkpointId, body)
       : await service.addCheckpoint(adventureId, body);
@@ -166,6 +204,13 @@ export function CheckpointEditorScreen({ navigation, route }: Nav<'CheckpointEdi
           </Text>
         </Card>
         <Button
+          testID="select-location"
+          variant="secondary"
+          icon="search"
+          label="Search or choose on the map"
+          onPress={chooseOnMap}
+        />
+        <Button
           testID="checkpoint-use-location"
           variant="secondary"
           icon="locate"
@@ -189,7 +234,16 @@ export function CheckpointEditorScreen({ navigation, route }: Nav<'CheckpointEdi
   );
 }
 
-export function CheckpointDetailsScreen({ navigation, route }: Nav<'CheckpointDetails'>) {
+/** Activity phases have their own page; plain adventure checkpoints keep the one below. */
+export function CheckpointDetailsScreen(props: Nav<'CheckpointDetails'>) {
+  const detail = useAdventureDetail(props.route.params.adventureId);
+  if (detail && isActivity(detail.adventure)) {
+    return <PhaseScreen {...props} />;
+  }
+  return <CheckpointPage {...props} />;
+}
+
+function CheckpointPage({ navigation, route }: Nav<'CheckpointDetails'>) {
   const { adventureId, checkpointId } = route.params;
   const { c } = useTheme();
   const { adventures: service } = useServices();
@@ -219,14 +273,23 @@ export function CheckpointDetailsScreen({ navigation, route }: Nav<'CheckpointDe
   }
   const { adventure: a, self, completions, participants } = detail;
   const group = groups.find(g => g.id === a.groupId) ?? null;
-  const canEdit = canEditAdventure(a, group, mesh.localAddress) && !isFinal(a.status);
+  // A published activity is fixed; only its draft can be edited.
+  const canEdit =
+    canEditAdventure(a, group, mesh.localAddress) &&
+    !isFinal(a.status) &&
+    !(a.activity && a.status !== 'draft');
   const mine = completions.find(x => x.checkpointId === cp.id && x.address === self) ?? null;
   const others = completions.filter(x => x.checkpointId === cp.id && x.address !== self);
-  const dist = fix ? distanceM(fix, cp) : null;
-  const bearing = fix ? bearingDeg(fix, cp) : null;
-  const prox = proximity({ fix, target: cp, radiusM, now });
+  const place = placeOf(cp);
+  const dist = fix && place ? distanceM(fix, place) : null;
+  const bearing = fix && place ? bearingDeg(fix, place) : null;
+  const prox = place
+    ? proximity({ fix, target: place, radiusM, now })
+    : ({ state: 'no_fix' } as const);
   const nameOf = (addr: string) => participants.find(p => p.address === addr)?.name ?? 'Someone';
-  const canMark = a.status === 'active' && detail.joined && !mine;
+  const myDone = new Set(completions.filter(x => x.address === self).map(x => x.checkpointId));
+  const locked = a.ordered === true && !isPhaseUnlocked(true, detail.checkpoints, myDone, cp.id);
+  const canMark = a.status === 'active' && detail.joined && !mine && !locked;
 
   const doConfirm = async () => {
     const r = await service.confirmArrival(a.id, cp.id, 'manual');
@@ -270,20 +333,30 @@ export function CheckpointDetailsScreen({ navigation, route }: Nav<'CheckpointDe
             </Text>
           </View>
         </Card>
+        {cp.task ? (
+          <Card testID="phase-task-card">
+            <Text variant="label" muted>
+              To do
+            </Text>
+            <Text variant="cardTitle">{cp.task}</Text>
+          </Card>
+        ) : null}
         {cp.description ? <Text>{cp.description}</Text> : null}
-        <Card>
-          <Text variant="label" muted>
-            Straight line from you
-          </Text>
-          <Text variant="heading">
-            {dist === null || bearing === null
-              ? 'Waiting for GPS'
-              : `${formatDistanceIn(dist, units)} · ${cardinalOf(bearing)}`}
-          </Text>
-          <Text variant="caption" muted>
-            {formatCoord(cp)} · terrain not considered
-          </Text>
-        </Card>
+        {place ? (
+          <Card>
+            <Text variant="label" muted>
+              Straight line from you
+            </Text>
+            <Text variant="heading">
+              {dist === null || bearing === null
+                ? 'Waiting for GPS'
+                : `${formatDistanceIn(dist, units)} · ${cardinalOf(bearing)}`}
+            </Text>
+            <Text variant="caption" muted>
+              {formatCoord(place)} · terrain not considered
+            </Text>
+          </Card>
+        ) : null}
         {rt.hint?.checkpointId === cp.id && !mine ? (
           <Banner
             tone="info"
@@ -318,25 +391,34 @@ export function CheckpointDetailsScreen({ navigation, route }: Nav<'CheckpointDe
           />
         ) : null}
         {error ? <Banner tone="error" title={error} /> : null}
-        <Button
-          testID="navigate-checkpoint"
-          icon="navigate"
-          label="Navigate here"
-          onPress={() =>
-            (
-              navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined
-            )?.navigate('Navigate', {
-              adventureId: a.id,
-              checkpointId: cp.id,
-            })
-          }
-        />
+        {place ? (
+          <Button
+            testID="navigate-checkpoint"
+            icon="navigate"
+            label="Navigate here"
+            onPress={() =>
+              (
+                navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined
+              )?.navigate('Navigate', {
+                adventureId: a.id,
+                checkpointId: cp.id,
+              })
+            }
+          />
+        ) : null}
+        {isActivity(a) && locked && !mine ? (
+          <Banner
+            tone="info"
+            title="Finish the earlier phases first"
+            body="This activity goes in order."
+          />
+        ) : null}
         {canMark ? (
           <Button
             testID="confirm-arrival"
             variant="secondary"
             icon="check"
-            label="I have arrived"
+            label={place ? 'I have arrived' : 'Mark as done'}
             onPress={markArrived}
           />
         ) : !mine && a.status === 'paused' ? (

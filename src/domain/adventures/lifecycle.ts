@@ -1,8 +1,10 @@
-import type { AdventureStatus, PersonalProgress } from './model';
+import type { Adventure, AdventureStatus, ParticipantState, PersonalProgress } from './model';
 
-export type AdventureAction = 'start' | 'pause' | 'resume' | 'complete' | 'cancel';
+export type AdventureAction = 'publish' | 'start' | 'pause' | 'resume' | 'complete' | 'cancel';
 
 const TABLE: Record<AdventureStatus, Partial<Record<AdventureAction, AdventureStatus>>> = {
+  // Publishing a group activity is also starting it.
+  draft: { publish: 'active', cancel: 'cancelled' },
   planned: { start: 'active', cancel: 'cancelled' },
   active: { pause: 'paused', complete: 'completed', cancel: 'cancelled' },
   paused: { resume: 'active', complete: 'completed', cancel: 'cancelled' },
@@ -22,6 +24,7 @@ export function actionsFor(s: AdventureStatus): AdventureAction[] {
 }
 
 const RANK: Record<AdventureStatus, number> = {
+  draft: -1,
   planned: 0,
   active: 1,
   paused: 1,
@@ -42,7 +45,7 @@ export function isAcceptableRemoteStatus(from: AdventureStatus, to: AdventureSta
   if (isFinal(from)) {
     return false;
   }
-  if (to === 'planned') {
+  if (to === 'planned' || to === 'draft') {
     return false;
   }
   return RANK[to] >= RANK[from];
@@ -74,4 +77,43 @@ export function advanceProgress(
 
 export function elapsedMs(p: PersonalProgress, now: number): number {
   return p.activeMs + (p.resumedAt === null ? 0 : Math.max(0, now - p.resumedAt));
+}
+
+type Over = Pick<Adventure, 'status' | 'endedAt' | 'progress'>;
+
+/**
+ * When this person completed the adventure: their own finish for an activity, else the owner's
+ * completion. A person's finish stands even if the organizer cancels later.
+ */
+export const completedAt = (a: Over): number | null =>
+  a.progress.finishedAt ?? (a.status === 'completed' ? a.endedAt : null);
+
+/** When it ended for this person (completed or cancelled), or null while it is still open. */
+export const endedFor = (a: Over): number | null =>
+  a.progress.finishedAt ?? (isFinal(a.status) ? a.endedAt : null);
+
+/** Over for this person: finished by them, or ended by the organizer. */
+export const isOverFor = (a: Over): boolean => isFinal(a.status) || a.progress.finishedAt != null;
+
+/**
+ * Where a group activity stands for this person.
+ * waiting: live, and they have not started (or stepped out); running: their clock is going;
+ * finished: they did the last phase; closed: the organizer ended it before they finished.
+ */
+export type ActivityStanding = 'draft' | 'waiting' | 'running' | 'finished' | 'closed';
+
+export function activityStanding(
+  a: Over,
+  mine: ParticipantState | null | undefined,
+): ActivityStanding {
+  if (a.status === 'draft') {
+    return 'draft';
+  }
+  if (a.progress.finishedAt != null || mine === 'done') {
+    return 'finished';
+  }
+  if (isFinal(a.status)) {
+    return 'closed';
+  }
+  return mine === 'joined' && a.status === 'active' ? 'running' : 'waiting';
 }

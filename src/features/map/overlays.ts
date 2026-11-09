@@ -147,3 +147,32 @@ export function pinCollection(p: { lat: number; lon: number } | null): FeatureCo
       }
     : empty();
 }
+
+/** A rectangle [west, south, east, north] as a polygon; empty when null. */
+export function boxCollection(b: [number, number, number, number] | null): FeatureCollection {
+  if (!b) {
+    return empty();
+  }
+  const [w, s, e, n] = b;
+  return {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [w, s],
+              [e, s],
+              [e, n],
+              [w, n],
+              [w, s],
+            ],
+          ],
+        },
+      },
+    ],
+  };
+}

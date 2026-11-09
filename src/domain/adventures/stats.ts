@@ -1,4 +1,4 @@
-import { elapsedMs } from './lifecycle';
+import { completedAt, elapsedMs, endedFor } from './lifecycle';
 import type {
   Adventure,
   AdventureStatus,
@@ -25,7 +25,8 @@ export function checkpointStatuses(
   participants: Participant[],
   me: string | null,
 ): CheckpointStatus[] {
-  const joined = participants.filter(p => p.state === 'joined').map(p => p.address);
+  // A person who finished still took part; only someone who left stops counting.
+  const joined = participants.filter(p => p.state !== 'left').map(p => p.address);
   return checkpoints
     .filter(c => !c.deleted)
     .sort((a, b) => a.ord - b.ord || a.id.localeCompare(b.id))
@@ -97,7 +98,7 @@ export function qualifies(input: {
 
 export type TimelineEntry = {
   key: string;
-  kind: 'created' | 'status' | 'joined' | 'left' | 'reached' | 'all_reached';
+  kind: 'created' | 'status' | 'joined' | 'left' | 'finished' | 'reached' | 'all_reached';
   at: number;
   address?: string;
   status?: AdventureStatus;
@@ -133,7 +134,7 @@ export function buildTimeline(input: {
     ...participants.map(
       (p): TimelineEntry => ({
         key: `p:${p.address}:${p.seq}`,
-        kind: p.state === 'joined' ? 'joined' : 'left',
+        kind: p.state === 'joined' ? 'joined' : p.state === 'done' ? 'finished' : 'left',
         at: p.updatedAt,
         address: p.address,
       }),
@@ -207,9 +208,9 @@ export function buildRecap(input: {
   return {
     name: a.name,
     startedAt: a.startedAt,
-    endedAt: a.endedAt,
-    status: a.status,
-    durationMs: elapsedMs(a.progress, a.endedAt ?? input.now),
+    endedAt: endedFor(a),
+    status: completedAt(a) !== null ? 'completed' : a.status,
+    durationMs: elapsedMs(a.progress, endedFor(a) ?? input.now),
     distanceM: hasRoute || distance > 0 ? distance : null,
     checkpointsDone: statuses
       .filter(s => s.mine)
@@ -220,7 +221,7 @@ export function buildRecap(input: {
       })),
     checkpointsTotal: counts.total,
     participants: input.participants
-      .filter(p => p.state === 'joined')
+      .filter(p => p.state !== 'left')
       .map(p => ({ address: p.address, name: p.name })),
     groupExplored: a.groupId ? counts.everyone : null,
     route: hasRoute ? thinRoute(track, 150) : [],

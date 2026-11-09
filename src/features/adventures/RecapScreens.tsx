@@ -2,6 +2,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { AchievementCategory, achievementById } from '../../domain/adventures/achievements';
+import { completedAt } from '../../domain/adventures/lifecycle';
+import { placeOf } from '../../domain/adventures/model';
 import { buildRecap, formatDuration } from '../../domain/adventures/stats';
 import { formatDistanceIn } from '../../domain/geo/pace';
 import {
@@ -84,7 +86,7 @@ export function AdventureSummaryScreen({ navigation, route }: Nav<'AdventureSumm
     );
   }
   const a = detail.adventure;
-  const cancelled = a.status === 'cancelled';
+  const cancelled = a.status === 'cancelled' && completedAt(a) === null;
   const step = celebrate ? 90 : 0;
   const boxW = Math.min(width, 520) - 2 * space.gutter - 2 * space.lg;
   const stat = (label: string, value: string, id: string) => (
@@ -151,11 +153,17 @@ export function AdventureSummaryScreen({ navigation, route }: Nav<'AdventureSumm
               </Text>
               <RouteSketch
                 route={recap.route}
-                checkpoints={detail.checkpoints.map(cp => ({
-                  lat: cp.lat,
-                  lon: cp.lon,
-                  reached: recap.checkpointsDone.some(d => d.checkpoint.id === cp.id),
-                }))}
+                checkpoints={detail.checkpoints.flatMap(cp => {
+                  const place = placeOf(cp);
+                  return place
+                    ? [
+                        {
+                          ...place,
+                          reached: recap.checkpointsDone.some(d => d.checkpoint.id === cp.id),
+                        },
+                      ]
+                    : [];
+                })}
                 width={boxW}
               />
               <Button

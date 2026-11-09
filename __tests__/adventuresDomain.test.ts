@@ -458,6 +458,11 @@ describe('progress, timeline and recap come only from recorded data', () => {
     kind,
     lat: 0,
     lon: 0,
+    task: null,
+    type: 'checkpoint',
+    radiusM: null,
+    requirePhoto: false,
+    region: null,
     deleted,
   });
   const done = (cpId: string, address: string, at: number): Completion => ({

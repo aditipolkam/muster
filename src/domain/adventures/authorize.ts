@@ -1,5 +1,6 @@
 import type { Group, GroupMember } from '../groups/model';
 import type { AdventureStatus, ParticipantState } from './model';
+import { isPhaseUnlocked } from './phases';
 
 export type AdventureInboundKind =
   /** owner -> members */
@@ -35,6 +36,11 @@ export type KnownAdventure = {
   liveCheckpointIds: string[];
   /** The sender's recorded participation, if any. */
   senderState: ParticipantState | null;
+  /** Ordered activity: ids of the phases the sender has already completed. */
+  senderDoneCheckpointIds?: string[];
+  /** Ordered activity: phases are live, in order, as the organizer published them. */
+  ordered?: boolean;
+  liveCheckpoints?: { id: string; ord: number }[];
 };
 
 /**
@@ -95,12 +101,18 @@ export function authorizeAdventureInbound(input: {
     return deny('unknown adventure for this group');
   }
   if (kind === 'participant') {
-    return adventure.status === 'cancelled' || adventure.status === 'completed'
+    return adventure.status === 'draft' ||
+      adventure.status === 'cancelled' ||
+      adventure.status === 'completed'
       ? deny(`adventure is ${adventure.status}`)
       : allow;
   }
   // reached
-  if (adventure.status === 'planned' || adventure.status === 'cancelled') {
+  if (
+    adventure.status === 'draft' ||
+    adventure.status === 'planned' ||
+    adventure.status === 'cancelled'
+  ) {
     return deny(`adventure is ${adventure.status}`);
   }
   if (adventure.senderState === 'left') {
@@ -108,6 +120,19 @@ export function authorizeAdventureInbound(input: {
   }
   if (!input.checkpointId || !adventure.liveCheckpointIds.includes(input.checkpointId)) {
     return deny('unknown checkpoint');
+  }
+  // Ordered activities: an arrival that overtakes its predecessor is refused now and accepted on
+  // the member's retry once the earlier one has arrived (unconfirmed arrivals are re-sent).
+  if (
+    adventure.ordered &&
+    !isPhaseUnlocked(
+      true,
+      (adventure.liveCheckpoints ?? []).map(c => ({ ...c, deleted: false })),
+      new Set(adventure.senderDoneCheckpointIds ?? []),
+      input.checkpointId,
+    )
+  ) {
+    return deny('an earlier phase is not done yet');
   }
   return allow;
 }
