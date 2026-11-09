@@ -484,6 +484,6 @@ const styles = StyleSheet.create({
     minHeight: 40,
     justifyContent: 'center',
     borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
 });

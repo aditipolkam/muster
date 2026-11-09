@@ -903,7 +903,7 @@ function Details({
                   <ListRow
                     title={meetingPoints[0]?.name ?? ''}
                     subtitle={meetingPoints[0]?.note ?? 'Shared by the organizer'}
-                    leading={<IconTile name="flag" color={c.mapMeeting} bg={c.mapMeeting + '22'} />}
+                    leading={<IconTile name="flag" tone="meeting" />}
                     chevron
                     divider={false}
                     onPress={() =>

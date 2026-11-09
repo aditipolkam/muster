@@ -597,7 +597,7 @@ describe('OnboardingScreen', () => {
   it('welcome lists the benefits and does not ask for a name yet', () => {
     open();
     expect(screen.getByText('Offline maps')).toBeTruthy();
-    expect(screen.getByText('Group sync')).toBeTruthy();
+    expect(screen.getByText('Follow your leader')).toBeTruthy();
     expect(screen.queryByTestId('onboarding-name')).toBeNull();
   });
 

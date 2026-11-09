@@ -14,18 +14,41 @@ import { MEMBER_NAME_MAX } from '../../domain/groups/model';
 import { radius, space, useTheme } from '../../ui/theme';
 
 const BENEFITS: { icon: IconName; title: string; body: string }[] = [
-  { icon: 'map', title: 'Offline maps', body: 'Download maps & navigate offline' },
-  { icon: 'group', title: 'Group sync', body: 'Share locations, meeting points & updates' },
-  { icon: 'bluetooth', title: 'Works offline', body: 'Connect nearby devices with a mesh network' },
+  {
+    icon: 'map',
+    title: 'Offline maps',
+    body: 'Save the trip map and find your way without signal',
+  },
+  {
+    icon: 'group',
+    title: 'Follow your leader',
+    body: "Get the leader's meeting points and updates when you're in range",
+  },
+  {
+    icon: 'bluetooth',
+    title: 'No internet needed',
+    body: 'Phones nearby pass updates over Bluetooth',
+  },
 ];
 
-function Peak({ size, color, left }: { size: number; color: string; left: number }) {
+function Peak({
+  size,
+  color,
+  left,
+  opacity,
+}: {
+  size: number;
+  color: string;
+  left: number;
+  opacity: number;
+}) {
   return (
     <View
       style={{
         position: 'absolute',
         bottom: 0,
         left,
+        opacity,
         borderLeftWidth: size,
         borderRightWidth: size,
         borderBottomWidth: size * 1.2,
@@ -39,16 +62,16 @@ function Peak({ size, color, left }: { size: number; color: string; left: number
 
 /** Scenic header drawn with views so it needs no image assets or native dependencies. */
 function Scene() {
-  const { c, dark } = useTheme();
+  const { c } = useTheme();
   return (
     <View
-      style={[styles.scene, { backgroundColor: dark ? '#1D2D25' : '#E4EFE3' }]}
+      style={[styles.scene, { backgroundColor: c.primarySoft, borderColor: c.border }]}
       accessibilityElementsHidden
     >
-      <Peak size={90} color={dark ? '#35493E' : '#B7C9BA'} left={20} />
-      <Peak size={110} color={dark ? '#2B3D33' : '#9DB8A3'} left={110} />
-      <Peak size={70} color={dark ? '#223329' : '#86A98F'} left={240} />
-      <View style={[styles.hill, { backgroundColor: c.mapMember }]} />
+      <Peak size={90} color={c.primary} opacity={0.22} left={20} />
+      <Peak size={110} color={c.primary} opacity={0.34} left={110} />
+      <Peak size={70} color={c.primary} opacity={0.46} left={240} />
+      <View style={[styles.hill, { backgroundColor: c.primary }]} />
     </View>
   );
 }
@@ -69,11 +92,12 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }} testID="onboarding">
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.brand}>
-          <Text variant="hero" color={c.deep} accessibilityRole="header">
-            ▲ TrailMesh
+          <IconTile name="trail" size={56} />
+          <Text variant="hero" color={c.text} accessibilityRole="header">
+            TrailMesh
           </Text>
           <Text color={c.text} style={styles.tagline}>
-            Stay connected, find each other, anywhere — even offline.
+            Find each other on the trail, even with no signal.
           </Text>
         </View>
         <Scene />
@@ -207,7 +231,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   nameFooter: { padding: space.gutter },
-  scene: { height: 160, borderRadius: 24, overflow: 'hidden' },
+  scene: { height: 160, borderRadius: radius.card, borderWidth: 1, overflow: 'hidden' },
   hill: {
     position: 'absolute',
     bottom: -60,

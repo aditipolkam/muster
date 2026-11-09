@@ -168,7 +168,7 @@ const styles = StyleSheet.create({
     gap: space.sm,
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
   input: {
     borderWidth: 1,
