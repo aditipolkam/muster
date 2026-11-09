@@ -14,7 +14,7 @@ Preparation: build and install the app on every device, grant Bluetooth, locatio
 | G5 | Reuse and expiry | 3 | After G2, scan the **same** QR on a third phone. Separately wait past expiry (or set the clock forward on A) | Third phone is refused and never appears in A's roster; expired code refused |
 | G6 | Nearby discovery | 2 | A: switch on "Let people nearby ask to join". B: Join group, wait on the Nearby list, Ask to join. A approves. Switch off on A and retry from a third phone | Group appears on B within ~30 s; join needs approval; after closing, no beacon and requests are refused |
 | G7 | Camera permission | 1 | Deny camera on B, tap Scan | Clear explanation, paste-link field still works; no crash |
-| M1 | Share a meeting point | 2 | A: long-press the map > Meeting point, name + note, Share | Appears on B's map at the same place within 10 s (direct link); B's sheet shows the name, note, "shared by A" |
+| M1 | Share a meeting point | 2 | A: group page > Share location > Send your current location (also try Choose on the map and a saved place), name + note, Share with the group | Appears on B's map at the same place within 10 s (direct link); B's sheet shows the name, note, "shared by A" |
 | M2 | Update and move | 2 | A: Edit name/note; then Move | B shows the new values and position; details screen says "Updated by A (version n)" |
 | M3 | Remove | 2 | A: Remove | Gone from B's map and list |
 | M4 | Acknowledge | 3 | B and C: Acknowledge | A's Meeting Point screen lists B and C as Acknowledged; B does not see C's acknowledgment (by design) |
