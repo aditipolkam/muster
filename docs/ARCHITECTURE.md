@@ -1,6 +1,6 @@
-# TrailMesh Architecture
+# Muster Architecture
 
-TrailMesh is an offline-first group navigation app: maps, GPS, meeting points and live group positions that keep working with no cellular or internet, using the Offline Protocol mesh SDK over Bluetooth (and Wi-Fi Direct on Android).
+Muster is an offline-first group navigation app: maps, GPS, meeting points and live group positions that keep working with no cellular or internet, using the Offline Protocol mesh SDK over Bluetooth (and Wi-Fi Direct on Android).
 
 Companion docs: `SDK_INTEGRATION.md` (what the SDK does), `MAP_ARCHITECTURE.md`, `MESH_PROTOCOL.md`, `DATA_MODELS.md`, `DEVELOPMENT_PLAN.md`.
 
@@ -116,7 +116,7 @@ interface MeshPort {
 }
 ```
 
-**MeshBus** is TrailMesh's pub/sub. Because the SDK has no group-scoped topics (`SDK_INTEGRATION.md` §4), the bus maps logical topics to lanes. Callers `publish(topic, payload)` and `subscribe(topic, handler)` and do not know the lane.
+**MeshBus** is Muster's pub/sub. Because the SDK has no group-scoped topics (`SDK_INTEGRATION.md` §4), the bus maps logical topics to lanes. Callers `publish(topic, payload)` and `subscribe(topic, handler)` and do not know the lane.
 
 Topic naming and lane mapping are specified in `MESH_PROTOCOL.md`.
 
@@ -154,11 +154,11 @@ SQLite, WAL mode, `PRAGMA user_version` migrations (forward only, each migration
 ## 7. Group identity and membership
 
 - **Device identity** = SDK `off1…` address (`localAddress()`), stable per `appId`+`profile`. The user's display name and colour are app-level and live in the member's own replicated doc.
-- **Group identity** = MLS `groupId` returned by `meshCreateGroup`. TrailMesh adds metadata in a `group` doc (name, created, `minAppVersion`, invite token hash, sharing defaults).
-- **Membership truth** = the MLS roster (`meshGetGroupInfo(...).memberIds`), never a TrailMesh list. Member docs from non-members are ignored.
+- **Group identity** = MLS `groupId` returned by `meshCreateGroup`. Muster adds metadata in a `group` doc (name, created, `minAppVersion`, invite token hash, sharing defaults).
+- **Membership truth** = the MLS roster (`meshGetGroupInfo(...).memberIds`), never a Muster list. Member docs from non-members are ignored.
 - **Roles:** creator is admin; admins can invite/remove/rename; promote co-admins (`meshSetMemberRole`) so trips survive the creator leaving. The last admin cannot leave (SDK rule).
-- **Joining in person** (offline): admin shows a group QR (`trailmesh://join?v=1&a=<adminAddr>&t=<token>&n=<name>`); the joiner scans it and sends `sendConnectionRequest` to the admin with the join payload as `initialMessage`; the admin's app validates the token, shows "Alex wants to join", and on approve calls `meshInviteToGroup`. Alternative: joiner shows their address QR and the admin scans it and invites directly. Verifying the address by QR defends against a nearby device impersonating a name. The online invite-link mechanism is not used (depends on relay).
-- **Trust model:** group members are trusted friends. SDK membership commits are not enforced on receive and DataStore docs have no authorship check; TrailMesh does not claim to defend against a malicious member. (`SDK_INTEGRATION.md` G3, G4.)
+- **Joining in person** (offline): admin shows a group QR (`muster://join?v=1&a=<adminAddr>&t=<token>&n=<name>`); the joiner scans it and sends `sendConnectionRequest` to the admin with the join payload as `initialMessage`; the admin's app validates the token, shows "Alex wants to join", and on approve calls `meshInviteToGroup`. Alternative: joiner shows their address QR and the admin scans it and invites directly. Verifying the address by QR defends against a nearby device impersonating a name. The online invite-link mechanism is not used (depends on relay).
+- **Trust model:** group members are trusted friends. SDK membership commits are not enforced on receive and DataStore docs have no authorship check; Muster does not claim to defend against a malicious member. (`SDK_INTEGRATION.md` G3, G4.)
 
 ## 8. Synchronisation and recovery
 
@@ -244,7 +244,7 @@ Mechanics:
 
 | ID | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|---|
-| R1 | ~~SDK licence~~ | n/a | n/a | Closed: company-owned SDK, internal pub/sub demo. Revisit only if TrailMesh is ever distributed publicly |
+| R1 | ~~SDK licence~~ | n/a | n/a | Closed: company-owned SDK, internal pub/sub demo. Revisit only if Muster is ever distributed publicly |
 | R2 | PMTiles-via-RN fails on a platform | Medium | High (maps) | Spike S1-1 gate + fallbacks |
 | R3 | BLE range makes trail groups partition; live view stale | High | Medium | Store-and-forward design, ages in UI, Wi-Fi Direct on Android, field test |
 | R4 | DataStore over BLE slow / history growth from frequent position writes | Medium | Medium | Throttle, coalesce, spike S4-1, alternative lane |

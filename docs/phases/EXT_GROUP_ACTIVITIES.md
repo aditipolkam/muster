@@ -109,7 +109,7 @@ Chat and sending photos (next phase; photos over the internet), editing a publis
 
 ## 12. Reference design (2026-11-03)
 
-`TrailMesh Checkpoint and Activity Flow.png` is the reference for flow and component placement. It adds, beyond sections 1 to 11:
+`Muster Checkpoint and Activity Flow.png` is the reference for flow and component placement. It adds, beyond sections 1 to 11:
 
 - **Phase types:** Location Checkpoint, Collect Item, Take a Photo, Custom Task (`type`, wire `ty`). Only a location checkpoint needs a place.
 - **Per phase:** completion radius 15 to 150 m (wire `rd`; unset uses the person's own setting), Require Photo (wire `rp`; a photo phase always requires one), and a map region chosen on the map (organizer's draft only, never sent per phase).

@@ -4,7 +4,7 @@ Guidance for Claude Code working in this repository.
 
 ## Project
 
-TrailMesh: a fully offline group navigation app (React Native) for hiking and outdoor events. Offline maps, GPS, meeting points, and live group positions shared over Bluetooth mesh using the Offline Protocol SDK. **No backend. No internet needed for core features.**
+Muster: a fully offline group navigation app (React Native) for hiking and outdoor events. Offline maps, GPS, meeting points, and live group positions shared over Bluetooth mesh using the Offline Protocol SDK. **No backend. No internet needed for core features.**
 
 Status: architecture and plan complete (Phase 0). See `docs/PROGRESS.md` for what exists. **Do not start a phase unless asked.**
 

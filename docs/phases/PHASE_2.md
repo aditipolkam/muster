@@ -23,14 +23,14 @@ Phase 1 scaffold (project, DB, CI). D-1 licence route awareness (building is all
 - The adapter converts SDK events to typed observables; normalises errors and `diagnostic` events (`native_event_gap`, `native_event_replayed`).
 - Config per `SDK_INTEGRATION.md` §11; internet transport disabled; telemetry never enabled.
 - `appId` is final here (D-2), because changing it later rotates the SDK storage namespace and identity.
-- Android manifest merge: SDK declares Bluetooth/Wi-Fi permissions; add TrailMesh's own plus foreground service types; verify the merged manifest in CI (`aapt dump permissions`).
+- Android manifest merge: SDK declares Bluetooth/Wi-Fi permissions; add Muster's own plus foreground service types; verify the merged manifest in CI (`aapt dump permissions`).
 - iOS: `NSBluetoothAlwaysUsageDescription`, `UIBackgroundModes` bluetooth-central + bluetooth-peripheral.
 - `FakeMesh` simulates N virtual peers with latency/loss/partition for tests in later phases.
 
 ## Implementation tasks
 
 1. P2-1 Build SDK natives (`npm run build:all` in the SDK RN binding), one repo at a time, with `df -h` check. Record `git status` before/after in the SDK; confirm no tracked files changed (A-01). Document exact toolchain versions that worked.
-2. P2-2 Link into TrailMesh, Metro config, pods, Gradle; app boots with the native module loaded on both OSes.
+2. P2-2 Link into Muster, Metro config, pods, Gradle; app boots with the native module loaded on both OSes.
 3. P2-3 `MeshPort` + `SdkMeshAdapter` (start/stop/status/peers/localAddress/battery).
 4. P2-4 Determine the RN persistence defaults for the outbox (A-04) by reading `index.ts`/native modules and testing kill/restart with a pending message; document.
 5. P2-5 Permission/enablement flow (Bluetooth on, permissions, Wi-Fi Direct grant before `start()`, `requestEnableBluetooth` on Android).

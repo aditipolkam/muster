@@ -4,7 +4,7 @@ Status: Accepted (2026-11-09, owner-approved redesign). UI only. Covered by Jest
 
 ## Context
 
-The owner approved a redesign of the whole app (warm ground, white bordered cards, soft-green secondary actions, one primary action per screen). TrailMesh is pub/sub: only the group leader publishes (meeting points, their location); followers subscribe. The old UI still had a follower **Acknowledge** button and a raised Map button in a five-tab bar with Compass as its own tab.
+The owner approved a redesign of the whole app (warm ground, white bordered cards, soft-green secondary actions, one primary action per screen). Muster is pub/sub: only the group leader publishes (meeting points, their location); followers subscribe. The old UI still had a follower **Acknowledge** button and a raised Map button in a five-tab bar with Compass as its own tab.
 
 ## Decision
 

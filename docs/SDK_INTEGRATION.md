@@ -1,6 +1,6 @@
 # SDK Integration
 
-Findings from inspecting `../offline-protocol-sdk` (package `@offline-protocol/mesh-sdk` 0.31.0, `bindings/react-native/package.json`), and how TrailMesh consumes it.
+Findings from inspecting `../offline-protocol-sdk` (package `@offline-protocol/mesh-sdk` 0.31.0, `bindings/react-native/package.json`), and how Muster consumes it.
 
 Evidence labels used throughout the docs:
 
@@ -16,7 +16,7 @@ A Rust workspace (`offline-protocol-sdk/CLAUDE.md`) exposed to Swift, Kotlin, Py
 
 ```mermaid
 flowchart TB
-  subgraph App["TrailMesh (TypeScript)"]
+  subgraph App["Muster (TypeScript)"]
     A1[src/mesh/SdkMeshAdapter]
   end
   subgraph RN["@offline-protocol/mesh-sdk (bindings/react-native)"]
@@ -46,9 +46,9 @@ Key facts:
 | Native bridge | Hand-maintained Swift + Obj-C `RCT_EXTERN_METHOD` on iOS, `@ReactMethod` Kotlin on Android | [SDK] `WIRING_GUIDE.md` |
 | New Architecture | Example app runs RN 0.82.1 with `newArchEnabled=true` | [SDK] `examples/react-native-app/android/gradle.properties`, `package.json` |
 | Platforms | RN >= 0.70, iOS >= 13.0, Android minSdk 24 | [SDK] `bindings/react-native/README.md`, podspec |
-| Transports | BLE, Wi-Fi Direct (Android only), internet relay, Reticulum, Nostr. TrailMesh uses BLE (+ Wi-Fi Direct on Android) | [SDK] `docs/react-native-integration.md` §4 |
+| Transports | BLE, Wi-Fi Direct (Android only), internet relay, Reticulum, Nostr. Muster uses BLE (+ Wi-Fi Direct on Android) | [SDK] `docs/react-native-integration.md` §4 |
 | Encryption | MLS (RFC 9420), on by default, auto-initialised on `start()` | [SDK] |
-| Licence | AGPL-3.0-only or commercial, but the SDK is company-owned and TrailMesh is an internal demo of the pub/sub model, so licensing is not a constraint (owner decision, 2026-10-30) | [SDK] `docs/licensing-faq.md` |
+| Licence | AGPL-3.0-only or commercial, but the SDK is company-owned and Muster is an internal demo of the pub/sub model, so licensing is not a constraint (owner decision, 2026-10-30) | [SDK] `docs/licensing-faq.md` |
 
 ## 2. Local build and linking
 
@@ -78,7 +78,7 @@ Notes:
 - **Disk:** the host had ~13 GiB free at 94% usage on 2026-10-30 and `target/` is already 1 GB. A full 7-target build can take several GB more. Run it one repo at a time and check `df -h` first.
 - `npm run build:all` regenerates bindings; if it produces diffs in tracked files (`ios/Generated`, `uniffi/.../offline_protocol.kt`) that is a signal the uniffi version differs. Stop and reconcile, do not commit to the SDK.
 
-### 2.3 Linking into TrailMesh
+### 2.3 Linking into Muster
 
 Same mechanism as the SDK's own examples (`examples/react-native-app/package.json`: `"@offline-protocol/mesh-sdk": "file:../../bindings/react-native"`).
 
@@ -91,23 +91,23 @@ Same mechanism as the SDK's own examples (`examples/react-native-app/package.jso
 `metro.config.js` must (copying the pattern in the SDK example):
 
 - add `../offline-protocol-sdk/bindings/react-native` to `watchFolders`;
-- `extraNodeModules` map `@offline-protocol/mesh-sdk` to that folder, and `react`/`react-native` to TrailMesh's own `node_modules`;
+- `extraNodeModules` map `@offline-protocol/mesh-sdk` to that folder, and `react`/`react-native` to Muster's own `node_modules`;
 - `blockList` the SDK folder's own `node_modules/react` and `react-native` so there is exactly one copy of each.
 
 iOS: autolinking resolves `MeshSdk.podspec` at the package root, `pod install`. Android: autolinking via `react-native.config.js`. [SDK]
 
 ### 2.4 Switching to the published package (done: 0.32.0, ADR 0012)
 
-**Current mode: `local`, temporarily.** TrailMesh moved to the published `0.32.0` (ADR 0012), then back to the checkout for the session-probe back-off fix, which no release has yet. Switch with `scripts/sdk-source.sh npm <version>` once one does. In npm mode check `ls -la node_modules/@offline-protocol/`: `mesh-sdk` must be a directory, not a symlink. Never ship a build made from a checkout whose natives were built for diagnosis (for example with engine logging patched in): such a build can write the engine's log, peer addresses included, to the device log. Build the checkout's natives from its committed source before a build anyone else installs. Editing the version in `package.json` alone is not enough: the lockfile entry keeps `"link": true` and `npm install` keeps the symlink to the checkout, whose natives may be older than its JavaScript. Always switch with the script.
+**Current mode: `local`, temporarily.** Muster moved to the published `0.32.0` (ADR 0012), then back to the checkout for the session-probe back-off fix, which no release has yet. Switch with `scripts/sdk-source.sh npm <version>` once one does. In npm mode check `ls -la node_modules/@offline-protocol/`: `mesh-sdk` must be a directory, not a symlink. Never ship a build made from a checkout whose natives were built for diagnosis (for example with engine logging patched in): such a build can write the engine's log, peer addresses included, to the device log. Build the checkout's natives from its committed source before a build anyone else installs. Editing the version in `package.json` alone is not enough: the lockfile entry keeps `"link": true` and `npm install` keeps the symlink to the checkout, whose natives may be older than its JavaScript. Always switch with the script.
 
 Three rules keep the swap to a one-line change:
 
 1. **One import site.** Only `src/mesh/sdk.ts` imports `@offline-protocol/mesh-sdk`. Everything else depends on `MeshPort` (`ARCHITECTURE.md` §4). A lint rule (`no-restricted-imports`) enforces it.
 2. **No deep imports** (`@offline-protocol/mesh-sdk/src/...`). Only the package root export.
 3. **A switch script** `scripts/sdk-source.sh local|npm <version>`:
-   - `local`: sets the `file:` dependency, enables the Metro SDK overrides (`TRAILMESH_SDK=local`), runs `npm install` and `pod install`.
+   - `local`: sets the `file:` dependency, enables the Metro SDK overrides (`MUSTER_SDK=local`), runs `npm install` and `pod install`.
    - `npm`: `npm install @offline-protocol/mesh-sdk@<version>`, disables the overrides.
-   The Metro config reads `TRAILMESH_SDK` so no code change is needed. The published package contains `lib/`, `ios/libs` and Android natives (`package.json` `files`), so no Rust toolchain is needed in `npm` mode.
+   The Metro config reads `MUSTER_SDK` so no code change is needed. The published package contains `lib/`, `ios/libs` and Android natives (`package.json` `files`), so no Rust toolchain is needed in `npm` mode.
 
 CI runs both modes (Phase 6) so the swap cannot rot.
 
@@ -129,13 +129,13 @@ Toolchain that worked (2026-10-31, macOS 26.4, Apple Silicon): rustc/cargo 1.97.
 - App-visible events: `neighbor_discovered` (`peer_id` = the peer's canonical `off1…` address, `transport`, `rssi?`) and `neighbor_lost`. `getBLePeerCount()`, `getTopology()`. [SDK] `types.ts:1448`
 - Identity: `off1…` is derived from the device identity key; the app does not choose it; `localAddress()` is stable per `profile`. [SDK]
 - Connection request flow (consent before talking): `sendConnectionRequest({recipient, senderName, keyPackage?, initialMessage?})`, answered by `connection_accepted` / `connection_rejected`; failure `connection_request_undeliverable`. [SDK] `react-native-integration.md` §11.3
-- A `neighbor_discovered` peer is **unauthenticated by display**: a nearby device can claim a name. TrailMesh verifies addresses out-of-band (QR) before inviting.
+- A `neighbor_discovered` peer is **unauthenticated by display**: a nearby device can claim a name. Muster verifies addresses out-of-band (QR) before inviting.
 
 ## 4. Pub/Sub: what actually exists
 
 **The SDK has no group-scoped publish/subscribe topic API.** `grep` for "pub/sub" in SDK docs and sources returns nothing. The nearest constructs, all verified in source:
 
-| Construct | What it is | Fit for TrailMesh |
+| Construct | What it is | Fit for Muster |
 |---|---|---|
 | **Service subscriptions** (`MeshServices.subscribeService / publishServiceUpdate`, ADR 0035) | Provider-centric topics: a consumer subscribes to `(provider, serviceId, topic)` over a **1:1 MLS session**. Modes `latest` (one value per key) and `log`. Leases, renewal, snapshot catch-up, stream resets. | **The demo's core mechanism.** Each member is a provider of its own live state; other members subscribe to that member. 1:1, so there is no broadcast channel, which is accepted for the demo |
 | **MLS group messages** (`meshSendGroupMessage`, event `group_message_received`) | Encrypted to all members. Offline: **one frame and one message id per recipient** with full ACK/retry ladder. | Events (status, arrival). Wrong for high-rate state |
@@ -163,7 +163,7 @@ ADR 0035 is marked **Status: Proposed**, yet the RN binding exposes the full API
 | Replicated document | 1 MiB compacted; warning at 768 KiB; one sync frame 32 KiB | `data.md` |
 | Group size | `maxGroupMembers` default 256 | `configuration.md` |
 
-TrailMesh budget: live updates <= 512 B, events <= 2 KB, documents << 64 KiB. Large payloads (GPX) are never sent over BLE in v1.
+Muster budget: live updates <= 512 B, events <= 2 KB, documents << 64 KiB. Large payloads (GPX) are never sent over BLE in v1.
 
 ## 5. Multi-hop routing
 
@@ -211,13 +211,13 @@ Handle `mesh_stopped_by_user` idempotently.
 
 ## 9. Examples and recommended patterns
 
-- `examples/react-native-app` (`ProtocolProvider` context wrapping the SDK; screens call context methods only). TrailMesh mirrors the pattern but behind `MeshPort`.
+- `examples/react-native-app` (`ProtocolProvider` context wrapping the SDK; screens call context methods only). Muster mirrors the pattern but behind `MeshPort`.
 - `examples/mesh-wiki` (services register/discover/request).
 - `docs/react-native-integration.md` is the API reference; `WIRING_GUIDE.md` only matters if the SDK itself changes (it must not).
 
 ## 10. Missing capabilities and application-level alternatives
 
-| # | Missing | Impact | TrailMesh alternative |
+| # | Missing | Impact | Muster alternative |
 |---|---|---|---|
 | G1 | Group-scoped pub/sub topics (ADR 0036 unimplemented) | No native "publish to topic, all members receive" | Accepted for the demo. Live state uses per-person service subscriptions (subscribe to one person's state). `MeshBus` maps the rest: State (DataStore) for meeting points, Event (group message) for hints |
 | G2 | No inbound message persistence / replay | Offline members miss messages | SQLite inbox + state docs as source of truth |
@@ -230,13 +230,13 @@ Handle `mesh_stopped_by_user` idempotently.
 | G9 | No process resurrection (iOS), opt-in only (Android) | Background gaps | Foreground-first; reconcile on foreground; Phase 6 wake task |
 | G10 | No maps, GPS, geospatial | n/a | Application layer (this project) |
 
-## 11. Configuration TrailMesh will use
+## 11. Configuration Muster will use
 
 Only keys documented in `docs/react-native-integration.md` / `configuration.md`:
 
 ```ts
 new OfflineProtocol({
-  appId: 'app.trailmesh',          // placeholder reverse-DNS id; final value is a product decision
+  appId: 'app.muster',          // placeholder reverse-DNS id; final value is a product decision
   profile: 'main',
   network: { initialTtl: 8 },
   transports: {
@@ -249,7 +249,7 @@ new OfflineProtocol({
 });
 ```
 
-Telemetry is inactive until the app calls `enableTelemetry` [SDK `telemetry.md`]. TrailMesh never calls it (privacy requirement; also no backend).
+Telemetry is inactive until the app calls `enableTelemetry` [SDK `telemetry.md`]. Muster never calls it (privacy requirement; also no backend).
 
 ## 12. Assumptions requiring device or build verification
 
@@ -269,7 +269,7 @@ Telemetry is inactive until the app calls `enableTelemetry` [SDK `telemetry.md`]
 
 ### 13.1 SDK calls used (all traceable to `bindings/react-native/src/index.ts`)
 
-| TrailMesh | SDK |
+| Muster | SDK |
 |---|---|
 | start / stop / destroy | `OfflineProtocol.start()` (creates the native instance, initialises MLS, starts transports), `stop()`, `destroy()` (also removes every listener, so a new instance gets new listeners) |
 | status | `getState()` (`Stopped / Running / Paused`), `localAddress()`, `identity_ready`, `mesh_stopped_by_user`, `diagnostic` |
@@ -284,12 +284,12 @@ Telemetry is inactive until the app calls `enableTelemetry` [SDK `telemetry.md`]
 ### 13.2 Findings that differ from, or add to, the earlier docs
 
 - The **consumer** ends a subscription with `unsubscribeService(subId)`. `endServiceSubscription` is the **provider** removing a follower. (Sections 4 and `MESH_PROTOCOL.md` 2.1 said `endServiceSubscription` for both.)
-- There is **no "connected peers" API**. `neighbor_discovered` means a device was heard. TrailMesh shows `Connected` only when `getTopology().links` contains a link between this device and the peer.
+- There is **no "connected peers" API**. `neighbor_discovered` means a device was heard. Muster shows `Connected` only when `getTopology().links` contains a link between this device and the peer.
 - There is **no JS way to read iOS Bluetooth authorisation**; the CoreBluetooth prompt appears when BLE starts. `isBluetoothEnabled()` on iOS before that point is unverified, so iOS starts regardless and re-reads afterwards.
 - A service update has **no per-message delivery acknowledgement**. The only delivery information is `ServicePublishReport` (`subscribers, sentLive, queued, coalesced, failed`) counted at the publisher. "Delivered" is therefore never shown; the diagnostics screen says "Handed to mesh" and shows the counts. Receipt is proven only by the other device's Received list.
 - `latest` topics (publish with a key) and `log` topics (no key) are separate; one subscription has one mode. A `log` subscription does not receive `latest` publishes.
 - Subscriptions and service registrations are **not persisted** by the SDK. `PubSub` re-registers and re-subscribes on every successful `start()`.
-- Android manifest merge: the SDK library manifest already declares the Bluetooth permissions, `FOREGROUND_SERVICE(_CONNECTED_DEVICE)`, `WAKE_LOCK`, `INTERNET`, and Wi-Fi/`NEARBY_WIFI_DEVICES` (even with Wi-Fi Direct disabled). It **comments out** `ACCESS_FINE_LOCATION`: the app must declare and request it for BLE on Android 11 and lower (TrailMesh already does). The app adds `POST_NOTIFICATIONS`.
+- Android manifest merge: the SDK library manifest already declares the Bluetooth permissions, `FOREGROUND_SERVICE(_CONNECTED_DEVICE)`, `WAKE_LOCK`, `INTERNET`, and Wi-Fi/`NEARBY_WIFI_DEVICES` (even with Wi-Fi Direct disabled). It **comments out** `ACCESS_FINE_LOCATION`: the app must declare and request it for BLE on Android 11 and lower (Muster already does). The app adds `POST_NOTIFICATIONS`.
 - Wi-Fi Direct is **off** in Phase 2 (`transports.wifiDirect.enabled=false`); the `autoAccept` decision (P2-10) is deferred.
 
 ### 13.3 Still unverified (needs two devices, `MESH_VERIFICATION.md`)
@@ -301,7 +301,7 @@ Discovery time and range, `Connected` detection, subscription first-contact time
 No new SDK calls. Groups reuse the section 13 calls through `PubSub` (a second instance, `owns: tm.group.1`). Findings and assumptions:
 
 - `ServiceSubscriptionChangedEvent.role` is `'consumer' | 'provider'` and the type's doc says "a subscription changed state, on either side" (`bindings/react-native/src/types.ts` ~2439). The provider side learning that a follower is `active` is how the group layer pushes current state and the join `welcome`. **[SDK, typed; not observed on a device: A-19]**.
-- `ServiceSubscribeReceivedEvent` has a `renewal` flag. TrailMesh does not read it; it decides by roster and invite, so a renewal from a roster member is accepted like a first request.
+- `ServiceSubscribeReceivedEvent` has a `renewal` flag. Muster does not read it; it decides by roster and invite, so a renewal from a roster member is accepted like a first request.
 - The SDK `provider` / `sender` fields are the only identity used for authorization. **[ASSUMPTION A-20: authenticated by the 1:1 MLS session.]**
 - Topics are explicit; no `*` pattern is used by the group layer (no dependence on pattern behaviour). Keys: member address, point id (ULID, 26 bytes), `welcome`, `beacon`, `sync` (limit 256 bytes).
 - Provider limits that shape the design: 16 subscriptions per subscriber, 256 per provider, 64 per consumer: with 12 members the organizer holds 33 follows (3 per member), a member 3. A member of several groups multiplies this by the number of groups.
