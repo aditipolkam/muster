@@ -1012,6 +1012,6 @@ describe('the group pages', () => {
     await act(async () => {
       await t.services.adventures.join(id);
     });
-    expect(await screen.findByText('In progress')).toBeTruthy();
+    expect(await screen.findByText('Activity in progress')).toBeTruthy();
   });
 });

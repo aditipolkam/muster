@@ -272,50 +272,83 @@ function StartCard({
   );
 }
 
+/**
+ * One group in the list: name, member count and role, then whether anyone is in range, then any
+ * badges on a line of their own. Badges never share a line with the text, so a long badge can no
+ * longer squeeze the member count until it wraps mid-word.
+ */
 function GroupRow({ group: g, onPress }: { group: Group; onPress: () => void }) {
-  const members = useGroupMembers(g.id).filter(m => m.state === 'active');
+  const { c } = useTheme();
+  const all = useGroupMembers(g.id);
+  const members = all.filter(m => m.state === 'active');
+  const presence = useGroupPresence(g, all, useNow());
   const activities = useGroupActivities(g.id).filter(() => isEnabled('groupActivities'));
   const waiting = activities.filter(a => a.standing === 'waiting').length;
   const running = activities.filter(a => a.standing === 'running').length;
   const drafts = g.role === 'organizer' ? activities.filter(a => a.standing === 'draft').length : 0;
-  const subtitle =
-    g.status === 'active'
-      ? `${members.length} ${members.length === 1 ? 'member' : 'members'}${
-          g.role === 'organizer' ? ' · You organize' : ''
-        }${running > 0 ? ' · Activity in progress' : ''}`
-      : g.status === 'joining'
-      ? 'Waiting for approval'
-      : 'Ended by organizer';
-  return (
-    <Card style={styles.groupCard}>
-      <ListRow
-        title={g.name}
-        subtitle={subtitle}
-        leading={<Avatar name={g.name} dim={g.status === 'closed'} />}
-        chevron
-        divider={false}
-        testID={`group-${g.id}`}
-        onPress={onPress}
-        trailing={
-          g.status === 'joining' ? (
-            <Badge label="Waiting" tone="warn" />
-          ) : g.status === 'closed' ? (
-            <Badge label="Ended" tone="warn" />
-          ) : waiting > 0 ? (
-            <Badge
-              label={waiting === 1 ? '1 activity waiting' : `${waiting} activities waiting`}
-              tone="good"
-            />
-          ) : running > 0 ? (
-            <Badge label="In progress" tone="good" />
-          ) : drafts > 0 ? (
-            <Badge label={drafts === 1 ? '1 draft' : `${drafts} drafts`} tone="neutral" />
-          ) : (
-            <TripMapBadge group={g} />
-          )
-        }
+  const active = g.status === 'active';
+  const meta = active
+    ? `${members.length} ${members.length === 1 ? 'member' : 'members'}${
+        g.role === 'organizer' ? ' · You organize' : ''
+      }`
+    : g.status === 'joining'
+    ? 'Asked to join · waiting for the organizer'
+    : 'Ended by the organizer';
+  const dot =
+    presence.status.tone === 'good'
+      ? c.connected
+      : presence.status.tone === 'bad'
+      ? c.danger
+      : c.warning;
+  const activityBadge =
+    waiting > 0 ? (
+      <Badge
+        label={waiting === 1 ? '1 activity waiting' : `${waiting} activities waiting`}
+        tone="good"
       />
-    </Card>
+    ) : running > 0 ? (
+      <Badge label="Activity in progress" tone="good" />
+    ) : drafts > 0 ? (
+      <Badge label={drafts === 1 ? '1 draft' : `${drafts} drafts`} tone="neutral" />
+    ) : null;
+  return (
+    <Pressable
+      testID={`group-${g.id}`}
+      accessibilityRole="button"
+      accessibilityLabel={`${g.name}, ${meta}${active ? `, ${presence.status.label}` : ''}`}
+      onPress={onPress}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+    >
+      <Card style={styles.groupCard}>
+        <Avatar name={g.name} dim={!active} size={44} />
+        <View style={styles.groupBody}>
+          <Text variant="cardTitle" numberOfLines={1}>
+            {g.name}
+          </Text>
+          <Text variant="caption" muted numberOfLines={1}>
+            {meta}
+          </Text>
+          <View style={styles.groupStatus}>
+            {active ? (
+              <Row style={styles.groupPresence}>
+                <View style={[styles.statusDot, { backgroundColor: dot }]} />
+                <Text variant="caption" muted numberOfLines={1} testID={`group-presence-${g.id}`}>
+                  {presence.status.label}
+                </Text>
+              </Row>
+            ) : (
+              <Badge
+                label={g.status === 'joining' ? 'Waiting' : 'Ended'}
+                tone={g.status === 'joining' ? 'warn' : 'neutral'}
+              />
+            )}
+            {active ? activityBadge : null}
+            {active ? <TripMapBadge group={g} /> : null}
+          </View>
+        </View>
+        <Icon name="chevron" size={22} color={c.textMuted} />
+      </Card>
+    </Pressable>
   );
 }
 
@@ -1589,7 +1622,17 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
   },
-  groupCard: { marginBottom: space.md, paddingVertical: space.xs },
+  groupCard: { marginBottom: space.md, flexDirection: 'row', alignItems: 'center', gap: space.md },
+  groupBody: { flex: 1, gap: 2 },
+  groupStatus: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: space.sm,
+    marginTop: space.xs,
+  },
+  groupPresence: { gap: space.xs, flexShrink: 1 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
   pageHeader: {
     flexDirection: 'row',
     alignItems: 'center',
