@@ -128,7 +128,7 @@ describe('Groups screen', () => {
     ]);
   });
 
-  it('the + opens one sheet to start or join a group', async () => {
+  it('the header has Join and New, and the list ends with how to join a trek', async () => {
     const { t } = await twoDevices('organizer');
     const { n, calls } = nav();
     render(
@@ -136,14 +136,12 @@ describe('Groups screen', () => {
         <GroupsScreen navigation={n} route={{} as never} />
       </Harness>,
     );
-    expect(screen.queryByTestId('groups-add-sheet')).toBeNull();
-    fireEvent.press(screen.getByTestId('groups-add'));
-    expect(screen.getByTestId('groups-add-sheet')).toBeTruthy();
     fireEvent.press(screen.getByTestId('groups-add-join'));
     expect(calls).toEqual([['navigate', 'JoinGroup']]);
-    fireEvent.press(screen.getByTestId('groups-add'));
     fireEvent.press(screen.getByTestId('groups-add-create'));
     expect(calls[1]).toEqual(['navigate', 'CreateGroup']);
+    expect(await screen.findByTestId('groups-join-hint')).toBeTruthy();
+    expect(screen.getByText("Joining someone's trek?")).toBeTruthy();
   });
 
   it('lists groups with the role and lets the organizer approve a request', async () => {
@@ -407,10 +405,15 @@ describe('Group page (updates)', () => {
         <GroupDetailsScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
       </Harness>,
     );
-    expect(await screen.findByText('Lake junction')).toBeTruthy();
+    // In the feed, and pinned at the top as the active meeting point.
+    expect((await screen.findAllByText('Lake junction')).length).toBe(2);
+    expect(screen.getByTestId('group-pinned-point')).toBeTruthy();
     expect(screen.getByText('Meeting point shared')).toBeTruthy();
     expect(screen.getByText('Other joined')).toBeTruthy();
-    expect(screen.getByTestId('group-status').props.children).toMatch(/^2 members/);
+    expect(typeof screen.getByTestId('group-status').props.children).toBe('string');
+    expect(
+      screen.getByText("Only you can post here. Followers get your updates when they're in range."),
+    ).toBeTruthy();
     expect(screen.queryByText('Members (2)')).toBeNull();
     expect(screen.queryByTestId('invite-create')).toBeNull();
     expect(p.ok).toBe(true);
@@ -564,6 +567,8 @@ describe('Group info screen', () => {
     expect(screen.getByTestId('info-name')).toBeTruthy();
     expect(screen.getByTestId('info-menu')).toBeTruthy();
 
+    // The invitation opens from the last row of Members.
+    fireEvent.press(screen.getByTestId('info-tab-members'));
     fireEvent.press(screen.getByTestId('info-tab-invite'));
     expect(screen.getByTestId('invite-create')).toBeTruthy();
     expect(screen.queryByText(/Meeting points \(/)).toBeNull();
@@ -615,7 +620,7 @@ describe('Group info screen', () => {
 });
 
 describe('Meeting Point details', () => {
-  it('shows who created and updated it, and lets a member acknowledge', async () => {
+  it('shows who created and updated it; a member only reads it (no acknowledge)', async () => {
     const { t, other, g, all } = await twoDevices('member');
     const first = await other.groups.publishPoint(g.id, {
       name: 'Lake junction',
@@ -644,12 +649,9 @@ describe('Meeting Point details', () => {
     expect(screen.getByTestId('point-coords').props.children).toBe('56.810000, -5.100000');
     expect(screen.getByTestId('point-created').props.children.join('')).toContain('Created by');
     expect(screen.getByTestId('point-updated').props.children).toContain('Updated by');
-    await act(async () => {
-      fireEvent.press(screen.getByTestId('point-ack'));
-      await settle(all);
-    });
-    expect(await screen.findByText('Acknowledged')).toBeTruthy();
-    expect(await other.points.acks(g.id, id)).toMatchObject([{ address: 'off1me', rev: 2 }]);
+    expect(screen.queryByTestId('point-ack')).toBeNull();
+    expect(screen.queryByTestId('point-remove')).toBeNull();
+    expect(await other.points.acks(g.id, id)).toEqual([]);
   });
 
   it('shows a removed point as gone', async () => {
@@ -702,12 +704,19 @@ describe('Share location (group page)', () => {
     const { t, other, g, all } = await withMember();
     fixAt(56.7968, -5.0035);
     open(t, { groupId: g.id });
+    // With a GPS fix, "Share my location" goes straight to step 2 on where you stand.
     fireEvent.press(await screen.findByTestId('group-share-location'));
     expect(screen.getByTestId('share-location-sheet')).toBeTruthy();
+    expect(screen.getByText('Name and share')).toBeTruthy();
+    expect(screen.getByText('STEP 2 OF 2')).toBeTruthy();
+    expect(screen.getByText('Share with Ridge walk')).toBeTruthy();
+    // Change goes back to the choices, which offer where you are.
+    fireEvent.press(screen.getByTestId('share-back'));
     expect(screen.getByText(/Accurate to ±6 m/)).toBeTruthy();
     fireEvent.press(screen.getByTestId('share-here'));
-    expect(screen.getByText('Name this meeting point')).toBeTruthy();
     expect(screen.getByTestId('share-submit').props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByTestId('share-chip-Campsite'));
+    expect(screen.getByTestId('share-name').props.value).toBe('Campsite');
     fireEvent.changeText(screen.getByTestId('share-name'), 'Lake junction');
     fireEvent.changeText(screen.getByTestId('share-note'), 'Lunch at noon');
     await act(async () => {
@@ -717,8 +726,8 @@ describe('Share location (group page)', () => {
     expect(await other.points.list(g.id)).toMatchObject([
       { name: 'Lake junction', note: 'Lunch at noon', lat: 56.7968, lon: -5.0035 },
     ]);
-    // It shows in the feed as this phone's own message.
-    expect(await screen.findByText('Lake junction')).toBeTruthy();
+    // It shows in the feed as this phone's own message (and pinned at the top).
+    expect((await screen.findAllByText('Lake junction')).length).toBeGreaterThan(0);
     expect(screen.queryByTestId('share-location-sheet')).toBeNull();
   });
 
@@ -729,7 +738,7 @@ describe('Share location (group page)', () => {
     fireEvent.press(await screen.findByTestId('group-share-location'));
     expect(screen.getByText('Finding your location…')).toBeTruthy();
     fireEvent.press(screen.getByTestId('share-here'));
-    expect(screen.queryByText('Name this meeting point')).toBeNull();
+    expect(screen.queryByText('Name and share')).toBeNull();
   });
 
   it('offers saved places, with the name filled in', async () => {
@@ -762,7 +771,7 @@ describe('Share location (group page)', () => {
   it('back from the map, it opens on the chosen place ready to name and share', async () => {
     const { t, other, g, all } = await withMember();
     open(t, { groupId: g.id, picked: { lat: 56.8, lon: -5.1, nonce: 1 } });
-    expect(await screen.findByText('Name this meeting point')).toBeTruthy();
+    expect(await screen.findByText('Name and share')).toBeTruthy();
     fireEvent.changeText(screen.getByTestId('share-name'), 'Hut');
     await act(async () => {
       fireEvent.press(screen.getByTestId('share-submit'));
@@ -969,7 +978,9 @@ describe('Trip map', () => {
         <GroupDetailsScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
       </Harness>,
     );
-    expect(await screen.findByText('Download the trip map')).toBeTruthy();
+    expect(
+      await screen.findByText(/^Save the trip map \(\d+ (KB|MB)\) before you lose signal$/),
+    ).toBeTruthy();
     expect(
       screen.getByText(/Ridge walk · About \d+ (KB|MB)\. Get it while you have internet/),
     ).toBeTruthy();
@@ -979,7 +990,7 @@ describe('Trip map', () => {
         <GroupsScreen navigation={nav().n} route={{} as never} />
       </Harness>,
     );
-    expect(await screen.findByText('Map not downloaded')).toBeTruthy();
+    expect(await screen.findByText(/^Trip map not saved offline · \d+ (KB|MB)$/)).toBeTruthy();
   });
 
   it('one tap on the group page starts the download of that area', async () => {
@@ -997,7 +1008,7 @@ describe('Trip map', () => {
         <GroupDetailsScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
       </Harness>,
     );
-    const button = await screen.findByText('Download');
+    const button = await screen.findByText('Save');
     await act(async () => {
       fireEvent.press(button);
     });

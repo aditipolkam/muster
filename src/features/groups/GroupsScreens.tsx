@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Modal,
   Pressable,
   ScrollView,
   Share,
@@ -14,6 +13,10 @@ import {
   View,
 } from 'react-native';
 import { ActivityStanding } from '../../domain/adventures/lifecycle';
+import { bearingDeg, distanceM } from '../../domain/geo';
+import { cardinal16Of, etaMinutes, formatDistanceIn, formatEta } from '../../domain/geo/pace';
+import { useLocationStore } from '../../platform/locationStore';
+import { useNavSession } from '../../runtime/navSession';
 import { buildInviteLink, parseInviteLink } from '../../domain/groups/invite';
 import { presenceText, sortByPresence } from '../../domain/groups/presence';
 import { Group, GroupMember, GROUP_NAME_MAX, shortAddress } from '../../domain/groups/model';
@@ -28,6 +31,7 @@ import {
   useGroups,
   useMesh,
   useGroupPresence,
+  useNavPrefs,
 } from '../../runtime/hooks';
 import { GroupsStackParamList } from '../../runtime/navigation';
 import { useServices } from '../../runtime/services';
@@ -40,7 +44,6 @@ import {
   EmptyState,
   Menu,
   Icon,
-  IconButton,
   IconName,
   IconTile,
   ListRow,
@@ -54,10 +57,11 @@ import { useNow } from '../../ui/useNow';
 import { QrCode } from '../../ui/QrCode';
 import { isEnabled } from '../../shared/features';
 import { ToggleRow } from '../../ui/activity';
-import { radius, space, useTheme } from '../../ui/theme';
+import { radius, size, space, tabular, useTheme } from '../../ui/theme';
+import { FlagPin } from '../../ui/trail';
 import { QrScanner } from './QrScanner';
 import { SharePlace, ShareLocationSheet } from './ShareLocationSheet';
-import { TripMapBadge, TripMapBanner, TripMapCard } from './TripMap';
+import { TripMapBanner, TripMapCard, TripMapChip, TripMapFooter } from './TripMap';
 
 type Nav<T extends keyof GroupsStackParamList> = NativeStackScreenProps<GroupsStackParamList, T>;
 
@@ -207,21 +211,71 @@ export function buildFeed(
   return withDays.reverse();
 }
 
-function Avatar({ name, dim, size = 36 }: { name: string; dim?: boolean; size?: number }) {
+function Avatar({
+  name,
+  dim,
+  size: s = 36,
+  online,
+}: {
+  name: string;
+  dim?: boolean;
+  size?: number;
+  /** Green presence dot: in range now. */
+  online?: boolean;
+}) {
+  const { c } = useTheme();
+  return (
+    <View accessibilityElementsHidden>
+      <View
+        style={[
+          styles.avatar,
+          { width: s, height: s, borderRadius: s / 2 },
+          { backgroundColor: c.primarySoft, opacity: dim ? 0.5 : 1 },
+        ]}
+      >
+        <Text variant={s > 40 ? 'heading' : 'cardTitle'} color={c.deep}>
+          {(name.trim()[0] ?? '?').toUpperCase()}
+        </Text>
+      </View>
+      {online ? (
+        <View
+          style={[styles.presenceDot, { backgroundColor: c.connected, borderColor: c.surface }]}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/** The group's rounded-square tile: its initial on soft green. */
+function GroupTile({ name, dim, size: s = 48 }: { name: string; dim?: boolean; size?: number }) {
   const { c } = useTheme();
   return (
     <View
-      style={[
-        styles.avatar,
-        { width: size, height: size, borderRadius: size / 2 },
-        { backgroundColor: c.primarySoft, opacity: dim ? 0.5 : 1 },
-      ]}
       accessibilityElementsHidden
+      style={[
+        styles.groupTile,
+        {
+          width: s,
+          height: s,
+          borderRadius: s >= 48 ? 16 : radius.tile,
+          backgroundColor: c.primarySoft,
+          opacity: dim ? 0.5 : 1,
+        },
+      ]}
     >
-      <Text variant={size > 40 ? 'heading' : 'cardTitle'} color={c.primary}>
+      <Text variant="heading" color={c.deep}>
         {(name.trim()[0] ?? '?').toUpperCase()}
       </Text>
     </View>
+  );
+}
+
+/** The newest meeting point still on the map: the group's "active" one. */
+function activePoint<T extends { deleted?: boolean; updatedAt: number }>(points: T[]): T | null {
+  return (
+    points
+      .filter(x => !x.deleted)
+      .reduce<T | null>((a, b) => (!a || b.updatedAt > a.updatedAt ? b : a), null) ?? null
   );
 }
 
@@ -273,15 +327,17 @@ function StartCard({
 }
 
 /**
- * One group in the list: name, member count and role, then whether anyone is in range, then any
- * badges on a line of their own. Badges never share a line with the text, so a long badge can no
- * longer squeeze the member count until it wraps mid-word.
+ * One group in the list: tile, name, "N members · You organize" on one line, then chips (who is
+ * nearby, the active meeting point, the trip map), and an amber footer if the trip map is missing.
  */
 function GroupRow({ group: g, onPress }: { group: Group; onPress: () => void }) {
   const { c } = useTheme();
   const all = useGroupMembers(g.id);
   const members = all.filter(m => m.state === 'active');
   const presence = useGroupPresence(g, all, useNow());
+  const point = activePoint(useGroupPoints(g.id));
+  const fix = useLocationStore(st => st.fix);
+  const { units } = useNavPrefs();
   const activities = useGroupActivities(g.id).filter(() => isEnabled('groupActivities'));
   const waiting = activities.filter(a => a.standing === 'waiting').length;
   const running = activities.filter(a => a.standing === 'running').length;
@@ -294,12 +350,6 @@ function GroupRow({ group: g, onPress }: { group: Group; onPress: () => void }) 
     : g.status === 'joining'
     ? 'Asked to join · waiting for the organizer'
     : 'Ended by the organizer';
-  const dot =
-    presence.status.tone === 'good'
-      ? c.connected
-      : presence.status.tone === 'bad'
-      ? c.danger
-      : c.warning;
   const activityBadge =
     waiting > 0 ? (
       <Badge
@@ -317,38 +367,68 @@ function GroupRow({ group: g, onPress }: { group: Group; onPress: () => void }) 
       accessibilityRole="button"
       accessibilityLabel={`${g.name}, ${meta}${active ? `, ${presence.status.label}` : ''}`}
       onPress={onPress}
-      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+      style={({ pressed }) => [styles.groupPress, { opacity: pressed ? 0.7 : 1 }]}
     >
       <Card style={styles.groupCard}>
-        <Avatar name={g.name} dim={!active} size={44} />
-        <View style={styles.groupBody}>
-          <Text variant="cardTitle" numberOfLines={1}>
-            {g.name}
-          </Text>
-          <Text variant="caption" muted numberOfLines={1}>
-            {meta}
-          </Text>
-          <View style={styles.groupStatus}>
-            {active ? (
-              <Row style={styles.groupPresence}>
-                <View style={[styles.statusDot, { backgroundColor: dot }]} />
-                <Text variant="caption" muted numberOfLines={1} testID={`group-presence-${g.id}`}>
-                  {presence.status.label}
-                </Text>
-              </Row>
-            ) : (
-              <Badge
-                label={g.status === 'joining' ? 'Waiting' : 'Ended'}
-                tone={g.status === 'joining' ? 'warn' : 'neutral'}
-              />
-            )}
-            {active ? activityBadge : null}
-            {active ? <TripMapBadge group={g} /> : null}
+        <View style={styles.groupMain}>
+          <GroupTile name={g.name} dim={!active} />
+          <View style={styles.groupBody}>
+            <Text variant="cardTitle" numberOfLines={1}>
+              {g.name}
+            </Text>
+            <Text variant="caption" muted numberOfLines={1}>
+              {meta}
+            </Text>
           </View>
+          <Icon name="chevron" size={22} color={c.textMuted} />
         </View>
-        <Icon name="chevron" size={22} color={c.textMuted} />
+        <View style={styles.groupStatus}>
+          {active ? (
+            <View testID={`group-presence-${g.id}`}>
+              {presence.reachable > 0 ? (
+                <Badge dot tone="good" label={`${presence.reachable} nearby`} />
+              ) : (
+                <Badge label={members.length > 1 ? 'Nobody nearby' : presence.status.label} />
+              )}
+            </View>
+          ) : (
+            <Badge
+              label={g.status === 'joining' ? 'Waiting' : 'Ended'}
+              tone={g.status === 'joining' ? 'warn' : 'neutral'}
+            />
+          )}
+          {active && point ? (
+            <Badge
+              tone="meeting"
+              icon="flag"
+              label={
+                fix
+                  ? `${point.name} · ${formatDistanceIn(distanceM(fix, point), units)}`
+                  : point.name
+              }
+            />
+          ) : null}
+          {active ? activityBadge : null}
+          {active ? <TripMapChip group={g} /> : null}
+        </View>
+        <TripMapFooter group={g} />
       </Card>
     </Pressable>
+  );
+}
+
+/** At the end of the list: how to join someone else's group. */
+function JoinHint({ onScan }: { onScan: () => void }) {
+  const { c } = useTheme();
+  return (
+    <View style={[styles.joinHint, { borderColor: c.border }]} testID="groups-join-hint">
+      <IconTile name="qr" size={44} />
+      <Text variant="cardTitle">Joining someone's trek?</Text>
+      <Text variant="caption" muted style={{ textAlign: 'center' }}>
+        Scan the leader's QR code or open their invite link. Works without internet.
+      </Text>
+      <Button small variant="secondary" icon="qr" label="Scan QR code" onPress={onScan} />
+    </View>
   );
 }
 
@@ -358,25 +438,29 @@ export function GroupsScreen({ navigation }: Nav<'GroupsList'>) {
     (x, y) => statusRank(x.status) - statusRank(y.status) || y.createdAt - x.createdAt,
   );
   const rt = useGroupRuntime();
-  const [addOpen, setAddOpen] = useState(false);
-  const go = (screen: 'CreateGroup' | 'JoinGroup') => {
-    setAddOpen(false);
-    navigation.navigate(screen);
-  };
   return (
     <Screen
       title="Groups"
       right={
-        <IconButton
-          testID="groups-add"
-          icon="plus"
-          label="Create or join a group"
-          onPress={() => setAddOpen(true)}
-          active
-        />
+        <Row style={{ gap: space.sm }}>
+          <Button
+            small
+            variant="secondary"
+            icon="qr"
+            label="Join"
+            onPress={() => navigation.navigate('JoinGroup')}
+            testID="groups-add-join"
+          />
+          <Button
+            small
+            icon="plus"
+            label="New"
+            onPress={() => navigation.navigate('CreateGroup')}
+            testID="groups-add-create"
+          />
+        </Row>
       }
     >
-      <AddGroupSheet visible={addOpen} onClose={() => setAddOpen(false)} onPick={go} />
       <FlatList
         data={groups}
         keyExtractor={g => g.id}
@@ -448,6 +532,9 @@ export function GroupsScreen({ navigation }: Nav<'GroupsList'>) {
             />
           </View>
         }
+        ListFooterComponent={
+          groups.length > 0 ? <JoinHint onScan={() => navigation.navigate('JoinGroup')} /> : null
+        }
         renderItem={({ item: g }) => (
           <GroupRow
             group={g}
@@ -456,51 +543,6 @@ export function GroupsScreen({ navigation }: Nav<'GroupsList'>) {
         )}
       />
     </Screen>
-  );
-}
-
-/** The "+" on the Groups tab: one place to start a group or join one. */
-function AddGroupSheet({
-  visible,
-  onClose,
-  onPick,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onPick: (screen: 'CreateGroup' | 'JoinGroup') => void;
-}) {
-  const { c } = useTheme();
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable
-        style={[styles.sheetScrim, { backgroundColor: c.overlay }]}
-        onPress={onClose}
-        accessibilityLabel="Close"
-      >
-        <Pressable
-          style={[styles.sheet, { backgroundColor: c.bg }]}
-          onPress={() => undefined}
-          testID="groups-add-sheet"
-        >
-          <Text variant="heading">Add a group</Text>
-          <StartCard
-            icon="plus"
-            title="Start a group"
-            body="Name it, then invite people with a QR code."
-            onPress={() => onPick('CreateGroup')}
-            testID="groups-add-create"
-          />
-          <StartCard
-            icon="group"
-            title="Join a group"
-            body="Scan an invitation, or find a group open nearby."
-            onPress={() => onPick('JoinGroup')}
-            testID="groups-add-join"
-          />
-          <Button variant="ghost" label="Cancel" onPress={onClose} />
-        </Pressable>
-      </Pressable>
-    </Modal>
   );
 }
 
@@ -799,12 +841,17 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
   const { c } = useTheme();
   const now = useNow();
   const presence = useGroupPresence(group, members, now);
+  const fix = useLocationStore(st => st.fix);
+  const { units, paceKmh } = useNavPrefs();
+  const startNav = useNavSession(st => st.start);
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareHere, setShareHere] = useState(false);
   const [sharePlace, setSharePlace] = useState<SharePlace | null>(null);
   // Back from choosing a meeting point on the map: open the sheet on that place to name it.
   useEffect(() => {
     if (picked) {
       setSharePlace({ lat: picked.lat, lon: picked.lon });
+      setShareHere(false);
       setShareOpen(true);
     }
   }, [picked?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -822,13 +869,24 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
     );
   }
   const organizer = group.role === 'organizer';
-  const active = members.filter(m => m.state === 'active');
   const feed = buildFeed(members, points, me, now);
+  const pinned = activePoint(points);
+  const parent = navigation.getParent() as
+    | { navigate: (n: string, p?: object) => void }
+    | undefined;
   const showOnMap = (pointId: string) =>
-    (navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined)?.navigate(
-      'Map',
-      { focusMeetingPoint: `${groupId}:${pointId}`, nonce: Date.now() },
-    );
+    parent?.navigate('Map', { focusMeetingPoint: `${groupId}:${pointId}`, nonce: Date.now() });
+  const nearbyNames = presence.members.filter(x => x.presence.reachable).map(x => x.member.name);
+  const presenceLine =
+    group.status !== 'active'
+      ? presence.status.label
+      : nearbyNames.length === 1
+      ? `${nearbyNames[0]} is nearby`
+      : nearbyNames.length > 1
+      ? `${nearbyNames.length} people nearby`
+      : presence.status.label;
+  const pinnedDist = pinned && fix ? distanceM(fix, pinned) : null;
+  const pinnedBrg = pinned && fix ? bearingDeg(fix, pinned) : null;
 
   return (
     <Screen onBack={() => navigation.navigate('GroupsList')} edges={['top', 'bottom']}>
@@ -838,8 +896,9 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
           accessibilityLabel="Back"
           onPress={() => navigation.navigate('GroupsList')}
           hitSlop={8}
+          style={styles.headerBtn}
         >
-          <Icon name="back" size={30} />
+          <Icon name="back" size={28} />
         </Pressable>
         <Pressable
           testID="group-title"
@@ -848,17 +907,29 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
           onPress={() => navigation.navigate('GroupInfo', { groupId })}
           style={styles.pageTitle}
         >
-          <Avatar name={group.name} />
+          <GroupTile name={group.name} size={40} dim={group.status !== 'active'} />
           <View style={{ flex: 1 }}>
             <Text variant="cardTitle" numberOfLines={1}>
               {group.name}
             </Text>
-            <Text variant="caption" muted numberOfLines={1} testID="group-status">
-              {`${active.length} ${active.length === 1 ? 'member' : 'members'} · ${
-                presence.status.label
-              }`}
+            <Text
+              variant="caption"
+              numberOfLines={1}
+              color={nearbyNames.length > 0 ? c.primary : c.textMuted}
+              testID="group-status"
+            >
+              {presenceLine}
             </Text>
           </View>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Group info"
+          onPress={() => navigation.navigate('GroupInfo', { groupId })}
+          style={styles.headerBtn}
+          testID="group-info-button"
+        >
+          <Icon name="info" size={24} color={c.text} />
         </Pressable>
       </View>
       <View style={styles.pageBanners}>
@@ -868,6 +939,39 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
         ) : null}
         {group.status === 'joining' ? (
           <Banner tone="warn" title="Waiting for the organizer to approve you" />
+        ) : null}
+        {pinned && group.status === 'active' ? (
+          <View style={[styles.pinned, { backgroundColor: c.ink }]} testID="group-pinned-point">
+            <IconTile name="flag" color={c.onInk} bg={c.meeting} size={44} />
+            <View style={{ flex: 1 }}>
+              <Text variant="cardTitle" color={c.onInk} numberOfLines={1}>
+                {pinned.name}
+              </Text>
+              <Text variant="caption" color={c.onInkMuted} numberOfLines={1} style={tabular}>
+                {pinnedDist === null || pinnedBrg === null
+                  ? 'Meeting point · waiting for GPS'
+                  : `${formatDistanceIn(pinnedDist, units)} ${cardinal16Of(
+                      pinnedBrg,
+                    )} · ~${formatEta(etaMinutes(pinnedDist, paceKmh))}`}
+              </Text>
+            </View>
+            <Button
+              small
+              variant="light"
+              label="Go"
+              testID="group-pinned-go"
+              onPress={() => {
+                startNav({
+                  name: pinned.name,
+                  lat: pinned.lat,
+                  lon: pinned.lon,
+                  kind: 'meeting',
+                  key: `${groupId}:${pinned.id}`,
+                });
+                parent?.navigate('Map');
+              }}
+            />
+          </View>
         ) : null}
         <TripMapBanner group={group} />
       </View>
@@ -880,73 +984,61 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
         ListEmptyComponent={
           <Text muted style={styles.feedEmpty} testID="updates-empty">
             {organizer
-              ? 'No updates yet. Tap "Share location" to send the group a meeting point.'
+              ? 'No updates yet. Set a meeting point or share your location with the group.'
               : 'No updates yet. Meeting points and people joining show up here.'}
           </Text>
         }
         renderItem={({ item: e }) =>
           e.kind === 'day' ? (
-            <View style={[styles.pill, { backgroundColor: c.surface, borderColor: c.border }]}>
-              <Text variant="caption" muted>
+            <View style={styles.dayRow}>
+              <View style={[styles.dayLine, { backgroundColor: c.border }]} />
+              <Text variant="label" muted>
                 {e.text}
               </Text>
+              <View style={[styles.dayLine, { backgroundColor: c.border }]} />
             </View>
           ) : e.kind === 'member' ? (
-            <View style={[styles.pill, { backgroundColor: c.primarySoft }]}>
-              <Text variant="caption" color={c.deep}>
-                {e.text}
-              </Text>
-            </View>
+            <Text variant="label" muted style={styles.system}>
+              {e.text}
+            </Text>
           ) : (
-            <Pressable
-              testID={`update-${e.pointId}`}
-              accessibilityRole="button"
-              accessibilityLabel={`${e.title}: ${e.name}. Show on map`}
+            <FeedPoint
+              e={e}
+              note={points.find(x => x.id === e.pointId)?.note ?? null}
               onPress={() => showOnMap(e.pointId)}
-              style={[
-                styles.bubble,
-                e.mine
-                  ? [styles.bubbleMine, { backgroundColor: c.primarySoft, borderColor: c.border }]
-                  : { backgroundColor: c.surface, borderColor: c.border },
-              ]}
-            >
-              <Row>
-                <IconTile name="flag" color={c.mapMeeting} bg={c.mapMeeting + '22'} />
-                <View style={{ flex: 1 }}>
-                  <Text variant="caption" muted>
-                    {e.title}
-                  </Text>
-                  <Text variant="cardTitle">{e.name}</Text>
-                  <Text variant="caption" color={c.primary}>
-                    Show on map ›
-                  </Text>
-                </View>
-              </Row>
-              <Text variant="label" muted style={styles.stamp}>
-                {clock(e.at)}
-              </Text>
-            </Pressable>
+            />
           )
         }
       />
       {organizer && group.status === 'active' ? (
-        <View style={[styles.actionBar, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <IconButton
-            icon="map"
-            label="Open map"
-            onPress={() => navigation.getParent()?.navigate('Map' as never)}
-            testID="group-open-map"
-          />
-          <Button
-            style={{ flex: 1 }}
-            icon="pin"
-            label="Share location"
-            onPress={() => {
-              setSharePlace(null);
-              setShareOpen(true);
-            }}
-            testID="group-share-location"
-          />
+        <View style={[styles.composer, { backgroundColor: c.surface, borderColor: c.border }]}>
+          <Text variant="caption" muted style={{ textAlign: 'center' }}>
+            Only you can post here. Followers get your updates when they're in range.
+          </Text>
+          <Row style={{ gap: space.sm }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Set a meeting point on the map"
+              onPress={() =>
+                parent?.navigate('Map', { pickMeeting: { groupId }, nonce: Date.now() })
+              }
+              style={[styles.flagBtn, { backgroundColor: c.meetingSoft }]}
+              testID="group-open-map"
+            >
+              <Icon name="flag" size={24} color={c.meetingStroke} />
+            </Pressable>
+            <Button
+              style={{ flex: 1 }}
+              icon="locate"
+              label="Share my location"
+              onPress={() => {
+                setSharePlace(null);
+                setShareHere(true);
+                setShareOpen(true);
+              }}
+              testID="group-share-location"
+            />
+          </Row>
         </View>
       ) : null}
       <ShareLocationSheet
@@ -954,11 +1046,11 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
         groupId={groupId}
         groupName={group.name}
         place={sharePlace}
+        startHere={shareHere}
+        inRange={presence.reachable}
         onChooseOnMap={() => {
           setShareOpen(false);
-          (
-            navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined
-          )?.navigate('Map', { pickMeeting: { groupId }, nonce: Date.now() });
+          parent?.navigate('Map', { pickMeeting: { groupId }, nonce: Date.now() });
         }}
         onClose={() => {
           setShareOpen(false);
@@ -967,6 +1059,58 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
         }}
       />
     </Screen>
+  );
+}
+
+/** A meeting point in the feed: mini map, name, note, Show on map, time. */
+function FeedPoint({
+  e,
+  note,
+  onPress,
+}: {
+  e: Extract<FeedEvent, { kind: 'meeting' }>;
+  note: string | null;
+  onPress: () => void;
+}) {
+  const { c } = useTheme();
+  return (
+    <Pressable
+      testID={`update-${e.pointId}`}
+      accessibilityRole="button"
+      accessibilityLabel={`${e.title}: ${e.name}. Show on map`}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.bubble,
+        e.mine && styles.bubbleMine,
+        { backgroundColor: c.surface, borderColor: c.border, opacity: pressed ? 0.8 : 1 },
+      ]}
+    >
+      <View style={[styles.miniMap, { backgroundColor: c.primarySoft }]}>
+        <View style={[styles.miniRoad, { backgroundColor: c.surface }]} />
+        <View style={styles.miniPin}>
+          <FlagPin size={26} />
+        </View>
+      </View>
+      <View style={styles.bubbleBody}>
+        <Text variant="label" color={c.meetingText}>
+          {e.title}
+        </Text>
+        <Text variant="cardTitle">{e.name}</Text>
+        {note ? (
+          <Text variant="caption" muted numberOfLines={2} style={{ fontWeight: '500' }}>
+            {note}
+          </Text>
+        ) : null}
+        <Row style={{ justifyContent: 'space-between' }}>
+          <Text variant="caption" color={c.primary} style={{ fontWeight: '800' }}>
+            Show on map
+          </Text>
+          <Text variant="label" muted>
+            {clock(e.at)}
+          </Text>
+        </Row>
+      </View>
+    </Pressable>
   );
 }
 
@@ -1098,13 +1242,18 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
   const tabs: { value: InfoTab; label: string }[] = [
     { value: 'members', label: 'Members' },
     { value: 'points', label: 'Points' },
-    ...(canInvite ? [{ value: 'invite' as const, label: 'Invite' }] : []),
-    ...(group.status === 'active'
-      ? [{ value: 'activities' as const, label: activitiesOn ? 'Activities' : 'Adventures' }]
-      : []),
+    ...(group.status === 'active' ? [{ value: 'activities' as const, label: 'Trips' }] : []),
   ];
-  // The group can end, or the invite tab go away, while this screen is open.
-  const shown = tabs.some(t => t.value === tab) ? tab : 'members';
+  // The invitation is opened from the last row of Members (organizer only). The group can end,
+  // or stop taking invitations, while this screen is open.
+  const shown =
+    tab === 'invite'
+      ? canInvite
+        ? 'invite'
+        : 'members'
+      : tabs.some(t => t.value === tab)
+      ? tab
+      : 'members';
 
   const nearbyOpen = nearbyUntil > now;
   const inviteSection = (
@@ -1221,12 +1370,15 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
       title="Group info"
       onBack={back}
       right={
-        <IconButton
-          icon="menu"
-          label="More options"
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="More options"
           onPress={() => setMenuOpen(true)}
           testID="info-menu"
-        />
+          style={styles.headerBtn}
+        >
+          <Icon name="more" size={24} color={c.text} />
+        </Pressable>
       }
     >
       <Menu
@@ -1238,14 +1390,14 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
       <ScrollView contentContainerStyle={styles.list}>
         <MeshBanner />
         <View style={styles.infoHead}>
-          <Avatar name={group.name} size={52} />
+          <GroupTile name={group.name} size={56} dim={group.status !== 'active'} />
           <View style={{ flex: 1, gap: 2 }}>
-            <Text variant="heading" numberOfLines={1} testID="info-name">
+            <Text variant="title" numberOfLines={1} testID="info-name">
               {group.name}
             </Text>
             <Text variant="caption" muted numberOfLines={1} testID="info-meta">
               {active.length} {active.length === 1 ? 'member' : 'members'} ·{' '}
-              {organizer ? 'You organize' : 'Member'}
+              {organizer ? 'You organize' : 'You follow'}
             </Text>
             <Row style={{ gap: space.xs }}>
               {group.status === 'closed' ? (
@@ -1308,7 +1460,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
             {points.length === 0 ? (
               <Text muted>
                 {organizer
-                  ? 'None yet. Share one from the group page with "Share location".'
+                  ? 'None yet. Set one from the group page with the flag button.'
                   : 'None yet. Meeting points the organizer shares appear here and on your map.'}
               </Text>
             ) : (
@@ -1319,14 +1471,8 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
                     testID={`point-${p.id}`}
                     title={p.name}
                     divider={i < points.length - 1}
-                    leading={<IconTile name="flag" color={c.mapMeeting} bg={c.mapMeeting + '22'} />}
-                    subtitle={
-                      p.ackedRev >= p.rev
-                        ? 'Acknowledged'
-                        : organizer
-                        ? `Shared ${ago(now - p.updatedAt)}`
-                        : 'Not acknowledged'
-                    }
+                    leading={<IconTile name="flag" tone="meeting" />}
+                    subtitle={`Shared ${ago(now - p.updatedAt)}${p.note ? ` · ${p.note}` : ''}`}
                     chevron
                     onPress={() =>
                       (
@@ -1349,63 +1495,74 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
           <>
             <Text variant="heading">Members ({active.length})</Text>
             <Card style={{ paddingVertical: space.xs }}>
-              {sortedMembers.map((m, i) => (
-                <ListRow
-                  key={m.address}
-                  testID={`member-${m.address}`}
-                  divider={i < sortedMembers.length - 1}
-                  leading={
-                    <Avatar
-                      name={m.name}
-                      dim={
-                        m.state !== 'active' ||
-                        presenceOfMember.get(m.address)?.freshness === 'last_seen'
-                      }
-                    />
-                  }
-                  title={`${m.name}${m.address === me ? ' (you)' : ''}`}
-                  subtitle={
-                    m.state !== 'active'
-                      ? m.state === 'left'
-                        ? 'Left the group'
-                        : 'Removed'
-                      : m.address === me
-                      ? m.role === 'organizer'
-                        ? 'Organizer'
-                        : 'This phone'
-                      : `${m.role === 'organizer' ? 'Organizer · ' : ''}${presenceText(
-                          presenceOfMember.get(m.address)!,
-                        )}`
-                  }
-                  trailing={
-                    m.state === 'active' &&
-                    m.address !== me &&
-                    presenceOfMember.get(m.address)?.reachable ? (
-                      <StatusPill tone="good" label="In range" style={styles.flat} />
-                    ) : organizer && m.state === 'active' && m.address !== me ? (
-                      <Button
-                        small
-                        variant="ghost"
-                        label="Remove"
-                        onPress={() =>
-                          Alert.alert(
-                            'Remove member?',
-                            `${m.name} will be removed from the group.`,
-                            [
-                              { text: 'Cancel', style: 'cancel' },
-                              {
-                                text: 'Remove',
-                                style: 'destructive',
-                                onPress: () => void service.removeMember(group.id, m.address),
-                              },
-                            ],
-                          )
-                        }
+              {sortedMembers.map((m, i) => {
+                const pres = presenceOfMember.get(m.address);
+                const leader = m.role === 'organizer';
+                const near = m.state === 'active' && m.address !== me && !!pres?.reachable;
+                return (
+                  <ListRow
+                    key={m.address}
+                    testID={`member-${m.address}`}
+                    divider={i < sortedMembers.length - 1 || canInvite}
+                    leading={
+                      <Avatar
+                        name={m.name}
+                        online={near}
+                        dim={m.state !== 'active' || pres?.freshness === 'last_seen'}
                       />
-                    ) : null
-                  }
+                    }
+                    title={`${m.name}${m.address === me ? ' (you)' : ''}`}
+                    subtitle={
+                      m.state !== 'active'
+                        ? m.state === 'left'
+                          ? 'Left the group'
+                          : 'Removed'
+                        : m.address === me
+                        ? leader
+                          ? 'Leader · shares updates with the group'
+                          : 'Follower · this phone'
+                        : `${leader ? 'Leader' : 'Follower'} · ${
+                            near ? 'nearby now' : presenceText(pres!)
+                          }`
+                    }
+                    trailing={
+                      leader && m.state === 'active' ? (
+                        <Badge label="Leader" tone="good" />
+                      ) : organizer && m.state === 'active' && m.address !== me ? (
+                        <Button
+                          small
+                          variant="ghost"
+                          label="Remove"
+                          onPress={() =>
+                            Alert.alert(
+                              'Remove member?',
+                              `${m.name} will be removed from the group.`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Remove',
+                                  style: 'destructive',
+                                  onPress: () => void service.removeMember(group.id, m.address),
+                                },
+                              ],
+                            )
+                          }
+                        />
+                      ) : null
+                    }
+                  />
+                );
+              })}
+              {canInvite ? (
+                <ListRow
+                  testID="info-tab-invite"
+                  title="Invite people with a QR code"
+                  leading={<IconTile name="qr" />}
+                  chevron
+                  divider={false}
+                  onPress={() => setTab('invite')}
                 />
-              ))}
+              ) : null}
             </Card>
           </>
         ) : null}
@@ -1413,7 +1570,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
         {shown === 'activities' && !activitiesOn ? (
           <Card style={{ paddingVertical: space.xs }} testID="group-adventures">
             <ListRow
-              title="Adventures"
+              title="Trips"
               subtitle={
                 groupAdventures.length === 0
                   ? organizer
@@ -1489,15 +1646,10 @@ export function MeetingPointScreen({ navigation, route }: Nav<'MeetingPoint'>) {
   const group = useGroup(groupId);
   const members = useGroupMembers(groupId);
   const [point, setPoint] = useState<Awaited<ReturnType<typeof meetingPoints.get>>>(null);
-  const [acks, setAcks] = useState<Awaited<ReturnType<typeof meetingPoints.acks>>>([]);
   const me = useMesh().localAddress;
-  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const load = () => {
-      void meetingPoints.get(groupId, pointId).then(setPoint);
-      void meetingPoints.acks(groupId, pointId).then(setAcks);
-    };
+    const load = () => void meetingPoints.get(groupId, pointId).then(setPoint);
     load();
     return meetingPoints.changes.subscribe(load);
   }, [meetingPoints, groupId, pointId]);
@@ -1514,21 +1666,27 @@ export function MeetingPointScreen({ navigation, route }: Nav<'MeetingPoint'>) {
       </Screen>
     );
   }
+  // Pub/sub: only the organizer acts on a point; followers read it.
   const organizer = group.role === 'organizer';
-  const acked = point.ackedRev >= point.rev;
-  const ackers = new Set(acks.filter(a => a.rev >= point.rev).map(a => a.address));
-  const others = members.filter(m => m.state === 'active' && m.address !== me);
 
   return (
     <Screen title={point.name} onBack={() => navigation.goBack()}>
       <ScrollView contentContainerStyle={styles.list}>
-        <Text variant="caption" muted>
-          {group.name}
-        </Text>
-        {point.note ? <Text testID="point-note">{point.note}</Text> : null}
-        <Text variant="mono" selectable testID="point-coords">{`${point.lat.toFixed(
-          6,
-        )}, ${point.lon.toFixed(6)}`}</Text>
+        <Card style={{ gap: space.sm }}>
+          <Row style={{ gap: space.md }}>
+            <IconTile name="flag" tone="meeting" size={44} />
+            <View style={{ flex: 1 }}>
+              <Text variant="cardTitle">{point.name}</Text>
+              <Text variant="caption" muted>
+                {group.name}
+              </Text>
+            </View>
+          </Row>
+          {point.note ? <Text testID="point-note">{point.note}</Text> : null}
+          <Text variant="mono" muted selectable testID="point-coords">{`${point.lat.toFixed(
+            6,
+          )}, ${point.lon.toFixed(6)}`}</Text>
+        </Card>
         <Card style={{ gap: space.xs }}>
           <Text testID="point-created">Created by {nameOf(members, point.createdBy, me)}</Text>
           <Text testID="point-updated">
@@ -1540,9 +1698,9 @@ export function MeetingPointScreen({ navigation, route }: Nav<'MeetingPoint'>) {
             {new Date(point.updatedAt).toLocaleString()}
           </Text>
         </Card>
-        {message ? <Banner title={message} /> : null}
         <Button
           label="Show on map"
+          icon="map"
           onPress={() =>
             navigation
               .getParent()
@@ -1550,69 +1708,92 @@ export function MeetingPointScreen({ navigation, route }: Nav<'MeetingPoint'>) {
           }
           testID="point-show"
         />
-        {!organizer ? (
+        {organizer ? (
           <Button
-            variant={acked ? 'secondary' : 'primary'}
-            label={
-              acked
-                ? point.ackPublished
-                  ? 'Acknowledged'
-                  : 'Acknowledged (not delivered yet)'
-                : 'Acknowledge'
-            }
-            disabled={acked && point.ackPublished}
-            testID="point-ack"
+            variant="danger"
+            icon="trash"
+            label="Remove meeting point"
+            testID="point-remove"
             onPress={() =>
-              void service.acknowledge(groupId, pointId).then(r => {
-                if (!r.ok) {
-                  setMessage(r.error.userMessage);
-                } else {
-                  setMessage(
-                    r.value
-                      ? 'The organizer has been told.'
-                      : 'Saved. It will be sent when you are in range of the organizer.',
-                  );
-                }
-              })
+              Alert.alert('Remove meeting point?', 'It disappears from every member’s map.', [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Remove',
+                  style: 'destructive',
+                  onPress: () =>
+                    void service.removePoint(groupId, pointId).then(() => navigation.goBack()),
+                },
+              ])
             }
           />
-        ) : (
-          <>
-            <Text variant="heading">Acknowledged by</Text>
-            {others.length === 0 ? <Text muted>No other members yet.</Text> : null}
-            {others.map(m => (
-              <Row key={m.address}>
-                <Text style={{ flex: 1 }}>{m.name}</Text>
-                <Badge
-                  label={ackers.has(m.address) ? 'Acknowledged' : 'Waiting'}
-                  tone={ackers.has(m.address) ? 'good' : 'neutral'}
-                />
-              </Row>
-            ))}
-            <Button
-              variant="danger"
-              label="Remove meeting point"
-              testID="point-remove"
-              onPress={() =>
-                Alert.alert('Remove meeting point?', 'It disappears from every member’s map.', [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Remove',
-                    style: 'destructive',
-                    onPress: () =>
-                      void service.removePoint(groupId, pointId).then(() => navigation.goBack()),
-                  },
-                ])
-              }
-            />
-          </>
-        )}
+        ) : null}
       </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  headerBtn: {
+    width: size.touch,
+    height: size.touch,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  presenceDot: {
+    position: 'absolute',
+    right: -1,
+    bottom: -1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+  },
+  groupTile: { alignItems: 'center', justifyContent: 'center' },
+  groupPress: { marginBottom: space.md },
+  groupMain: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.lg },
+  joinHint: {
+    alignItems: 'center',
+    gap: space.sm,
+    padding: space.xl,
+    borderRadius: radius.card,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    marginTop: space.xs,
+  },
+  pinned: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    padding: space.md,
+    borderRadius: radius.card,
+  },
+  dayRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, marginVertical: space.xs },
+  dayLine: { flex: 1, height: 1 },
+  system: { textAlign: 'center' },
+  composer: {
+    gap: space.sm,
+    paddingHorizontal: space.gutter,
+    paddingTop: space.md,
+    paddingBottom: space.sm,
+    borderTopWidth: 1,
+  },
+  flagBtn: {
+    width: 54,
+    height: 54,
+    borderRadius: radius.button,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniMap: { height: 96, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  miniRoad: {
+    position: 'absolute',
+    width: 400,
+    height: 10,
+    transform: [{ rotate: '-18deg' }],
+    opacity: 0.9,
+  },
+  miniPin: { marginTop: -8 },
+  bubbleBody: { padding: space.md, gap: 2 },
   list: { padding: space.gutter, paddingTop: 0, gap: space.md, paddingBottom: space.xxl },
   startWrap: { gap: space.md, paddingTop: space.xl },
   sheetScrim: { flex: 1, justifyContent: 'flex-end' },
@@ -1622,17 +1803,16 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
   },
-  groupCard: { marginBottom: space.md, flexDirection: 'row', alignItems: 'center', gap: space.md },
+  groupCard: { padding: 0, overflow: 'hidden' },
   groupBody: { flex: 1, gap: 2 },
   groupStatus: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: space.sm,
-    marginTop: space.xs,
+    paddingHorizontal: space.lg,
+    paddingBottom: space.lg,
   },
-  groupPresence: { gap: space.xs, flexShrink: 1 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
   pageHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1644,47 +1824,25 @@ const styles = StyleSheet.create({
   pageBanners: { paddingHorizontal: space.gutter, gap: space.sm },
   feed: { padding: space.gutter, gap: space.sm },
   feedEmpty: { textAlign: 'center', padding: space.xl, transform: [{ scaleY: -1 }] },
-  pill: {
-    alignSelf: 'center',
-    paddingHorizontal: space.md,
-    paddingVertical: space.xs,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'transparent',
-  },
   bubble: {
     alignSelf: 'flex-start',
     width: '85%',
-    padding: space.md,
-    borderRadius: radius.sheet,
-    borderBottomLeftRadius: radius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: space.xs,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
-  bubbleMine: {
-    alignSelf: 'flex-end',
-    borderBottomLeftRadius: radius.sheet,
-    borderBottomRightRadius: radius.sm,
-  },
-  stamp: { alignSelf: 'flex-end' },
-  actionBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    padding: space.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
+  bubbleMine: { alignSelf: 'flex-end' },
   infoHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   sectionLabel: { textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: -space.xs },
   inviteCard: { alignItems: 'center', gap: space.md, paddingVertical: space.xl },
   qrPlate: {
     padding: space.md,
+    // A QR code needs a white plate in both themes to scan.
     backgroundColor: '#FFFFFF',
     borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
   inviteActions: { flexDirection: 'row', gap: space.sm, alignSelf: 'stretch' },
-  flat: { shadowOpacity: 0, elevation: 0, borderWidth: 0, paddingHorizontal: 0 },
   avatar: {
     width: 36,
     height: 36,
@@ -1696,8 +1854,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.input,
     paddingHorizontal: space.lg,
-    minHeight: 52,
-    fontSize: 15,
+    minHeight: size.input,
+    fontSize: 16,
   },
 });
 
