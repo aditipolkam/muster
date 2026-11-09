@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-11-09 (group trip map)
+Last updated: 2026-11-09 (trail UI redesign)
 
 ## Status
 
@@ -237,6 +237,7 @@ Run `docs/GROUPS_VERIFICATION.md`, record A-19 to A-24 and fill the device log. 
 |---|---|
 | 2026-10-30 | Phase 0 complete. Inspected `offline-protocol-sdk` 0.31.0 (read-only). Key findings: no group-scoped pub/sub in the SDK (ADR 0036 unimplemented), service subscriptions exist but ADR 0035 is "Proposed", DataStore CRDT documents are the best fit for shared state, SDK licence is AGPL-3.0/commercial. Researched MapLibre RN v11.5.1, PMTiles, OSM tile policies. Nothing built or installed. `offline-protocol-sdk` not modified |
 
+| 2026-11-09 | Trail UI redesign (ADR 0014), branch `redesign/trail-ui`: tokens in `src/ui/theme.tsx`, four tabs with a soft-green active pill, Compass inside navigation (Map \| Compass, shared `navSession` store, tab bar hidden while navigating or placing a pin), orange flag meeting pins, new meeting sheet, navigating card, set meeting point steps 1 and 2, redesigned groups list, group page and group info; follower Acknowledge removed from the UI (pub/sub). UI only: no mesh, SDK, data model or protocol change. typecheck, lint (0 errors), 648 Jest tests and the iOS JS bundle pass. **Not checked in a simulator or on a device** (a native build first needs `pod install` for `expo-image-picker`) |
 | 2026-11-09 | Group trip map (ADR 0013): the organizer chooses one area on the map in Group info; it is sent in each person's welcome (`rg`, optional, no new message) and locked once someone joins. Members get a Download card, a banner on the group page and a "Map not downloaded" badge until a downloaded map covers it. Migration 7. `MapArea` moved to `domain/maps/mapArea.ts`; one `useAreaDownload` hook for the trip map and activities. 20 new tests (`groupsTripMap`, `groupsScreens`, `pickLocation`); 645 pass. **Not checked on a device or in a simulator** |
 | 2026-11-01 | Online map while no downloaded region covers the view (remote planet PMTiles, assumption A-25 **unverified on device**) and online place search (Nominatim, dev only) feeding the download sheet. CLAUDE.md rule 6 amended with this exception |
 | 2026-11-08 | Join requests not reaching the organizer: fixed (ADR 0012). The app was linked to the SDK checkout's 2026-10-31 natives despite `^0.32.0` in `package.json` (lockfile `link: true`); now the published `@offline-protocol/mesh-sdk@0.32.0` (pinned, registry install, `pod install` done). App fixes: join request admitted by the SDK at once and approved by the app (no 60 s approval timeout), resume coalesced and run only on lifecycle/address/nearby changes, retries subscribe again instead of reusing an ended id, beacons always accepted (no re-subscribe storm), joiner drops its join topic once in. `__tests__/groupsJoin.test.ts` (8 of 9 fail on the old code). Device run (Android Realme RMX5108 joiner, iPhone 15 organizer, both 0.32.0): the request reached the iPhone after 3-4 min, past the SDK's 120 s pending timeout; Android logcat shows indications to the iPhone never confirmed (`Notification flushed` absent). Added: a join that times out without an answer is asked again for up to 10 min, one card per person. Then: the joiner's name rides in the subscription params (card shows it); out-of-range providers back off 1 -> 30 min. A device run on a temporary diagnostic SDK build with engine logging traced the slowness to the iPhone probing 8 dead pending sessions every 5 s, each probe re-offered to the Realme; SDK fix on branch `fix/mesh-only-probe-backoff` (probe back-off when only the mesh could carry it), SDK tests green. **Verified on the two phones**: the request arrived in seconds and the joiner left "waiting" right after approval; iPhone-to-Realme fragments fell from 2,502 in 5 min to 59. The diagnostic switch was not kept. TrailMesh is on the local SDK until the fix is released |
@@ -291,3 +292,31 @@ Audit in `docs/ux-audit.md`. Done: honest mesh status (map pill + explanation sh
 ## Share location from the group page (2026-11-09)
 
 Meeting points are now shared from the group page, the way a chat app attaches a location: the organizer's bottom bar has **Share location** (and a map button). It opens a sheet with **Send your current location** (with the GPS accuracy; disabled while there is no recent fix, and asks for permission when it has not been given), **Choose on the map** (the Map's pin picker, with search, `pickMeeting` route param; the place comes back to the group page) and **Your saved places**; then the point is named (required), given an optional note and shared with `GroupService.publishPoint`. The long-press on the map no longer offers "Meeting point": it adds a checkpoint or a personal marker as before. Editing, moving and removing a point from its map sheet are unchanged. Still organizer-only, because only the organizer publishes points (star topology, `canPublishPoints`); letting members share would need a protocol change. Covered by Jest (`groupsScreens`, `pickLocation`). **Not checked on a device or in a simulator.**
+
+## Trail UI redesign (2026-11-09)
+
+What changed, per screen (UI only; ADR 0014):
+
+- **Tab bar**: Map, Groups, Activity, Profile; opens on Map; active tab in a soft-green pill; no raised Map button; hidden while navigating or placing a pin.
+- **Map**: 52 high search, dark status pill "Offline · N nearby" (N = mesh peers in range), offline and download buttons in one white vertical pill, "center on me" above any sheet, meeting points as orange flag pins with a label chip, "you" in blue with a halo, personal markers green.
+- **Meeting point sheet**: orange flag tile, "Shared by … · time · group", close; Distance / Direction (16-point, e.g. NNW 339°) / On foot; the straight-line caption; Navigate; Compass, Edit (leader), More (Move, Details, Remove for the leader; Details for followers).
+- **Set meeting point, step 1** (map): header "Set meeting point / Step 1 of 2", search, fixed orange pin with "Drag the map to move the pin", coordinates and "x km NNW of you", "Use this spot →", "Use where I'm standing". **Step 2** (sheet on the group page): STEP 2 OF 2 / Name and share, place row with Change, name with quick chips (Lunch stop, Campsite, Summit, Regroup here), optional note, who is in range, "Share with <group>".
+- **Navigating (map)**: dark instruction card (arrow, big distance, "Head NNW · 339° · ~30 min"), amber "Straight line, not a trail route", dashed orange line, bottom panel with destination, Map \| Compass and a soft-red End navigation.
+- **Navigating (compass)**: "Navigating to <name>" with Change, heading-up dial (letters move, stay upright, N red), facing marker, orange arrow and target dot, soft green arc between them, big distance, turn hint ("Turn right about 40°" / "Straight ahead"), On foot / Target bearing / Compass, same controls. Without a destination it is a plain compass.
+- **Groups list**: Join (QR) and New in the header; cards with tile, name, "N members · You organize", chips (nearby / Nobody nearby, active meeting point with distance, Map saved offline), amber "Trip map not saved offline · size · Download" footer; dashed "Joining someone's trek?" card at the end.
+- **Group page**: header with tile, name and a presence line ("Rohan is nearby"), info button; pinned dark card for the newest meeting point with Go (starts navigation on the map); compact amber trip-map banner with Save; Today divider, small centred system events, meeting point cards (stand-in mini map, name, note, Show on map, time); leader composer ("Only you can post here…", orange flag button to set a meeting point, "Share my location"). Followers see the same feed with no composer.
+- **Group info**: More button; tile, name, "N members · You organize / You follow"; trip map card with a stand-in preview, "Not saved on this phone", "Save for offline" and the new locked caption; Members / Points / Trips; members with Leader badge, "Follower · nearby now" and a green dot; "Invite people with a QR code" row opens the invitation.
+- **Elsewhere** (onboarding, join, profile, settings, offline maps, activity, sheets): new tokens through the shared components, soft-red destructive buttons, bordered cards, onboarding drawn in tokens with leader/follower copy.
+
+**Skipped, because the data does not exist** (no data model change was allowed):
+- "Share my location" shares where the leader stands as a meeting point; there is no live leader-location stream yet (Phase 4), so "Leader · sharing location" reads "Leader · shares updates with the group".
+- "came into range" feed events (presence is not stored as events).
+- "Meet by" time chips (meeting points have no time field).
+- Compass accuracy Good/Calibrate (no heading accuracy is read); the third metric says whether the compass has a heading.
+- A map-layers button (there are no layers to switch).
+- Real map tiles in the feed and trip-map previews (stand-in drawings).
+- "Paste coordinates" in the meeting point search: the placeholder says it, but parsing coordinates in the search is not built.
+- Manrope is not bundled (system font; one line in the theme once the font files are added).
+
+**Not verified**: none of this has been looked at in a simulator or on a device. In particular the flag pin anchoring (`Marker` offset), the fixed centre pin in step 1, the heading-up dial on a real compass and the hidden tab bar need a look.
+
