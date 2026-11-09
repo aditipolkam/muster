@@ -1,12 +1,12 @@
-# TrailMesh Design System
+# Muster Design System
 
 > **Superseded in part, 2026-11-09 (trail redesign, ADR 0014).** The live tokens are in `src/ui/theme.tsx` and win over the tables below: ground `#F6F5F0`, surface `#FFFFFF`, ink `#15201A`, muted `#5B665F`, hairline `#E4E2DA`, primary `#1D5C3B` / soft `#E6EFE8` / dark text `#14432A`, meeting orange `#D9622B` / soft `#FCE9DF` / text `#8E3A12` / stroke `#C2531F`, you `#2563EB` with a 16% halo, warning `#FFF4DE` / `#6A4400` / `#7A4F00` / border `#F3E3C2`, danger soft `#FBE7E4` / `#A3261B`, success dot `#2E9E5B`, dark card `#15201A` / `#C9D3CC`. Radii: cards 20, buttons and inputs 14 to 16, chips 999, sheets 28. Type: titles 24 to 30/800, card titles 16 to 19/800, captions 12 to 13/600. Font Manrope (system font until bundled). Colour roles: orange only for meeting points, blue only for you, amber only for warnings, red only for destructive actions. Four tabs (Map, Groups, Activity, Profile); Compass lives inside navigation.
 
-Version 1.0 · Reference: approved eight-screen TrailMesh concept (onboarding, map, group, meeting point, compass, offline maps, updates, settings).
+Version 1.0 · Reference: approved eight-screen Muster concept (onboarding, map, group, meeting point, compass, offline maps, updates, settings).
 
 ## 1. Design direction
 
-TrailMesh is a calm, trustworthy outdoor utility: **topographic landscapes, forest-green actions, warm off-white surfaces, and clear location status**. The map is the hero; controls should feel lightweight and immediately understandable. Prioritize legibility outdoors, offline confidence, and one obvious primary action per screen.
+Muster is a calm, trustworthy outdoor utility: **topographic landscapes, forest-green actions, warm off-white surfaces, and clear location status**. The map is the hero; controls should feel lightweight and immediately understandable. Prioritize legibility outdoors, offline confidence, and one obvious primary action per screen.
 
 Principles:
 - **Map first.** On map screens, use compact floating controls and a bottom group sheet; avoid large persistent headers.

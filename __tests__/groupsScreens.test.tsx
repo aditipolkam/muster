@@ -234,7 +234,7 @@ describe('Join Group screen', () => {
     await act(async () => {
       fireEvent.press(screen.getByTestId('join-submit'));
     });
-    expect(screen.getByText('That is not a TrailMesh invitation.')).toBeTruthy();
+    expect(screen.getByText('That is not a Muster invitation.')).toBeTruthy();
   });
 
   it('joins from a pasted invitation and opens the group once the organizer accepts', async () => {

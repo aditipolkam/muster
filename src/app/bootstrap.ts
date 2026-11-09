@@ -1,4 +1,5 @@
-import { openOpSqlite } from '../data/opSqliteAdapter';
+import { moveLegacyDb } from '../data/legacyDb';
+import { openOpSqlite, sqliteDirUri } from '../data/opSqliteAdapter';
 import { runMigrations } from '../data/migrations';
 import { KvRepo } from '../data/repositories/KvRepo';
 import { EventsRepo } from '../data/repositories/EventsRepo';
@@ -42,6 +43,14 @@ const log = createLogger('boot');
 
 export async function bootstrap(): Promise<Services> {
   const t0 = Date.now();
+  // Renamed from TrailMesh: an install from before keeps its data (legacy file name moved once).
+  try {
+    if (await moveLegacyDb(createExpoFilePort(), sqliteDirUri(), config.dbName)) {
+      log.info('moved the database from its pre-rename name');
+    }
+  } catch (e) {
+    log.warn(`could not move the old database: ${String(e)}`);
+  }
   const db = await openOpSqlite(config.dbName);
   const migrated = await runMigrations(db);
   log.info(`db v${migrated.from} -> v${migrated.to}`);

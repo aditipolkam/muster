@@ -7,7 +7,7 @@ const defaultConfig = getDefaultConfig(__dirname);
 // The SDK is consumed either as a local build (a symlink created by `file:` in package.json, see
 // scripts/sdk-source.sh local) or as the published npm package. Metro needs extra help only for
 // the symlinked form, so detect it instead of keeping a flag in sync by hand.
-// TRAILMESH_SDK=local|npm forces a mode.
+// MUSTER_SDK=local|npm forces a mode (TRAILMESH_SDK, the pre-rename name, still works).
 const sdkLink = path.join(__dirname, 'node_modules/@offline-protocol/mesh-sdk');
 function sdkRealPath() {
   try {
@@ -18,7 +18,8 @@ function sdkRealPath() {
 }
 const real = sdkRealPath();
 const detectedLocal = real !== null && !real.startsWith(path.join(__dirname, 'node_modules'));
-const mode = process.env.TRAILMESH_SDK || (detectedLocal ? 'local' : 'npm');
+const mode =
+  process.env.MUSTER_SDK || process.env.TRAILMESH_SDK || (detectedLocal ? 'local' : 'npm');
 
 /** @type {import('@react-native/metro-config').MetroConfig} */
 const config = {};
@@ -34,7 +35,10 @@ if (mode === 'local' && real) {
   config.watchFolders = [real];
   config.resolver = {
     nodeModulesPaths: [path.join(__dirname, 'node_modules')],
-    blockList: [...(Array.isArray(defaultBlock) ? defaultBlock : defaultBlock ? [defaultBlock] : []), ...blocked],
+    blockList: [
+      ...(Array.isArray(defaultBlock) ? defaultBlock : defaultBlock ? [defaultBlock] : []),
+      ...blocked,
+    ],
     extraNodeModules: {
       '@offline-protocol/mesh-sdk': real,
       react: path.join(__dirname, 'node_modules/react'),

@@ -29,7 +29,7 @@ Last updated: 2026-11-02
 | AD-4 | Arrival = good fix inside the radius on two readings >= 3 s apart; weak fix never marks; manual always possible | False arrivals are worse than a button press |
 | AD-5 | "Qualifying" adventure (a checkpoint reached, or 20 min and 300 m) | Start-then-finish must not earn badges; distance is a gate, never a reward |
 | AD-6 | Badges are computed from local facts and labelled as not independently verified | Brief section 12 |
-| AD-7 | "No network used" = TrailMesh made no request and did not stream the online map | The app cannot know whether the phone had signal; the copy says so |
+| AD-7 | "No network used" = Muster made no request and did not stream the online map | The app cannot know whether the phone had signal; the copy says so |
 | AD-8 | Solo adventures use the fixed address `local` | Valid whether or not the mesh ever started |
 | AD-9 | A group adventure whose group has ended is closed locally | Otherwise a member's clock would run forever |
 | AD-10 | Checkpoint "icon" is its kind, from the existing glyph set | One consistent icon style; the icon-family decision stays open |

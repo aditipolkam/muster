@@ -4,7 +4,7 @@ Simulators and emulators cannot do Bluetooth LE. Nothing below has been run yet;
 
 ## Setup
 
-1. Two phones with the TrailMesh debug build (any OS pair). Record model and OS version.
+1. Two phones with the Muster debug build (any OS pair). Record model and OS version.
 2. Install, then open the app once per phone **with internet on** so Metro can serve the bundle, or use a release build. After the JS bundle has loaded, enable **airplane mode, then switch Bluetooth back on** (airplane mode turns it off). Wi-Fi stays off.
 3. iOS: accept the Bluetooth prompt the first time you start the mesh. Android 12+: accept Nearby devices; on Android 11 and lower accept Location. Android 13+: allow notifications so the foreground-service notification is visible.
 4. Open the **Mesh** tab on both phones. Keep both in the foreground, screens on, 1-3 m apart.

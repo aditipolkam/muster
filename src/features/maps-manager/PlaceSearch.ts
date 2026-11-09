@@ -37,7 +37,7 @@ export class PlaceSearch {
         `${this.baseUrl}/search?format=jsonv2&limit=8&q=${encodeURIComponent(q)}`,
         {
           signal,
-          headers: { 'User-Agent': 'TrailMesh-dev/0.1 (offline hiking app, development build)' },
+          headers: { 'User-Agent': 'Muster-dev/0.1 (offline hiking app, development build)' },
         },
       );
       const hits = z.array(z.unknown()).parse(json);

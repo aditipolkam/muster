@@ -70,7 +70,7 @@ describe('SdkMeshAdapter lifecycle', () => {
 
   it('uses the documented config: BLE on, internet off, no Wi-Fi Direct in Phase 2', () => {
     const c = buildProtocolConfig();
-    expect(c.appId).toBe('app.trailmesh');
+    expect(c.appId).toBe('app.muster');
     expect(c.transports?.ble?.enabled).toBe(true);
     expect(c.transports?.internet?.enabled).toBe(false);
     expect(c.transports?.wifiDirect?.enabled).toBe(false);

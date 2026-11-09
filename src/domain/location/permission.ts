@@ -51,7 +51,7 @@ export function permissionAction(s: PermissionState): PermissionAction {
 export const PERMISSION_COPY: Record<PermissionState, { title: string; body: string }> = {
   undetermined: {
     title: 'Location not enabled',
-    body: 'TrailMesh uses your location to show where you are on the map. It stays on your device.',
+    body: 'Muster uses your location to show where you are on the map. It stays on your device.',
   },
   denied: {
     title: 'Location permission denied',
@@ -59,7 +59,7 @@ export const PERMISSION_COPY: Record<PermissionState, { title: string; body: str
   },
   blocked: {
     title: 'Location blocked in Settings',
-    body: 'Location access was denied. Turn it on for TrailMesh in system Settings.',
+    body: 'Location access was denied. Turn it on for Muster in system Settings.',
   },
   approximate: {
     title: 'Approximate location only',

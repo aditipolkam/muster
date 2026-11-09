@@ -38,7 +38,7 @@ The four tabs are unchanged and the map remains the main screen.
 - Kinds ("icons"): Trail entrance, Viewpoint, Waterfall, Campsite, Rest stop, Summit, Final destination, Other. At most 20 per adventure.
 - Arrival is automatic when you are inside the radius with a good GPS fix on two readings at least 3 seconds apart. A weak fix never marks it; you get "Near <name>. GPS is too weak to confirm" and an "I am here" button. You can always confirm by hand while the adventure is running; from far away you are asked once.
 - A quiet banner says "Approaching <name>" (about four radii out) and "Reached <name>". There is no countdown, no timer and no prompt to hurry.
-- Safety: the editor and details screens say a checkpoint is only a place you chose and that TrailMesh cannot know about closures, private land, weather or terrain.
+- Safety: the editor and details screens say a checkpoint is only a place you chose and that Muster cannot know about closures, private land, weather or terrain.
 - The radius (15 to 150 m, default 30 m) is in Settings.
 
 ## Milestones (13)
@@ -55,13 +55,13 @@ The four tabs are unchanged and the map remains the main screen.
 | | Together We Go | Complete five group adventures |
 | | Rally Point | A meeting point you shared was acknowledged by another member, or you acknowledged one shared with you |
 | | Trail Companions | Complete two or more adventures with the same group |
-| Off the grid | Off the Grid | Complete a 30-minute adventure on downloaded maps during which TrailMesh used no network |
+| Off the grid | Off the Grid | Complete a 30-minute adventure on downloaded maps during which Muster used no network |
 | | Mesh Connected | During an adventure, receive a message from a group member over the mesh |
 | | Local Explorer | Complete an adventure whose places are all inside your downloaded map regions |
 
 "Complete" means *completed and qualifying*: you reached a checkpoint, or ran at least 20 minutes and 300 m. Starting and immediately finishing earns nothing, and cancelled adventures never count. Distance alone is never a reward. There are no streaks, no ranking and no comparison with other people. Badges are computed on your phone from your own records and are **not independently verified**; the screen says so.
 
-Not claimed: that a message was delivered because it was sent (Mesh Connected needs one *received*), or that the phone had no signal (Off the Grid means TrailMesh itself used no network).
+Not claimed: that a message was delivered because it was sent (Mesh Connected needs one *received*), or that the phone had no signal (Off the Grid means Muster itself used no network).
 
 ## Group adventures
 

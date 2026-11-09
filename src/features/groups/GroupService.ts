@@ -96,7 +96,7 @@ function joinEndReason(reason: string): string {
     case 'provider_unreachable':
       return 'the organizer could not be reached. Move closer and try again';
     case 'not_found':
-      return "the organizer's mesh is not ready. Ask them to open TrailMesh and try again";
+      return "the organizer's mesh is not ready. Ask them to open Muster and try again";
     case 'full':
       return 'the group is full';
     default:

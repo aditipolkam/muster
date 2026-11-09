@@ -118,7 +118,7 @@ export type RequestHandler = (r: SubscribeRequest) => void;
 export type SubscriptionEventHandler = (c: SubscriptionChange) => void;
 
 /**
- * TrailMesh's reusable pub/sub layer over the SDK's service subscriptions (ADR 0035).
+ * Muster's reusable pub/sub layer over the SDK's service subscriptions (ADR 0035).
  *
  * The SDK has no mesh-wide topics: a topic belongs to one provider's service, and consumers
  * subscribe to that provider (docs/SDK_INTEGRATION.md section 4). So `publish` writes to a

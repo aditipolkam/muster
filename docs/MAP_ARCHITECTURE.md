@@ -29,7 +29,7 @@ Rationale for the headline choice (PMTiles over MapLibre offline packs) is §4.
 | `react-native-maps` | Apple/Google tiles only | Yes | Platform terms | Rejected: no open offline data |
 | WebView + MapLibre GL JS + PMTiles | Yes | n/a | OSS | Rejected: WebView memory/gesture cost, awkward GPS/compass bridging. Kept as an emergency fallback only |
 
-The SDK example apps run RN 0.82.1 with the New Architecture on [SDK], so TrailMesh pins **RN 0.82.x** and MapLibre v11 is compatible with that direction. [ASSUMPTION A-10: exact RN/MapLibre version compatibility confirmed in Phase 1 spike S1-1]
+The SDK example apps run RN 0.82.1 with the New Architecture on [SDK], so Muster pins **RN 0.82.x** and MapLibre v11 is compatible with that direction. [ASSUMPTION A-10: exact RN/MapLibre version compatibility confirmed in Phase 1 spike S1-1]
 
 ### 2.2 Vector vs raster
 
@@ -68,7 +68,7 @@ flowchart LR
     R --> H[(Object storage / CDN)]
     C --> H
   end
-  subgraph App["TrailMesh"]
+  subgraph App["Muster"]
     DL[MapPackManager: resumable download + sha256] --> FS[(documents/maps/*.pmtiles)]
     IMP[Import from Files] --> FS
     SB[StyleBuilder] --> ST[style JSON in memory]

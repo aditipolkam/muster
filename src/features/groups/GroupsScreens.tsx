@@ -615,7 +615,7 @@ export function JoinGroupScreen({ navigation, route }: Nav<'JoinGroup'>) {
   const rt = useGroupRuntime();
   const all = useGroups();
   const yourName = useProfileName();
-  // A `trailmesh://join?...` deep link arrives as separate route params.
+  // A `muster://join?...` deep link arrives as separate route params.
   const p = route.params;
   const deepLink =
     p?.link ??
@@ -661,8 +661,8 @@ export function JoinGroupScreen({ navigation, route }: Nav<'JoinGroup'>) {
     if (!parsed.ok) {
       setError(
         parsed.error === 'unsupported_version'
-          ? 'This invitation is from a newer version of TrailMesh. Update the app.'
-          : 'That is not a TrailMesh invitation.',
+          ? 'This invitation is from a newer version of Muster. Update the app.'
+          : 'That is not a Muster invitation.',
       );
       return;
     }
@@ -800,7 +800,7 @@ export function JoinGroupScreen({ navigation, route }: Nav<'JoinGroup'>) {
                   style={input}
                   value={link}
                   onChangeText={setLink}
-                  placeholder="trailmesh://join?…"
+                  placeholder="muster://join?…"
                   autoCapitalize="none"
                   autoCorrect={false}
                   autoFocus
@@ -1299,7 +1299,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
           <View style={{ alignItems: 'center', gap: 2 }}>
             <Text variant="cardTitle">No active code</Text>
             <Text variant="caption" muted style={{ textAlign: 'center' }}>
-              A code adds one person and is valid for 24 hours. They scan it with TrailMesh; no
+              A code adds one person and is valid for 24 hours. They scan it with Muster; no
               internet needed.
             </Text>
           </View>

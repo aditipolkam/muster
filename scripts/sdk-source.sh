@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Switch which Offline Protocol SDK TrailMesh builds against.
+# Switch which Offline Protocol SDK Muster builds against.
 #   scripts/sdk-source.sh local            link ../offline-protocol-sdk/bindings/react-native (needs SDK natives built)
 #   scripts/sdk-source.sh npm <version>    install the published @offline-protocol/mesh-sdk@<version>
 # Only package.json, the lockfile and Pods change. The SDK checkout is never edited.

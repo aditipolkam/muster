@@ -128,7 +128,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     name: 'Off the Grid',
     description: 'An adventure that ran entirely on saved data.',
     requirement:
-      'Complete a 30-minute adventure on downloaded maps during which TrailMesh used no network.',
+      'Complete a 30-minute adventure on downloaded maps during which Muster used no network.',
     category: 'offline',
     icon: 'camp',
     target: null,

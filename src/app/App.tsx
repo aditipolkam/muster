@@ -141,7 +141,8 @@ const tabIcon =
     <TabIcon name={name} focused={focused} />;
 
 const linking: LinkingOptions<RootTabParamList> = {
-  prefixes: ['trailmesh://'],
+  // `trailmesh://` is the pre-rename scheme, still accepted for old invitations.
+  prefixes: ['muster://', 'trailmesh://'],
   config: {
     screens: {
       Map: 'map',
@@ -320,7 +321,7 @@ function Root() {
         </ServicesProvider>
       ) : error ? (
         <View style={{ flex: 1, justifyContent: 'center', padding: 24 }}>
-          <Banner tone="error" title="TrailMesh could not start" body={error} />
+          <Banner tone="error" title="Muster could not start" body={error} />
         </View>
       ) : (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>

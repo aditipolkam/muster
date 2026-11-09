@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Card, Icon, IconName, IconTile, ListRow, Text } from '../../ui/components';
 import { MEMBER_NAME_MAX } from '../../domain/groups/model';
+import { AppLogo } from '../../ui/AppLogo';
 import { radius, space, useTheme } from '../../ui/theme';
 
 const BENEFITS: { icon: IconName; title: string; body: string }[] = [
@@ -92,9 +93,9 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
     <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }} testID="onboarding">
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.brand}>
-          <IconTile name="trail" size={56} />
+          <AppLogo size={72} />
           <Text variant="hero" color={c.text} accessibilityRole="header">
-            TrailMesh
+            Muster
           </Text>
           <Text color={c.text} style={styles.tagline}>
             Find each other on the trail, even with no signal.

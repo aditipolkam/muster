@@ -96,7 +96,7 @@ export function ShareLocationSheet({
     gps === 'unavailable'
       ? permissionAction(permission) === 'request'
         ? 'Allow location access to use it'
-        : 'Location is off for TrailMesh. Turn it on in Settings.'
+        : 'Location is off for Muster. Turn it on in Settings.'
       : gps === 'acquiring'
       ? 'Finding your location…'
       : gps === 'lost'

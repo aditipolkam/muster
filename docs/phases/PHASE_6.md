@@ -20,7 +20,7 @@ Phases 1-5. Final decisions: D-1 (licence), hosting for maps. Larger device pool
 ## Architecture considerations
 
 - **Background:** platform-specific services behind `BackgroundPort`. iOS: bluetooth modes already required; location in background needs the background mode and Always/When-In-Use-with-indicator; justify in review notes. Android: combine `connectedDevice` (SDK) and `location` foreground service types; `ACCESS_BACKGROUND_LOCATION` flow; battery-optimisation exemption guidance; OEM kill lists.
-- **Wake task:** SDK feature requires RN >= 0.76.5 with New Arch, durable inbound storage before `start()`, idempotency and prompt resolution (`SDK_INTEGRATION.md` §7). TrailMesh already persists in handlers; decide enable/disable by testing OEM kills.
+- **Wake task:** SDK feature requires RN >= 0.76.5 with New Arch, durable inbound storage before `start()`, idempotency and prompt resolution (`SDK_INTEGRATION.md` §7). Muster already persists in handlers; decide enable/disable by testing OEM kills.
 - **Sync correctness:** convergence is defined as "for every member M and doc D, my projected state equals M's authoritative doc state as last received"; the UI shows per-member freshness rather than a global "synced".
 - **Backpressure:** cap pending ops and flush rate; drop-oldest for Live, never for State.
 - **Data safety:** DB integrity check at start, backup/restore of migrations, safe-mode on failure (read-only with export).

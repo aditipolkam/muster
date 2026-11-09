@@ -1,6 +1,6 @@
 # Mesh Protocol (application layer)
 
-This is TrailMesh's own protocol, carried by the Offline Protocol SDK. The SDK has no group-scoped pub/sub (`SDK_INTEGRATION.md` §4), so TrailMesh defines logical topics and maps each to an SDK primitive ("lane").
+This is Muster's own protocol, carried by the Offline Protocol SDK. The SDK has no group-scoped pub/sub (`SDK_INTEGRATION.md` §4), so Muster defines logical topics and maps each to an SDK primitive ("lane").
 
 Everything here is application convention. It is versioned so devices on different builds can detect incompatibility.
 
@@ -100,7 +100,7 @@ Phase 3 carries groups and meeting points on the same service-subscription layer
 sequenceDiagram
   participant J as Joiner
   participant O as Organizer
-  O->>O: invitation QR: trailmesh://join?v=1&g=GROUP&o=ADDR&t=TOKEN&n=NAME
+  O->>O: invitation QR: muster://join?v=1&g=GROUP&o=ADDR&t=TOKEN&n=NAME
   J->>J: scan (or paste) the link; enter name
   J->>O: subscribeService(O, tm.group.1, tm/1/GROUP/j/TOKEN)
   O->>O: service_subscribe_received: check token hash, expiry, single use (or nearby window)
@@ -130,7 +130,7 @@ sequenceDiagram
 
 ## 3. State lane documents
 
-DataStore: `docId` per document; collections of types `map | list | text | counter`; a `map` value is one of null/bool/int/float/text/bytes/attachment. TrailMesh stores **JSON in `text` values** validated by zod on read.
+DataStore: `docId` per document; collections of types `map | list | text | counter`; a `map` value is one of null/bool/int/float/text/bytes/attachment. Muster stores **JSON in `text` values** validated by zod on read.
 
 Flush rules: after local edits, `flush(spaceId, docId)` throttled to <= ~2/s and once when editing stops; `data_changed` fires after durability. `setInterest(spaceId, ['m.*','group'])` is called before `start()` each launch (<= 32 patterns). [SDK data.md]
 
@@ -212,7 +212,7 @@ Ordering: events are shown ordered by receive time within a sender-`ts` window; 
 sequenceDiagram
   participant J as Joiner
   participant A as Admin
-  A->>A: show QR: trailmesh://join?v=1&a=ADDR&t=TOKEN&n=NAME
+  A->>A: show QR: muster://join?v=1&a=ADDR&t=TOKEN&n=NAME
   J->>J: scan QR (verifies admin address out-of-band)
   J->>A: sendConnectionRequest(recipient=ADDR, senderName, initialMessage={t:TOKEN, name, appV})
   A->>A: validate token (hash, expiry, single group), appV >= minAppVersion

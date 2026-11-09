@@ -2,7 +2,7 @@
 
 Companion to `ARCHITECTURE.md`, `MESH_PROTOCOL.md` (section 10), `DATA_MODELS.md` (Phase 7) and `DESIGN_SYSTEM.md` (section 14). Feature list: `GAMIFICATION_FEATURES.md`. Status and open items: `GAMIFICATION_PROGRESS.md`. Evidence: `GAMIFICATION_TEST_REPORT.md`.
 
-TrailMesh stays a navigation and coordination tool first. Adventures add a shared plan (checkpoints), a personal record (time, distance, route) and a small set of milestones. Nothing here needs a network, a backend, a new native module or a change to the SDK.
+Muster stays a navigation and coordination tool first. Adventures add a shared plan (checkpoints), a personal record (time, distance, route) and a small set of milestones. Nothing here needs a network, a backend, a new native module or a change to the SDK.
 
 ## 1. Layers
 
@@ -102,7 +102,7 @@ Definitions are typed constants (`ACHIEVEMENTS`, 13 badges: id, name, descriptio
 
 **Qualifying.** Pressing Start then Finish must not earn anything. An adventure counts when this person reached at least one checkpoint, or ran at least 20 minutes and recorded at least 300 m. Distance is a gate against an empty trip, not a reward. Cancelled adventures never count.
 
-**What "no network use" means.** App code that uses the network is limited to `features/maps-manager` (CLAUDE.md rule 6). The HTTP client is wrapped so any request marks the adventures running at that moment, and the map marks them while it streams the online map ("Online map · not saved"). This proves TrailMesh did not use the network. It does **not** prove the phone had no signal, and the badge copy says "TrailMesh used no network".
+**What "no network use" means.** App code that uses the network is limited to `features/maps-manager` (CLAUDE.md rule 6). The HTTP client is wrapped so any request marks the adventures running at that moment, and the map marks them while it streams the online map ("Online map · not saved"). This proves Muster did not use the network. It does **not** prove the phone had no signal, and the badge copy says "Muster used no network".
 
 **Honesty.** Badges are computed on the phone from the person's own records. The screen says so and the app never calls them verified. Rally Point and Mesh Connected rest on a *received* message or acknowledgment, never on a successful publish call.
 
@@ -111,7 +111,7 @@ Definitions are typed constants (`ACHIEVEMENTS`, 13 badges: id, name, descriptio
 - Joining an adventure is opt-in per person; planning one for a group does not enrol anyone. **No position is ever published.** Arrivals carry the checkpoint id, a time and a method, nothing else (tested: the stored envelope contains no `lat`/`lon`). Checkpoint coordinates are shared with the group only for group adventures, as places the organizer chose.
 - The route, distance, notes and journal never leave the device. There is no export and no group-visible history.
 - No leaderboards, no ranking, no streaks, no currency, no speed or pace statistic. Distance and time appear in the recap as facts, not scores.
-- Checkpoint screens carry a safety note (choose safe, public, accessible places; TrailMesh does not know about closures, land access, weather or terrain; turn back if conditions change). The app cannot know which places are unsafe or restricted offline, and says so instead of pretending to.
+- Checkpoint screens carry a safety note (choose safe, public, accessible places; Muster does not know about closures, land access, weather or terrain; turn back if conditions change). The app cannot know which places are unsafe or restricted offline, and says so instead of pretending to.
 - Logs never contain coordinates (CLAUDE.md rule 8); rejected messages are logged by reason and short address only.
 - No telemetry (rule 9); `enableTelemetry` is not called.
 

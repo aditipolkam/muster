@@ -26,7 +26,7 @@ const LINK_REFRESH_MS = 1000;
 /** Config per docs/SDK_INTEGRATION.md section 11, minus Wi-Fi Direct (Phase 2 is BLE only). */
 export function buildProtocolConfig(): ProtocolConfig {
   return {
-    appId: 'app.trailmesh',
+    appId: 'app.muster',
     profile: 'main',
     network: { initialTtl: 8 },
     transports: {

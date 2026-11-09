@@ -46,7 +46,7 @@ export const formatTime = (ms: number): string =>
   new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
 export const SAFETY_NOTE =
-  'A checkpoint is only a place you chose. TrailMesh does not know about closures, private land, weather or terrain. Pick safe, public, accessible places, stay on marked paths and turn back if conditions change.';
+  'A checkpoint is only a place you chose. Muster does not know about closures, private land, weather or terrain. Pick safe, public, accessible places, stay on marked paths and turn back if conditions change.';
 
 export const PHASE_ICON: Record<PhaseType, IconName> = {
   checkpoint: 'pin',

@@ -12,7 +12,7 @@ export const config = {
   /** Bundled catalog URLs were generated against this base; rewritten to the dev host in debug. */
   bundledCatalogBase: 'http://localhost:8787',
   devHost,
-  dbName: 'trailmesh.db',
+  dbName: 'muster.db',
 } as const;
 
 /**
