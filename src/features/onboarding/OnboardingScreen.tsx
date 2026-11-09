@@ -95,7 +95,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
         <View style={styles.brand}>
           <AppLogo size={72} />
           <Text variant="hero" color={c.text} accessibilityRole="header">
-            TrailMesh
+            Muster
           </Text>
           <Text color={c.text} style={styles.tagline}>
             Find each other on the trail, even with no signal.

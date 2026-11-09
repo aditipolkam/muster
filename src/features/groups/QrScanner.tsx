@@ -22,8 +22,7 @@ export function QrScanner({
     return (
       <View style={{ gap: space.sm }}>
         <Text>
-          TrailMesh needs the camera only to read an invitation QR code. Nothing is recorded or
-          sent.
+          Muster needs the camera only to read an invitation QR code. Nothing is recorded or sent.
         </Text>
         <Button label="Allow camera" onPress={() => void request()} testID="camera-allow" />
         <Button variant="ghost" label="Cancel" onPress={onCancel} />

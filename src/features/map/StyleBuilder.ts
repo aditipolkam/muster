@@ -114,7 +114,7 @@ export function buildStyle(
 
   return {
     version: 8,
-    name: 'trailmesh',
+    name: 'muster',
     glyphs: `${input.styleRoot}fonts/{fontstack}/{range}.pbf`,
     sprite: `${input.styleRoot}sprites/${input.flavor ?? 'light'}/sprite`,
     sources,

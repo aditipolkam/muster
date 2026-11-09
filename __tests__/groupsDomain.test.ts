@@ -282,21 +282,34 @@ describe('invites', () => {
     expect(parsed).toEqual({ ok: true, invite });
   });
 
+  it('makes muster:// links and still reads invitations from before the rename', () => {
+    const invite = {
+      groupId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      organizer: 'off1abcdef',
+      token: generateToken(rng(4)),
+      groupName: 'Ridge walk',
+    };
+    const link = buildInviteLink(invite);
+    expect(link.startsWith('muster://join?')).toBe(true);
+    const legacy = link.replace('muster://', 'trailmesh://');
+    expect(parseInviteLink(legacy)).toEqual({ ok: true, invite });
+  });
+
   it('rejects text that is not a valid invite', () => {
     expect(parseInviteLink('https://example.com')).toEqual({ ok: false, error: 'not_an_invite' });
-    expect(parseInviteLink('trailmesh://join?v=2&g=a&o=b&t=c&n=d')).toEqual({
+    expect(parseInviteLink('muster://join?v=2&g=a&o=b&t=c&n=d')).toEqual({
       ok: false,
       error: 'unsupported_version',
     });
-    expect(parseInviteLink('trailmesh://join?v=1&g=a&o=b&t=short&n=d')).toEqual({
+    expect(parseInviteLink('muster://join?v=1&g=a&o=b&t=short&n=d')).toEqual({
       ok: false,
       error: 'malformed',
     });
-    expect(parseInviteLink('trailmesh://join?v=1&g=%E0%A4%A&o=b&t=c&n=d')).toEqual({
+    expect(parseInviteLink('muster://join?v=1&g=%E0%A4%A&o=b&t=c&n=d')).toEqual({
       ok: false,
       error: 'malformed',
     });
-    expect(parseInviteLink('trailmesh://join?garbage')).toEqual({ ok: false, error: 'malformed' });
+    expect(parseInviteLink('muster://join?garbage')).toEqual({ ok: false, error: 'malformed' });
   });
 
   it('checks expiry, revocation, group and single use', () => {

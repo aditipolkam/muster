@@ -96,7 +96,7 @@ export function buildInviteLink(i: Invite): string {
     `t=${encodeURIComponent(i.token)}`,
     `n=${encodeURIComponent(i.groupName)}`,
   ];
-  return `trailmesh://join?${q.join('&')}`;
+  return `muster://join?${q.join('&')}`;
 }
 
 export type InviteParseError = 'not_an_invite' | 'unsupported_version' | 'malformed';
@@ -105,7 +105,8 @@ export type InviteParseError = 'not_an_invite' | 'unsupported_version' | 'malfor
 export function parseInviteLink(
   text: string,
 ): { ok: true; invite: Invite } | { ok: false; error: InviteParseError } {
-  const m = /^trailmesh:\/\/join\?(.*)$/.exec(text.trim());
+  // Invitations made before the rename (TrailMesh) use the old scheme; keep reading them.
+  const m = /^(?:muster|trailmesh):\/\/join\?(.*)$/.exec(text.trim());
   if (!m || m[1] === undefined) {
     return { ok: false, error: 'not_an_invite' };
   }

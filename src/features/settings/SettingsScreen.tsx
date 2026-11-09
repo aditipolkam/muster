@@ -98,7 +98,7 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
             />
           ) : null}
           <Text variant="caption" muted>
-            TrailMesh only reads your location while the app is open. It is never sent anywhere.
+            Muster only reads your location while the app is open. It is never sent anywhere.
           </Text>
         </Card>
 
@@ -278,7 +278,7 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <AppLogo size={44} />
-            <Text variant="heading">TrailMesh {APP_VERSION}</Text>
+            <Text variant="heading">Muster {APP_VERSION}</Text>
           </View>
           <Text>{OSM_ATTRIBUTION}</Text>
           <Text variant="caption" muted>

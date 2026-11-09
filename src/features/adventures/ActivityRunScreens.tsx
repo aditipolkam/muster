@@ -120,7 +120,7 @@ function Overview({
           : 'Do the phases in any order.',
         'Your timer starts when you press Start and stops when you finish your last phase.',
         'Photos and notes stay on your phone.',
-        'Choose safe, public, accessible places. TrailMesh does not know about closures, weather or terrain: turn back if conditions change.',
+        'Choose safe, public, accessible places. Muster does not know about closures, weather or terrain: turn back if conditions change.',
       ].join('\n\n'),
     );
 
@@ -856,7 +856,7 @@ export function ActivityCompletedScreen({ navigation, route }: Nav<'ActivityComp
             label="Share"
             onPress={() =>
               void Share.share({
-                message: `I finished "${a.name}" on TrailMesh: ${clockText(
+                message: `I finished "${a.name}" on Muster: ${clockText(
                   duration,
                 )}, ${done} of ${total} phases.`,
               })

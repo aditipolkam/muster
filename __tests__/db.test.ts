@@ -150,7 +150,7 @@ describe('repositories', () => {
 
 describe('persistence across restarts (real SQLite file)', () => {
   it('markers, regions and kv survive closing and reopening the database', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'trailmesh-'));
+    const dir = mkdtempSync(join(tmpdir(), 'muster-'));
     const path = join(dir, 't.db');
     try {
       const db1 = openNodeSqlite(path);

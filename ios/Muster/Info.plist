@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>TrailMesh</string>
+	<string>Muster</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -28,9 +28,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>app.trailmesh</string>
+			<string>app.muster</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>muster</string>
 				<string>trailmesh</string>
 			</array>
 		</dict>
@@ -45,18 +46,18 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>TrailMesh uses the camera only to scan a group invitation QR code. Nothing is recorded or sent.</string>
+	<string>Muster uses the camera only to scan a group invitation QR code. Nothing is recorded or sent.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>TrailMesh uses Bluetooth to find and talk to other TrailMesh phones nearby, with no internet. Nothing is sent to a server.</string>
+	<string>Muster uses Bluetooth to find and talk to other Muster phones nearby, with no internet. Nothing is sent to a server.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>TrailMesh uses Bluetooth to let nearby TrailMesh phones find this one, with no internet.</string>
+	<string>Muster uses Bluetooth to let nearby Muster phones find this one, with no internet.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
 		<string>bluetooth-peripheral</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>TrailMesh shows your position on the offline map and measures the distance to your saved places. Your location stays on this device.</string>
+	<string>Muster shows your position on the offline map and measures the distance to your saved places. Your location stays on this device.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

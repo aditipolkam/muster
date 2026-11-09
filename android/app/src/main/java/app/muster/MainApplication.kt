@@ -1,4 +1,4 @@
-package app.trailmesh
+package app.muster
 
 import android.app.Application
 import android.content.res.Configuration
