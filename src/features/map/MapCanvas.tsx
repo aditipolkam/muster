@@ -42,6 +42,8 @@ type Props = {
   onMapPress: (lngLat: [number, number]) => void;
   /** Straight guidance line to the navigation target, and the temporary pin it points at. */
   guide: FeatureCollection;
+  /** Walking route along the paths (solid orange), when one was found. */
+  trail?: FeatureCollection;
   pin: FeatureCollection;
   /** The offline map region being chosen for a phase, as a rectangle. */
   regionBox: FeatureCollection;
@@ -49,6 +51,8 @@ type Props = {
   onStyleLoaded: () => void;
   onLoadFailed: () => void;
 };
+
+const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 /** All MapLibre-specific rendering. Kept separate so MapScreen can be tested with a mocked module. */
 export function MapCanvas(p: Props) {
@@ -95,6 +99,21 @@ export function MapCanvas(p: Props) {
         minZoom={0}
         maxZoom={19}
       />
+
+      <GeoJSONSource id="trail-route" data={p.trail ?? EMPTY}>
+        <Layer
+          id="trail-route-casing"
+          type="line"
+          layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+          paint={{ 'line-color': WHITE, 'line-width': 9, 'line-opacity': 0.9 }}
+        />
+        <Layer
+          id="trail-route-line"
+          type="line"
+          layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+          paint={{ 'line-color': MEETING, 'line-width': 5 }}
+        />
+      </GeoJSONSource>
 
       <GeoJSONSource id="guide-line" data={p.guide}>
         <Layer

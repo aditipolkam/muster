@@ -12,6 +12,16 @@ import { Fix, usableHeading } from '../../domain/location/fix';
 import { Badge, Text } from '../../ui/components';
 import { floating, radius, space, tabular, useTheme } from '../../ui/theme';
 import { DirectionTile, NavControls, NavView } from '../../ui/trail';
+import type { RouteFailure } from '../../domain/routing/router';
+
+/** Why there is no trail route, in plain words (shown under the straight-line chip). */
+export const NO_ROUTE_TEXT: Record<RouteFailure, string> = {
+  no_map: 'Download the map of this area to get a trail route.',
+  too_far: 'Too far for a trail route (over 15 km).',
+  off_network: 'No path within 250 m of you or the destination.',
+  no_route: "The paths here don't connect to the destination.",
+  error: 'The trail route could not be worked out.',
+};
 
 export type NavTarget = {
   name: string;
@@ -32,6 +42,7 @@ export function NavigationBar({
   heading,
   units,
   paceKmh,
+  trail,
   top,
   bottom,
   onView,
@@ -42,14 +53,23 @@ export function NavigationBar({
   heading: number | null;
   units: Units;
   paceKmh: number;
+  /** A walking route was found (metres left along it, and a point a little ahead), or is being looked for. */
+  trail?:
+    | { remainingM: number; ahead: { lat: number; lon: number } }
+    | 'finding'
+    | { none: RouteFailure }
+    | null;
   top: number;
   bottom: number;
   onView: (v: NavView) => void;
   onEnd: () => void;
 }) {
   const { c } = useTheme();
-  const dist = fix ? distanceM(fix, target) : null;
-  const brg = fix ? bearingDeg(fix, target) : null;
+  const route = trail && trail !== 'finding' && 'remainingM' in trail ? trail : null;
+  const noRoute = trail && trail !== 'finding' && 'none' in trail ? trail.none : null;
+  // Along the route: distance left on it, and head for the next stretch of path.
+  const dist = route ? route.remainingM : fix ? distanceM(fix, target) : null;
+  const brg = fix ? bearingDeg(fix, route ? route.ahead : target) : null;
   const h = usableHeading(heading);
   const minutes = etaMinutes(dist, paceKmh);
   return (
@@ -71,9 +91,26 @@ export function NavigationBar({
             </Text>
           </View>
         </View>
-        <View style={{ alignSelf: 'flex-start' }}>
-          <Badge tone="warn" icon="warning" label="Straight line, not a trail route" />
+        <View style={{ alignSelf: 'flex-start' }} testID="nav-route-kind">
+          {route ? (
+            <Badge
+              tone="good"
+              icon="trail"
+              label={`Via trail · ${formatDistanceIn(route.remainingM, units)}`}
+            />
+          ) : trail === 'finding' ? (
+            <Badge icon="trail" label="Looking for a trail route…" />
+          ) : (
+            <Badge tone="warn" icon="warning" label="Straight line, not a trail route" />
+          )}
         </View>
+        {noRoute ? (
+          <View style={[styles.reason, { backgroundColor: c.surface, borderColor: c.border }]}>
+            <Text variant="label" muted testID="nav-route-reason">
+              {NO_ROUTE_TEXT[noRoute]}
+            </Text>
+          </View>
+        ) : null}
       </View>
       <View
         style={[
@@ -111,6 +148,13 @@ const styles = StyleSheet.create({
     gap: space.md,
     padding: space.md,
     borderRadius: radius.card,
+  },
+  reason: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: space.md,
+    paddingVertical: space.xs,
+    borderRadius: radius.md,
+    borderWidth: 1,
   },
   panel: {
     position: 'absolute',

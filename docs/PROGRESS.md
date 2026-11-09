@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-11-09 (trail UI redesign)
+Last updated: 2026-11-09 (offline routing experiment)
 
 ## Status
 
@@ -237,6 +237,7 @@ Run `docs/GROUPS_VERIFICATION.md`, record A-19 to A-24 and fill the device log. 
 |---|---|
 | 2026-10-30 | Phase 0 complete. Inspected `offline-protocol-sdk` 0.31.0 (read-only). Key findings: no group-scoped pub/sub in the SDK (ADR 0036 unimplemented), service subscriptions exist but ADR 0035 is "Proposed", DataStore CRDT documents are the best fit for shared state, SDK licence is AGPL-3.0/commercial. Researched MapLibre RN v11.5.1, PMTiles, OSM tile policies. Nothing built or installed. `offline-protocol-sdk` not modified |
 
+| 2026-11-09 | Offline walking routes, experiment (ADR 0015), branch `experiment/offline-routing` off `redesign/trail-ui`: graph from the `roads` lines of the downloaded PMTiles, tile-edge clipping and 4 m snapping, A*, orange "Via trail" route in navigation with a straight-line fallback. 14 unit tests (`routing.test.tsx`) + an opt-in run on real regions (`routingRealRegion.test.ts`); 662 pass. Node only: **not run in Hermes, a simulator or on a device** |
 | 2026-11-09 | Trail UI redesign (ADR 0014), branch `redesign/trail-ui`: tokens in `src/ui/theme.tsx`, four tabs with a soft-green active pill, Compass inside navigation (Map \| Compass, shared `navSession` store, tab bar hidden while navigating or placing a pin), orange flag meeting pins, new meeting sheet, navigating card, set meeting point steps 1 and 2, redesigned groups list, group page and group info; follower Acknowledge removed from the UI (pub/sub). UI only: no mesh, SDK, data model or protocol change. typecheck, lint (0 errors), 648 Jest tests and the iOS JS bundle pass. **Not checked in a simulator or on a device** (a native build first needs `pod install` for `expo-image-picker`) |
 | 2026-11-09 | Group trip map (ADR 0013): the organizer chooses one area on the map in Group info; it is sent in each person's welcome (`rg`, optional, no new message) and locked once someone joins. Members get a Download card, a banner on the group page and a "Map not downloaded" badge until a downloaded map covers it. Migration 7. `MapArea` moved to `domain/maps/mapArea.ts`; one `useAreaDownload` hook for the trip map and activities. 20 new tests (`groupsTripMap`, `groupsScreens`, `pickLocation`); 645 pass. **Not checked on a device or in a simulator** |
 | 2026-11-01 | Online map while no downloaded region covers the view (remote planet PMTiles, assumption A-25 **unverified on device**) and online place search (Nominatim, dev only) feeding the download sheet. CLAUDE.md rule 6 amended with this exception |
@@ -319,4 +320,25 @@ What changed, per screen (UI only; ADR 0014):
 - Manrope is not bundled (system font; one line in the theme once the font files are added).
 
 **Not verified**: none of this has been looked at in a simulator or on a device. In particular the flag pin anchoring (`Marker` offset), the fixed centre pin in step 1, the heading-up dial on a real compass and the hidden tab bar need a look.
+
+## Offline routing experiment (2026-11-09)
+
+ADR 0015. Routes from the paths already inside the downloaded map tiles; no new download, no network.
+
+Real regions (`tools/region-builder/out`, Protomaps build 2026-10-29), Node 22 on this Mac, `ROUTING_REAL=1 node --expose-gc node_modules/.bin/jest __tests__/routingRealRegion.test.ts`:
+
+| Route | Straight | Via trail | Zoom, tiles | Graph nodes | Read + decode | Build | A* |
+|---|---:|---:|---|---:|---:|---:|---:|
+| Grasmere to Easedale Tarn | 2.15 km | 2.90 km | z15, 18 | 3,433 | 29 ms | 33 ms | 5 ms |
+| Ambleside to Grasmere | 4.97 km | 6.49 km | z15, 109 | 23,561 | 137 ms | 227 ms | 21 ms |
+| Seathwaite to Scafell Pike | 5.40 km | 6.93 km | z15, 120 | 15,589 | 97 ms | 96 ms | 12 ms |
+| Old Dungeon Ghyll to Scafell Pike | 7.19 km | 9.35 km | z15, 169 | 22,335 | 151 ms | 139 ms | 13 ms |
+| Keswick to Buttermere | 11.31 km | 14.38 km | z15, 534 | 63,788 | 341 ms | 531 ms | 40 ms |
+| Glen Nevis to Ben Nevis summit | 5.33 km | 9.73 km | z14, 27 | 8,212 | 23 ms | 144 ms | 10 ms |
+
+Memory (V8 heap, decoded tiles plus graph held): about 15 MB for Ambleside to Grasmere, 26 MB for Keswick to Buttermere. Rendered over the graph, the Ben Nevis route follows the Mountain Track zig-zags and Seathwaite to Scafell goes up Grains Gill, the usual lines.
+
+Found while testing: the nearest node to an end can sit on a short, cut-off path beside a road (Ambleside start next to the A591, a trunk road): fixed by joining both ends to the same connected piece and allowing trunk roads at a high cost.
+
+Not verified: Hermes timing (no JIT, expect several times slower; the build runs on the JS thread), drawing on the device map, rerouting while walking, Android. Assumption `[ASSUMPTION A-35]`: building the graph for a route under about 8 km takes under 2 s in Hermes on a 2022 phone.
 
