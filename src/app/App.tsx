@@ -5,10 +5,10 @@ import {
   NavigationContainer,
   useNavigationContainerRef,
 } from '@react-navigation/native';
-import { BottomTabBarButtonProps, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StatusBar, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   CreateGroupScreen,
@@ -47,11 +47,12 @@ import {
   RootTabParamList,
 } from '../runtime/navigation';
 import { bindMeshToAppState } from '../runtime/meshLifecycle';
+import { useNavSession } from '../runtime/navSession';
 import { Services, ServicesProvider, useServices } from '../runtime/services';
 import { createLogger } from '../shared/logger';
 import { perf } from '../shared/perf';
 import { Banner, Icon, IconName, Text } from '../ui/components';
-import { ThemeProvider, useTheme } from '../ui/theme';
+import { size, ThemeProvider, useTheme } from '../ui/theme';
 import { bootstrap } from './bootstrap';
 
 const log = createLogger('app');
@@ -103,44 +104,41 @@ function ProfileNavigator() {
   );
 }
 
-const tabIcon =
-  (name: IconName) =>
-  ({ color, focused }: { color: string; focused: boolean }) =>
-    <Icon name={name} size={24} color={color} filled={focused} />;
-
-/** The Map tab is a raised, filled button in the middle of the bar; the app opens on Groups. */
-function MapTabButton(props: BottomTabBarButtonProps) {
-  const { onPress, testID } = props;
+/**
+ * Tab icon: the active tab sits in a 56x30 soft-green pill with the icon in the primary colour.
+ * The label (bold when active) comes from the navigator.
+ */
+function TabIcon({ name, focused }: { name: IconName; focused: boolean }) {
   const { c } = useTheme();
-  // React Navigation 7 reports the selected tab as `aria-selected`.
-  const focused = !!props['aria-selected'];
   return (
-    <Pressable
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityLabel="Map"
-      accessibilityState={{ selected: focused }}
-      onPress={onPress}
-      style={styles.mapSlot}
+    <View
+      style={[styles.tabPill, { backgroundColor: focused ? c.primarySoft : 'transparent' }]}
+      accessibilityElementsHidden
     >
-      <View
-        style={[
-          styles.mapOrb,
-          {
-            backgroundColor: focused ? c.primary : c.deep,
-            borderColor: c.bg,
-            shadowColor: c.primary,
-          },
-        ]}
-      >
-        <Icon name="map" size={28} color={c.onPrimary} filled />
-      </View>
-      <Text variant="label" color={focused ? c.primary : c.textMuted} style={styles.mapLabel}>
-        Map
-      </Text>
-    </Pressable>
+      <Icon name={name} size={22} color={focused ? c.primary : c.textMuted} filled={focused} />
+    </View>
   );
 }
+
+function TabLabel({ focused, children }: { focused: boolean; children: string }) {
+  const { c } = useTheme();
+  return (
+    <Text
+      variant="label"
+      color={focused ? c.text : c.textMuted}
+      style={{ fontWeight: focused ? '800' : '600', marginTop: 2 }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+const renderTabLabel = (p: { focused: boolean; children: string }) => <TabLabel {...p} />;
+
+const tabIcon =
+  (name: IconName) =>
+  ({ focused }: { focused: boolean }) =>
+    <TabIcon name={name} focused={focused} />;
 
 const linking: LinkingOptions<RootTabParamList> = {
   prefixes: ['trailmesh://'],
@@ -176,10 +174,8 @@ const linking: LinkingOptions<RootTabParamList> = {
 };
 
 function Shell() {
-  const { c, dark } = useTheme();
-  const insets = useSafeAreaInsets();
   const navRef = useNavigationContainerRef<RootTabParamList>();
-  const [tab, setTab] = useState<string | undefined>('Groups');
+  const [tab, setTab] = useState<string | undefined>('Map');
   const { mesh, kv } = useServices();
   useEffect(() => bindMeshToAppState(mesh), [mesh]);
   // null = still reading the flag; the first launch shows onboarding once.
@@ -201,6 +197,22 @@ function Shell() {
       />
     );
   }
+  return <Tabs navRef={navRef} tab={tab} setTab={setTab} />;
+}
+
+function Tabs({
+  navRef,
+  tab,
+  setTab,
+}: {
+  navRef: ReturnType<typeof useNavigationContainerRef<RootTabParamList>>;
+  tab: string | undefined;
+  setTab: (t: string | undefined) => void;
+}) {
+  const { c, dark } = useTheme();
+  const insets = useSafeAreaInsets();
+  // Navigating, or placing a pin on the map, is full screen: no tab bar.
+  const hideTabs = useNavSession(s => !!s.target || s.picking);
   const base = dark ? DarkTheme : DefaultTheme;
   return (
     <NavigationContainer
@@ -220,43 +232,32 @@ function Shell() {
       }}
     >
       <Tab.Navigator
-        initialRouteName="Groups"
-        screenOptions={{
+        initialRouteName="Map"
+        screenOptions={({ route }) => ({
           headerShown: false,
-          tabBarActiveTintColor: c.primary,
+          tabBarActiveTintColor: c.text,
           tabBarInactiveTintColor: c.textMuted,
-          tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
-          tabBarStyle: {
-            backgroundColor: c.surface,
-            borderTopColor: c.border,
-            height: 62 + insets.bottom,
-            paddingTop: 6,
-            paddingBottom: insets.bottom > 0 ? insets.bottom - 4 : 8,
-          },
+          tabBarLabel: renderTabLabel,
+          tabBarStyle: hideTabs
+            ? { display: 'none' }
+            : {
+                backgroundColor: c.surface,
+                borderTopColor: c.border,
+                height: 68 + insets.bottom,
+                paddingTop: 8,
+                paddingBottom: insets.bottom > 0 ? insets.bottom - 4 : 10,
+              },
+          // Compass is not a tab: it is reached from a meeting point or while navigating.
+          ...(route.name === 'Navigate'
+            ? { tabBarButton: () => null, tabBarItemStyle: { display: 'none' } }
+            : null),
           lazy: false,
-        }}
+        })}
       >
-        <Tab.Screen
-          name="Navigate"
-          component={NavigateScreen}
-          options={{
-            title: 'Compass',
-            tabBarIcon: tabIcon('compass'),
-            tabBarButtonTestID: 'tab-navigate',
-          }}
-        />
-        <Tab.Screen
-          name="Activity"
-          component={ActivityNavigator}
-          options={{ tabBarIcon: tabIcon('trail'), tabBarButtonTestID: 'tab-activity' }}
-        />
         <Tab.Screen
           name="Map"
           component={MapScreen}
-          options={{
-            tabBarButton: MapTabButton,
-            tabBarButtonTestID: 'tab-map',
-          }}
+          options={{ tabBarIcon: tabIcon('map'), tabBarButtonTestID: 'tab-map' }}
         />
         <Tab.Screen
           name="Groups"
@@ -268,10 +269,16 @@ function Shell() {
           }}
         />
         <Tab.Screen
+          name="Activity"
+          component={ActivityNavigator}
+          options={{ tabBarIcon: tabIcon('trail'), tabBarButtonTestID: 'tab-activity' }}
+        />
+        <Tab.Screen
           name="Profile"
           component={ProfileNavigator}
           options={{ tabBarIcon: tabIcon('profile'), tabBarButtonTestID: 'tab-profile' }}
         />
+        <Tab.Screen name="Navigate" component={NavigateScreen} options={{ title: 'Compass' }} />
       </Tab.Navigator>
       <AdventureToastHost
         tab={tab}
@@ -326,21 +333,13 @@ function Root() {
 }
 
 const styles = StyleSheet.create({
-  mapSlot: { flex: 1, alignItems: 'center', justifyContent: 'flex-start' },
-  mapOrb: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    marginTop: -22,
-    borderWidth: 4,
+  tabPill: {
+    width: size.tabPillW,
+    height: size.tabPillH,
+    borderRadius: size.tabPillH / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
   },
-  mapLabel: { marginTop: 2, fontWeight: '600' },
 });
 
 export default function App() {
