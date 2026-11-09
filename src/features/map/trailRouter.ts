@@ -33,6 +33,7 @@ export function createTrailRouter(fs: FilePort, regions: RegionRecord[]): Router
         )
         .sort((a, b) => b.maxZoom - a.maxZoom)[0];
       if (!region?.filePath) {
+        log.info(`no downloaded region holds both ends (${regions.length} regions on this phone)`);
         return { ok: false, reason: 'no_map' };
       }
       const uri = region.filePath;
@@ -93,6 +94,12 @@ export function useTrailRoute(
       if (my !== token.current) {
         return;
       }
+      // No coordinates in logs (CLAUDE.md rule 8): only the outcome and the graph size.
+      log.info(
+        r.ok
+          ? `trail route: ${Math.round(r.distanceM)} m, ${JSON.stringify(r.stats)}`
+          : `no trail route: ${r.reason}${r.stats ? ` ${JSON.stringify(r.stats)}` : ''}`,
+      );
       if (r.ok) {
         const p = routeProgress(r.coords, from);
         setState({ status: 'ok', route: r, remainingM: p.remainingM, ahead: p.ahead });

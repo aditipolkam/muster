@@ -1005,6 +1005,8 @@ export function MapScreen({ navigation, route }: Props) {
               ? { remainingM: trail.remainingM, ahead: trail.ahead }
               : trail.status === 'finding'
               ? 'finding'
+              : trail.status === 'none'
+              ? { none: trail.reason }
               : null
           }
           top={insets.top + space.sm}
