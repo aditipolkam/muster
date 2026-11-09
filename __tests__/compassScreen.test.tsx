@@ -5,6 +5,7 @@ import type { Group, MeetingPoint } from '../src/domain/groups/model';
 import { NavigateScreen } from '../src/features/navigate/NavigateScreen';
 import { MY_PLACES, targetSections } from '../src/features/navigate/targets';
 import { useLocationStore } from '../src/platform/locationStore';
+import { useNavSession } from '../src/runtime/navSession';
 import { Harness } from '../src/testing/componentHarness';
 import { makeTestServices } from '../src/testing/services';
 
@@ -72,10 +73,12 @@ describe('Compass screen', () => {
     expect(screen.getByTestId('compass-heading').props.children).toBe('–');
     act(() => useLocationStore.setState({ headingDeg: 90 }));
     expect(screen.getByTestId('compass-heading').props.children).toBe('90°');
-    // north stays north: the dial turns against the heading
-    expect(StyleSheet.flatten(screen.getByTestId('compass-dial').props.style).transform).toEqual([
-      { rotate: '-90deg' },
-    ]);
+    // Heading-up: facing east, N moves to the left of the ring; the letters are never rotated.
+    const n = StyleSheet.flatten(screen.getByTestId('dial-N').props.style);
+    const e = StyleSheet.flatten(screen.getByTestId('dial-E').props.style);
+    expect(n.left).toBeLessThan(e.left);
+    expect(e.top).toBeLessThan(n.top);
+    expect(n.transform).toBeUndefined();
   });
 
   it('shows distance and bearing to a saved place from a deep link', async () => {
@@ -83,9 +86,24 @@ describe('Compass screen', () => {
     const m = await t.points.create({ name: 'Hut', lat: 54.51, lon: -3.0 });
     render(ui(t, { markerId: m.id }));
     expect(await screen.findByTestId('nav-distance')).toBeTruthy();
-    expect(screen.getByText('Hut')).toBeTruthy();
+    expect(screen.getAllByText('Hut').length).toBeGreaterThan(0);
+    expect(screen.getByText('Navigating to')).toBeTruthy();
     expect(screen.getByText(/Marked by you · 1\.11 km · N 0°/)).toBeTruthy();
     expect(screen.getByText('Straight line · terrain not considered')).toBeTruthy();
+    expect(screen.getByTestId('navigation-end')).toBeTruthy();
+  });
+
+  it('navigating: says which way to turn, and End navigation ends the shared session', async () => {
+    const t = await setup();
+    const m = await t.points.create({ name: 'Hut', lat: 54.51, lon: -3.0 });
+    render(ui(t, { markerId: m.id }));
+    await screen.findByTestId('nav-distance');
+    await waitFor(() => expect(useNavSession.getState().target?.name).toBe('Hut'));
+    act(() => useLocationStore.setState({ headingDeg: 300 }));
+    expect(within(screen.getByTestId('nav-turn')).getByText('Turn right about 60°')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('navigation-end'));
+    expect(useNavSession.getState().target).toBeNull();
+    expect(await screen.findByText('Compass only')).toBeTruthy();
   });
 
   it('the dropdown lists locations by group and by my places, and selecting one points at it', async () => {
