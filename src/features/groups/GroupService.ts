@@ -27,6 +27,7 @@ import {
   APP_PROTOCOL,
   Beacon,
   BeaconSchema,
+  canChangeTripArea,
   ClosedEventSchema,
   defaultMemberName,
   Group,
@@ -45,8 +46,10 @@ import {
   PointRemovedSchema,
   SyncPayloadSchema,
   WelcomeSchema,
+  welcomeArea,
   shortAddress,
 } from '../../domain/groups/model';
+import { MapArea, MapAreaWireSchema, toMapAreaWire } from '../../domain/maps/mapArea';
 import { createEnvelope, encodeEnvelope, Envelope } from '../../mesh/envelope';
 import {
   BEACON_TOPIC,
@@ -346,6 +349,38 @@ export class GroupService {
     return ok((await this.d.groups.get(group.id)) ?? group);
   }
 
+  /**
+   * Organizer: set, change or remove the group's trip map. Everyone who joins gets it in their
+   * welcome, so it is locked once someone else is in the group (a change would never reach them).
+   */
+  async setTripArea(groupId: string, area: MapArea | null): Promise<Result<void>> {
+    if (area && !MapAreaWireSchema.safeParse(toMapAreaWire(area)).success) {
+      return err(
+        appError(
+          'groups.invalid_area',
+          'That area is too large to download. Choose a smaller one.',
+        ),
+      );
+    }
+    const r = await this.enqueue(async (): Promise<Result<void>> => {
+      const group = await this.d.groups.get(groupId);
+      if (!group) {
+        return err(appError('groups.not_found', 'Group not found.'));
+      }
+      if (!canChangeTripArea(group, await this.d.groups.members(groupId), this.me)) {
+        return err(
+          appError(
+            'groups.trip_area_locked',
+            'The trip map cannot change once people have joined. They already have this one.',
+          ),
+        );
+      }
+      await this.d.groups.setTripArea(groupId, area);
+      return ok(undefined);
+    });
+    return r ?? err(appError('groups.save_failed', 'Could not save the trip map. Try again.'));
+  }
+
   // ---- invitations (organizer) ---------------------------------------------------------------
 
   async createInvite(
@@ -587,6 +622,7 @@ export class GroupService {
       name: group.name,
       o: group.organizer,
       mrev: group.memberRev,
+      ...(group.tripArea ? { rg: toMapAreaWire(group.tripArea) } : {}),
     });
   }
 
@@ -916,6 +952,7 @@ export class GroupService {
           status: 'active',
           joinedAt: now,
         });
+        await this.d.groups.setTripArea(group.id, welcomeArea(w.data));
         this.notice(`You joined "${w.data.name}"`);
         // The join topic has done its job; the group's own topics take over.
         await this.dropJoinSubs(group.id);

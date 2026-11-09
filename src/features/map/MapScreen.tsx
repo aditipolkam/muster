@@ -4,7 +4,7 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BBox } from '../../domain/geo';
+import { BBox, bboxCenter } from '../../domain/geo';
 import { fixToLatLon, gpsStatus } from '../../domain/location/fix';
 import {
   canTrackLocation,
@@ -67,6 +67,8 @@ import {
 const log = createLogger('map');
 const MAX_ACTIVE_REGIONS = 3;
 const FOLLOW_ZOOM = 15;
+/** A trip covers more ground than one phase: start the trip-map square at 10 km. */
+const TRIP_MAP_SIDE_KM = 10;
 /** A tap on a marker can also reach the map; ignore the map tap that follows it. */
 const FEATURE_TAP_GUARD_MS = 350;
 
@@ -131,13 +133,20 @@ export function MapScreen({ navigation, route }: Props) {
   // with a group. Either way the place goes back to the screen that asked.
   const phasePick = route.params?.pick ?? null;
   const meetingPick = route.params?.pickMeeting ?? null;
+  const tripPick = route.params?.pickTripMap ?? null;
   const pickReq = useMemo(
     () =>
       phasePick ??
       (meetingPick
         ? { includeRegion: false, region: null, lat: meetingPick.lat, lon: meetingPick.lon }
+        : tripPick
+        ? {
+            includeRegion: true,
+            region: tripPick.region ?? null,
+            ...(tripPick.region ? bboxCenter(tripPick.region) : {}),
+          }
         : null),
-    [phasePick, meetingPick],
+    [phasePick, meetingPick, tripPick],
   );
   const [pickStep, setPickStep] = useState<PickStep>('pin');
   const [pickPoint, setPickPoint] = useState<{ lat: number; lon: number } | null>(null);
@@ -146,6 +155,8 @@ export function MapScreen({ navigation, route }: Props) {
     ? `${phasePick.adventureId}|${phasePick.checkpointId ?? ''}|${route.params?.nonce ?? ''}`
     : meetingPick
     ? `meeting|${meetingPick.groupId}|${route.params?.nonce ?? ''}`
+    : tripPick
+    ? `trip|${tripPick.groupId}|${route.params?.nonce ?? ''}`
     : null;
   const pickRegion = useMemo(
     () =>
@@ -324,7 +335,11 @@ export function MapScreen({ navigation, route }: Props) {
     setPickStep('pin');
     setPickPoint(null);
     setPickSideKm(
-      pickReq.region ? Math.round(boxSideKm(pickReq.region).widthKm) : DEFAULT_REGION_SIDE_KM,
+      pickReq.region
+        ? Math.round(boxSideKm(pickReq.region).widthKm)
+        : tripPick
+        ? TRIP_MAP_SIDE_KM
+        : DEFAULT_REGION_SIDE_KM,
     );
     setSelectedId(null);
     setSelectedMeeting(null);
@@ -346,6 +361,17 @@ export function MapScreen({ navigation, route }: Props) {
 
   const returnToEditor = useCallback(
     (picked?: PickedLocation) => {
+      if (tripPick) {
+        navigation.setParams({ pickTripMap: undefined });
+        navigation.navigate('Groups', {
+          screen: 'GroupInfo',
+          params: {
+            groupId: tripPick.groupId,
+            pickedArea: picked?.region ? { bbox: picked.region, nonce: picked.nonce } : undefined,
+          },
+        });
+        return;
+      }
       if (meetingPick) {
         navigation.setParams({ pickMeeting: undefined });
         navigation.navigate('Groups', {
@@ -371,7 +397,7 @@ export function MapScreen({ navigation, route }: Props) {
         },
       });
     },
-    [navigation, phasePick, meetingPick],
+    [navigation, phasePick, meetingPick, tripPick],
   );
   const placePin = () => {
     if (!view) {
@@ -744,8 +770,12 @@ export function MapScreen({ navigation, route }: Props) {
           hint={
             meetingPick
               ? 'Move the map and place the pin at the meeting point.'
+              : tripPick
+              ? 'Move the map and place the pin in the middle of the trip.'
               : 'Move the map and place the pin at the checkpoint location.'
           }
+          title={tripPick ? 'Trip Map' : undefined}
+          confirmLabel={tripPick ? 'Use This Area' : undefined}
           region={pickRegion}
           sideKm={pickSideKm}
           sizeBytes={

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isValidLatLon } from '../geo';
+import { MapArea, parseMapArea } from '../maps/mapArea';
 
 export const GROUP_NAME_MAX = 60;
 export const MEMBER_NAME_MAX = 40;
@@ -28,6 +29,11 @@ export type Group = {
   joinedAt: number | null;
   /** Highest member-event `rev` seen (organizer: highest issued). */
   memberRev: number;
+  /**
+   * The map area the organizer asks people to download, sent to each person in their welcome.
+   * Set and changed only by the organizer, and only until someone joins (`canChangeTripArea`).
+   */
+  tripArea?: MapArea | null;
 };
 
 export type GroupMember = {
@@ -118,7 +124,30 @@ export const WelcomeSchema = z.object({
   name: z.string().trim().min(1).max(GROUP_NAME_MAX),
   o: addr,
   mrev: rev,
+  /** The trip map (`MapAreaWire`), when the organizer set one. Parsed on its own: see `welcomeArea`. */
+  rg: z.unknown().optional(),
 });
+
+/** A welcome's trip map. A missing or invalid one is dropped; it never fails the join. */
+export const welcomeArea = (w: { rg?: unknown }): MapArea | null =>
+  w.rg === undefined ? null : parseMapArea(w.rg);
+
+/**
+ * The organizer may set, change or remove the trip map only while nobody else is in the group:
+ * people get it once, in their welcome, so a later change would never reach them.
+ */
+export function canChangeTripArea(
+  group: Group,
+  members: GroupMember[],
+  me: string | null,
+): boolean {
+  return (
+    group.role === 'organizer' &&
+    group.organizer === me &&
+    group.status === 'active' &&
+    !members.some(m => m.address !== group.organizer && m.state === 'active')
+  );
+}
 export const BeaconSchema = z.object({
   g: id,
   n: z.string().trim().min(1).max(GROUP_NAME_MAX),

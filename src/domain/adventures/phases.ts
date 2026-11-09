@@ -103,13 +103,7 @@ export function formatDurationRange([lo, hi]: [number, number]): string {
   return a === b ? `${a} hr` : `${a}–${b} hr`;
 }
 
-/** "118 MB", "850 KB". */
-export function formatBytesShort(bytes: number): string {
-  if (bytes >= 1_000_000) {
-    return `${Math.round(bytes / 1_000_000)} MB`;
-  }
-  return `${Math.max(1, Math.round(bytes / 1000))} KB`;
-}
+export { formatBytesShort } from '../maps/mapArea';
 
 export type PhaseStatus = 'done' | 'current' | 'open' | 'locked';
 

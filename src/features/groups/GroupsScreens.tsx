@@ -17,6 +17,7 @@ import { ActivityStanding } from '../../domain/adventures/lifecycle';
 import { buildInviteLink, parseInviteLink } from '../../domain/groups/invite';
 import { presenceText, sortByPresence } from '../../domain/groups/presence';
 import { Group, GroupMember, GROUP_NAME_MAX, shortAddress } from '../../domain/groups/model';
+import { areaFromBox } from '../../domain/maps/mapArea';
 import {
   useGroup,
   useGroupMembers,
@@ -56,6 +57,7 @@ import { ToggleRow } from '../../ui/activity';
 import { radius, space, useTheme } from '../../ui/theme';
 import { QrScanner } from './QrScanner';
 import { SharePlace, ShareLocationSheet } from './ShareLocationSheet';
+import { TripMapBadge, TripMapBanner, TripMapCard } from './TripMap';
 
 type Nav<T extends keyof GroupsStackParamList> = NativeStackScreenProps<GroupsStackParamList, T>;
 
@@ -308,7 +310,9 @@ function GroupRow({ group: g, onPress }: { group: Group; onPress: () => void }) 
             <Badge label="In progress" tone="good" />
           ) : drafts > 0 ? (
             <Badge label={drafts === 1 ? '1 draft' : `${drafts} drafts`} tone="neutral" />
-          ) : null
+          ) : (
+            <TripMapBadge group={g} />
+          )
         }
       />
     </Card>
@@ -832,6 +836,7 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
         {group.status === 'joining' ? (
           <Banner tone="warn" title="Waiting for the organizer to approve you" />
         ) : null}
+        <TripMapBanner group={group} />
       </View>
       <FlatList
         testID="group-updates"
@@ -937,7 +942,7 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
 type InfoTab = 'members' | 'points' | 'invite' | 'activities';
 
 export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
-  const { groupId, justCreated } = route.params;
+  const { groupId, justCreated, pickedArea } = route.params;
   const { groups: service, mesh } = useServices();
   const group = useGroup(groupId);
   const members = useGroupMembers(groupId);
@@ -952,8 +957,9 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
   const [autoApprove, setAutoApprove] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // A new group opens on its invitation, so the first thing to do is add people.
-  const [tab, setTab] = useState<InfoTab>(justCreated ? 'invite' : 'members');
+  // A new group opens on its invitation, so the first thing to do is add people (also right
+  // after choosing the trip map, the step before inviting).
+  const [tab, setTab] = useState<InfoTab>(justCreated || pickedArea ? 'invite' : 'members');
   const { c } = useTheme();
   const now = useNow();
   const presence = useGroupPresence(group, members, now);
@@ -983,6 +989,24 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
     }
   }, [justCreated, organizerNow, service, groupId]);
   const back = () => navigation.navigate('GroupDetails', { groupId });
+  // Back from choosing the trip map on the map: save it (refused if someone joined meanwhile).
+  const groupName = group?.name;
+  useEffect(() => {
+    if (!pickedArea || !groupName) {
+      return;
+    }
+    navigation.setParams({ pickedArea: undefined });
+    void service
+      .setTripArea(groupId, areaFromBox(pickedArea.bbox, groupName))
+      .then(r => setError(r.ok ? null : r.error.userMessage));
+  }, [pickedArea?.nonce, groupName]); // eslint-disable-line react-hooks/exhaustive-deps
+  const chooseTripMap = () =>
+    (navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined)?.navigate(
+      'Map',
+      { pickTripMap: { groupId, region: group?.tripArea?.bbox ?? null }, nonce: Date.now() },
+    );
+  const removeTripMap = () =>
+    void service.setTripArea(groupId, null).then(r => setError(r.ok ? null : r.error.userMessage));
 
   if (!group) {
     return (
@@ -1204,12 +1228,23 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
         {justCreated ? (
           <Banner
             title="Group created"
-            body="Show this code to the people you want to add. They scan it and appear here."
+            body={
+              group.tripArea
+                ? 'Show this code to the people you want to add. They scan it and appear here.'
+                : 'Set the trip map below first, then show this code to the people you want to add.'
+            }
             actionLabel="Done"
             onAction={back}
           />
         ) : null}
         {error ? <Banner tone="error" title={error} /> : null}
+        <TripMapCard
+          group={group}
+          members={members}
+          me={me}
+          onChoose={chooseTripMap}
+          onRemove={removeTripMap}
+        />
         {/* Above the tabs: a request is answered from any of them, never missed behind one. */}
         {canInvite
           ? rt.joinRequests

@@ -304,6 +304,17 @@ export const MIGRATIONS: Migration[] = [
       )`);
     },
   },
+  {
+    version: 7,
+    name: 'group_trip_map',
+    up: async tx => {
+      const cols = (await tx.all<{ name: string }>('PRAGMA table_info(groups)')).map(c => c.name);
+      if (!cols.includes('trip_area')) {
+        // The group's trip map as `MapAreaWire` JSON; null when the organizer set none.
+        await tx.run('ALTER TABLE groups ADD COLUMN trip_area TEXT');
+      }
+    },
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;

@@ -2,6 +2,7 @@ import React from 'react';
 import { Alert } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { parseInviteLink } from '../src/domain/groups/invite';
+import { areaFromBox } from '../src/domain/maps/mapArea';
 import { buildFeed } from '../src/features/groups/GroupsScreens';
 import { MapScreen } from '../src/features/map/MapScreen';
 import {
@@ -859,5 +860,176 @@ describe('Map: meeting point controls', () => {
       await settle(all);
     });
     await waitFor(() => expect(mockMap.sources['meeting-points']!.data.features).toHaveLength(0));
+  });
+});
+
+describe('Trip map', () => {
+  const AREA = areaFromBox([-5.05, 56.77, -4.95, 56.83], 'Ridge walk');
+  const installedOver = (bbox: number[]) => ({
+    id: 'r1',
+    name: 'Ridge',
+    bbox: [bbox[0]! - 0.01, bbox[1]! - 0.01, bbox[2]! + 0.01, bbox[3]! + 0.01],
+    minZoom: 8,
+    maxZoom: 15,
+    bytes: 1000,
+    sha256: null,
+    osmDataDate: null,
+    schemaV: 1,
+    progressBytes: 1000,
+    filePath: '/r.pmtiles',
+    installedAt: 1,
+    source: 'custom' as const,
+    errorCode: null,
+    sourceUrl: null,
+    state: 'installed' as const,
+  });
+
+  /** This phone joins a group whose organizer set a trip map first. */
+  async function memberOfGroupWithMap() {
+    const net = new FakeNetwork();
+    const t = await makeTestServices({ net, address: 'off1me' });
+    const other = await makeGroupNode(net, 'off1other', { name: 'Other' });
+    await t.mesh.start();
+    await t.services.groups.start({ poll: false });
+    const og = await other.groups.createGroup({ name: 'Ridge walk' });
+    const g = og.ok ? og.value : (undefined as never);
+    expect((await other.groups.setTripArea(g.id, AREA)).ok).toBe(true);
+    const inv = await other.groups.createInvite(g.id, { autoApprove: true });
+    const parsed = inv.ok ? parseInviteLink(inv.value.link) : null;
+    await t.services.groups.joinFromInvite(
+      parsed && parsed.ok ? parsed.invite : (undefined as never),
+    );
+    await settle([{ groups: t.services.groups }, other]);
+    return { t, other, g };
+  }
+
+  it('the organizer chooses it on the map before inviting anyone', async () => {
+    const { t, g } = await twoDevices('organizer');
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    expect(await screen.findByTestId('trip-map-summary')).toHaveTextContent(
+      /set it before inviting anyone/,
+    );
+    fireEvent.press(screen.getByTestId('trip-map-choose'));
+    expect(calls.at(-1)).toEqual([
+      'navigate',
+      'Map',
+      { pickTripMap: { groupId: g.id, region: null }, nonce: expect.any(Number) },
+    ]);
+  });
+
+  it('the area chosen on the map is saved, named after the group, and invites come next', async () => {
+    const { t, g } = await twoDevices('organizer');
+    const bbox = [-5.05, 56.77, -4.95, 56.83];
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen
+          navigation={nav().n}
+          route={{ params: { groupId: g.id, pickedArea: { bbox, nonce: 1 } } } as never}
+        />
+      </Harness>,
+    );
+    await waitFor(async () =>
+      expect((await t.services.groupsRepo.get(g.id))?.tripArea?.bbox).toEqual(bbox),
+    );
+    expect((await t.services.groupsRepo.get(g.id))?.tripArea?.name).toBe('Ridge walk');
+    expect(await screen.findByText(/Ridge walk · About/)).toBeTruthy();
+    expect(screen.getByTestId('invite-create')).toBeTruthy();
+    expect(screen.getByTestId('trip-map-remove')).toBeTruthy();
+  });
+
+  it('is locked for the organizer once someone has joined', async () => {
+    const { t, other, all, g } = await twoDevices('organizer');
+    await t.services.groups.setTripArea(g.id, AREA);
+    const inv = await t.services.groups.createInvite(g.id, { autoApprove: true });
+    const parsed = inv.ok ? parseInviteLink(inv.value.link) : null;
+    await other.groups.joinFromInvite(parsed && parsed.ok ? parsed.invite : (undefined as never));
+    await settle(all);
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    expect(await screen.findByTestId('trip-map-locked')).toBeTruthy();
+    expect(screen.queryByTestId('trip-map-choose')).toBeNull();
+    expect(screen.queryByTestId('trip-map-remove')).toBeNull();
+  });
+
+  it('a member who joined is asked to download it on the group page and in the list', async () => {
+    const { t, g } = await memberOfGroupWithMap();
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    expect(await screen.findByText('Download the trip map')).toBeTruthy();
+    expect(
+      screen.getByText(/Ridge walk · About \d+ (KB|MB)\. Get it while you have internet/),
+    ).toBeTruthy();
+    screen.unmount();
+    render(
+      <Harness services={t.services}>
+        <GroupsScreen navigation={nav().n} route={{} as never} />
+      </Harness>,
+    );
+    expect(await screen.findByText('Map not downloaded')).toBeTruthy();
+  });
+
+  it('one tap on the group page starts the download of that area', async () => {
+    const { t, g } = await memberOfGroupWithMap();
+    const plan = jest.spyOn(t.services.packs, 'planArea').mockResolvedValue({
+      ok: true,
+      value: { fileBytes: 1000 } as any,
+    });
+    const start = jest.spyOn(t.services.packs, 'startArea').mockResolvedValue({
+      ok: true,
+      value: {} as any,
+    });
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    const button = await screen.findByText('Download');
+    await act(async () => {
+      fireEvent.press(button);
+    });
+    expect(plan).toHaveBeenCalledWith(AREA.bbox, AREA.maxZoom);
+    expect(start).toHaveBeenCalledWith({ fileBytes: 1000 }, 'Ridge walk');
+  });
+
+  it('the nudge goes away once a downloaded map covers the area', async () => {
+    const { t, g } = await memberOfGroupWithMap();
+    jest.spyOn(t.services.regions, 'list').mockResolvedValue([installedOver(AREA.bbox)] as any);
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    expect(await screen.findByTestId('trip-map-ready')).toBeTruthy();
+    expect(screen.queryByTestId('trip-map-choose')).toBeNull();
+    screen.unmount();
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    await screen.findByTestId('group-title');
+    expect(screen.queryByTestId('trip-map-banner')).toBeNull();
+  });
+
+  it('a member of a group without a trip map sees nothing about it', async () => {
+    const { t, g } = await twoDevices('member');
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    await screen.findByTestId('info-name');
+    expect(screen.queryByTestId('trip-map')).toBeNull();
   });
 });

@@ -72,8 +72,15 @@ export type GroupsStackParamList = {
     /** Coming back from choosing a meeting point on the map. */
     picked?: { lat: number; lon: number; nonce: number };
   };
-  /** `justCreated`: show the invitation QR straight away so the organizer can add people. */
-  GroupInfo: { groupId: string; justCreated?: boolean };
+  /**
+   * `justCreated`: show the invitation QR straight away so the organizer can add people.
+   * `pickedArea`: coming back from choosing the trip map on the map.
+   */
+  GroupInfo: {
+    groupId: string;
+    justCreated?: boolean;
+    pickedArea?: { bbox: [number, number, number, number]; nonce: number };
+  };
   MeetingPoint: { groupId: string; pointId: string };
 };
 
@@ -91,6 +98,8 @@ export type RootTabParamList = {
         pick?: PickLocationRequest;
         /** Choose a meeting point for a group; the place goes back to the group page. */
         pickMeeting?: { groupId: string; lat?: number; lon?: number };
+        /** Choose a group's trip map; the area goes back to group info. */
+        pickTripMap?: { groupId: string; region?: [number, number, number, number] | null };
       }
     | undefined;
   Groups: NavigatorScreenParams<GroupsStackParamList> | undefined;

@@ -26,6 +26,13 @@ import { RADIUS_KEY } from '../features/adventures/settings';
 import type { GroupRuntime } from '../features/groups/GroupService';
 import { Marker } from '../domain/markers/marker';
 import { RegionRecord } from '../domain/maps/region';
+import {
+  boxIsInstalled,
+  estimateAreaBytes,
+  formatBytesShort,
+  MapArea,
+} from '../domain/maps/mapArea';
+import type { BBox } from '../domain/geo';
 import type { PubSubSnapshot } from '../mesh/PubSub';
 import type { MeshSnapshot } from '../mesh/types';
 import { useServices } from './services';
@@ -61,6 +68,67 @@ export function useMarkers(): Marker[] {
 export function useRegions(): RegionRecord[] {
   const { regions } = useServices();
   return useLiveQuery([regions.changes as Emitter<unknown>], () => regions.list(), []);
+}
+
+export type AreaDownload = {
+  /** An installed region already covers the whole area. */
+  covered: boolean;
+  /** Progress 0..1 of a download (or pause) that covers the area, or null when none. */
+  progress: number | null;
+  /** "About 120 MB": an estimate until the download starts. */
+  sizeText: string;
+  busy: boolean;
+  error: string | null;
+  /** One tap: plan the area and start a normal region download (the person's own action). */
+  download: () => Promise<void>;
+};
+
+const boxHas = (outer: BBox, inner: BBox) =>
+  outer[0] <= inner[0] && outer[1] <= inner[1] && outer[2] >= inner[2] && outer[3] >= inner[3];
+
+/** Download state for an area someone asked this person to fetch (a trip map, an activity area). */
+export function useAreaDownload(area: MapArea | null): AreaDownload {
+  const { packs } = useServices();
+  const regions = useRegions();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const installed = regions.filter(r => r.state === 'installed' && r.filePath);
+  const covered = !!area && boxIsInstalled(installed, area.bbox);
+  const inFlight = area
+    ? regions.find(
+        r =>
+          (r.state === 'downloading' || r.state === 'paused' || r.state === 'verifying') &&
+          boxHas(r.bbox, area.bbox),
+      )
+    : undefined;
+  const download = useCallback(async () => {
+    if (!area) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const plan = await packs.planArea(area.bbox, area.maxZoom);
+    if (!plan.ok) {
+      setBusy(false);
+      setError(plan.error.userMessage);
+      return;
+    }
+    const r = await packs.startArea(plan.value, area.name);
+    setBusy(false);
+    if (!r.ok) {
+      setError(r.error.userMessage);
+    }
+  }, [area, packs]);
+  return {
+    covered,
+    progress: inFlight ? (inFlight.bytes > 0 ? inFlight.progressBytes / inFlight.bytes : 0) : null,
+    sizeText: area
+      ? `About ${formatBytesShort(estimateAreaBytes(area.bbox, area.minZoom, area.maxZoom))}`
+      : '',
+    busy,
+    error,
+    download,
+  };
 }
 
 /** Mesh state for screens. Snapshots are immutable, so identity changes only when something did. */

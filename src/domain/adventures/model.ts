@@ -1,5 +1,17 @@
 import { z } from 'zod';
 import { isValidLatLon } from '../geo';
+import { MAX_AREA_SPAN_DEG, MapArea, MapAreaWireSchema } from '../maps/mapArea';
+
+// The map area moved to domain/maps (a group's trip map uses it too); re-exported for callers.
+export {
+  MAP_AREA_NAME_MAX,
+  MAX_AREA_SPAN_DEG,
+  MAX_AREA_ZOOM,
+  MapAreaWireSchema,
+  toMapArea,
+  toMapAreaWire,
+} from '../maps/mapArea';
+export type { MapArea, MapAreaWire } from '../maps/mapArea';
 
 export const ADVENTURE_NAME_MAX = 60;
 export const ADVENTURE_DESC_MAX = 200;
@@ -9,10 +21,6 @@ export const MAX_CHECKPOINTS = 20;
 /** Bounds what a relay or a hostile peer can make this device store per adventure. */
 export const MAX_COMPLETIONS_PER_ADVENTURE = MAX_CHECKPOINTS * 12;
 export const MAX_SYNC_ADVENTURES = 6;
-/** The largest area, in degrees on a side, that one activity may ask people to download. */
-export const MAX_AREA_SPAN_DEG = 0.5;
-export const MAX_AREA_ZOOM = 16;
-export const MAP_AREA_NAME_MAX = 60;
 
 /**
  * Planned -> Active <-> Paused -> Completed, with Cancelled reachable from any non-final state.
@@ -97,15 +105,6 @@ export type PersonalProgress = {
    * organizer cannot change it. Null until then.
    */
   finishedAt?: number | null;
-};
-
-/** The map area an organizer attaches to an activity; members download it in one tap. */
-export type MapArea = {
-  /** [west, south, east, north] */
-  bbox: [number, number, number, number];
-  name: string;
-  minZoom: number;
-  maxZoom: number;
 };
 
 export type Adventure = {
@@ -267,34 +266,6 @@ export type CheckpointInput = z.input<typeof CheckpointInputSchema>;
 
 const idStr = z.string().min(1).max(64);
 const ts = z.number().int().nonnegative();
-
-export const MapAreaWireSchema = z
-  .object({
-    b: z.tuple([latLon.lon, latLon.lat, latLon.lon, latLon.lat]),
-    n: z
-      .string()
-      .min(1)
-      .max(MAP_AREA_NAME_MAX * 2),
-    z: z.tuple([z.number().int().min(0).max(24), z.number().int().min(0).max(24)]),
-  })
-  .refine(a => {
-    const [w, s, e, n] = a.b;
-    return w < e && s < n && e - w <= MAX_AREA_SPAN_DEG && n - s <= MAX_AREA_SPAN_DEG;
-  }, 'area is empty or larger than the allowed span')
-  .refine(a => a.z[0] <= a.z[1] && a.z[1] <= MAX_AREA_ZOOM, 'zoom range is not allowed');
-export type MapAreaWire = z.infer<typeof MapAreaWireSchema>;
-
-export const toMapArea = (w: MapAreaWire): MapArea => ({
-  bbox: [...w.b],
-  name: w.n,
-  minZoom: w.z[0],
-  maxZoom: w.z[1],
-});
-export const toMapAreaWire = (a: MapArea): MapAreaWire => ({
-  b: [...a.bbox],
-  n: a.name,
-  z: [a.minZoom, a.maxZoom],
-});
 
 export const AdventureHeaderSchema = z.object({
   id: idStr,

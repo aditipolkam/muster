@@ -28,6 +28,8 @@ export function PickLocationOverlay({
   onPlace,
   onConfirm,
   onBack,
+  title = 'Select Location',
+  confirmLabel = 'Confirm Location',
 }: {
   step: PickStep;
   top: number;
@@ -45,6 +47,8 @@ export function PickLocationOverlay({
   onPlace: () => void;
   onConfirm: () => void;
   onBack: () => void;
+  title?: string;
+  confirmLabel?: string;
 }) {
   const { c } = useTheme();
   const side = region ? boxSideKm(region) : null;
@@ -66,7 +70,7 @@ export function PickLocationOverlay({
             style={{ flex: 1, textAlign: 'center' }}
             accessibilityRole="header"
           >
-            Select Location
+            {title}
           </Text>
           <View style={{ width: 26 }} />
         </View>
@@ -159,12 +163,7 @@ export function PickLocationOverlay({
                 />
               </View>
             ) : null}
-            <Button
-              testID="pick-confirm"
-              icon="check"
-              label="Confirm Location"
-              onPress={onConfirm}
-            />
+            <Button testID="pick-confirm" icon="check" label={confirmLabel} onPress={onConfirm} />
           </>
         )}
       </View>
