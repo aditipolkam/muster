@@ -37,6 +37,7 @@ jest.mock('@maplibre/maplibre-react-native', () => {
       return R.createElement(V, { testID: `src-${p.id}` }, p.children);
     },
     Layer: () => null,
+    Marker: (p: Record<string, any>) => R.createElement(V, { testID: p.id }, p.children),
   };
 });
 
@@ -240,7 +241,9 @@ describe('Map: Select Location for a phase', () => {
       </Harness>,
     );
     await waitFor(() => expect(mockMap.map).not.toBeNull());
-    expect(screen.getByText('Move the map and place the pin at the meeting point.')).toBeTruthy();
+    expect(screen.getByText('Set meeting point')).toBeTruthy();
+    expect(screen.getByText('Step 1 of 2 · Choose the spot')).toBeTruthy();
+    expect(screen.getByText('Drag the map to move the pin')).toBeTruthy();
     await moveTo([-5.0035, 56.7968]);
     await act(async () => {
       fireEvent.press(screen.getByTestId('pick-place-pin'));
@@ -252,5 +255,44 @@ describe('Map: Select Location for a phase', () => {
       screen: 'GroupDetails',
       params: { groupId: 'g1', picked: { lat: 56.7968, lon: -5.0035 } },
     });
+  });
+  it('choosing a trip map sends a ~10 km area back to group info', async () => {
+    const t = await makeTestServices();
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <MapScreen
+          navigation={n}
+          route={
+            {
+              key: 'Map',
+              name: 'Map',
+              params: { pickTripMap: { groupId: 'g1', region: null }, nonce: 1 },
+            } as never
+          }
+        />
+      </Harness>,
+    );
+    await waitFor(() => expect(mockMap.map).not.toBeNull());
+    expect(screen.getByText('Trip Map')).toBeTruthy();
+    expect(
+      screen.getByText('Move the map and place the pin in the middle of the trip.'),
+    ).toBeTruthy();
+    await moveTo([-5.0035, 56.7968]);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('pick-place-pin'));
+    });
+    expect(screen.getByTestId('region-side').props.children.join('')).toBe('10 km');
+    await act(async () => {
+      fireEvent.press(screen.getByText('Use This Area'));
+    });
+    expect(calls).toContainEqual(['setParams', { pickTripMap: undefined }]);
+    const go = calls.find(c => c[0] === 'navigate');
+    expect(go?.[1]).toBe('Groups');
+    expect(go?.[2]).toMatchObject({ screen: 'GroupInfo', params: { groupId: 'g1' } });
+    const bbox = (go?.[2] as any).params.pickedArea.bbox as number[];
+    expect(bbox).toHaveLength(4);
+    expect(bbox[0]).toBeLessThan(-5.0035);
+    expect(bbox[2]).toBeGreaterThan(-5.0035);
   });
 });

@@ -148,7 +148,7 @@ describe('with the groupActivities flag off', () => {
     expect(await screen.findByText('Checkpoints')).toBeTruthy();
   });
 
-  it('group info shows the Adventures card, not activities', async () => {
+  it('group info shows the Trips card (plain adventures), not activities', async () => {
     const { t, groupId } = await organizer();
     const { n } = nav();
     render(
@@ -157,7 +157,7 @@ describe('with the groupActivities flag off', () => {
       </Harness>,
     );
     fireEvent.press(await screen.findByTestId('info-tab-activities'));
-    expect(screen.getAllByText('Adventures')).toHaveLength(2); // the tab and the card
+    expect(screen.getAllByText('Trips')).toHaveLength(2); // the tab and the card
     expect(screen.getByText('Plan a group adventure')).toBeTruthy();
     expect(screen.queryByText('Plan an activity')).toBeNull();
   });
@@ -1012,6 +1012,6 @@ describe('the group pages', () => {
     await act(async () => {
       await t.services.adventures.join(id);
     });
-    expect(await screen.findByText('In progress')).toBeTruthy();
+    expect(await screen.findByText('Activity in progress')).toBeTruthy();
   });
 });

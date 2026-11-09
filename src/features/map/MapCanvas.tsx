@@ -5,12 +5,15 @@ import {
   Layer,
   Map,
   MapRef,
+  Marker,
   ViewStateChangeEvent,
 } from '@maplibre/maplibre-react-native';
 import type { StyleSpecification } from '@maplibre/maplibre-gl-style-spec';
 import type { FeatureCollection } from 'geojson';
 import React from 'react';
 import { NativeSyntheticEvent, StyleSheet } from 'react-native';
+import { useTheme } from '../../ui/theme';
+import { FlagPin } from '../../ui/trail';
 import { OVERLAY_FONT } from './StyleBuilder';
 
 export type MapCanvasHandle = { map: MapRef | null; camera: CameraRef | null };
@@ -47,13 +50,19 @@ type Props = {
   onLoadFailed: () => void;
 };
 
-const PRIMARY = '#2D6A4F';
-const MEETING = '#1D5FD6';
-/** DESIGN_SYSTEM.md `map.trail`. */
-const TRAIL = '#2A9C9A';
-
 /** All MapLibre-specific rendering. Kept separate so MapScreen can be tested with a mocked module. */
 export function MapCanvas(p: Props) {
+  const { c } = useTheme();
+  // Map colours come from the theme tokens: blue is only "you", orange only meeting points.
+  const PRIMARY = c.primary;
+  const MEETING = c.meeting;
+  const SELF = c.self;
+  const TRAIL = c.mapTrail;
+  const WHITE = c.onInk;
+  const INK = c.ink;
+  const meetingFeatures = p.meetingPoints.features.filter(
+    f => f.geometry.type === 'Point' && typeof f.properties?.id === 'string',
+  );
   return (
     <Map
       ref={p.mapRef}
@@ -92,7 +101,7 @@ export function MapCanvas(p: Props) {
           id="guide-line-casing"
           type="line"
           layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-          paint={{ 'line-color': '#FFFFFF', 'line-width': 7, 'line-opacity': 0.85 }}
+          paint={{ 'line-color': WHITE, 'line-width': 7, 'line-opacity': 0.85 }}
         />
         <Layer
           id="guide-line-dash"
@@ -119,15 +128,15 @@ export function MapCanvas(p: Props) {
         <Layer
           id="pin-halo"
           type="circle"
-          paint={{ 'circle-radius': 15, 'circle-color': '#BE4C45', 'circle-opacity': 0.3 }}
+          paint={{ 'circle-radius': 15, 'circle-color': INK, 'circle-opacity': 0.18 }}
         />
         <Layer
           id="pin-dot"
           type="circle"
           paint={{
             'circle-radius': 8,
-            'circle-color': '#BE4C45',
-            'circle-stroke-color': '#FFFFFF',
+            'circle-color': INK,
+            'circle-stroke-color': WHITE,
             'circle-stroke-width': 3,
           }}
         />
@@ -137,30 +146,36 @@ export function MapCanvas(p: Props) {
         <Layer
           id="me-accuracy-fill"
           type="fill"
-          paint={{ 'fill-color': PRIMARY, 'fill-opacity': 0.14 }}
+          paint={{ 'fill-color': SELF, 'fill-opacity': 0.1 }}
         />
         <Layer
           id="me-accuracy-line"
           type="line"
-          paint={{ 'line-color': PRIMARY, 'line-opacity': 0.5, 'line-width': 1 }}
+          paint={{ 'line-color': SELF, 'line-opacity': 0.4, 'line-width': 1 }}
         />
       </GeoJSONSource>
 
       <GeoJSONSource id="me-cone" data={p.me.cone}>
-        <Layer
-          id="me-cone-fill"
-          type="fill"
-          paint={{ 'fill-color': PRIMARY, 'fill-opacity': 0.35 }}
-        />
+        <Layer id="me-cone-fill" type="fill" paint={{ 'fill-color': SELF, 'fill-opacity': 0.25 }} />
       </GeoJSONSource>
 
       <GeoJSONSource id="me-puck" data={p.me.puck}>
+        <Layer
+          id="me-puck-glow"
+          type="circle"
+          paint={{
+            'circle-radius': 20,
+            'circle-color': SELF,
+            'circle-opacity': 0.16,
+            'circle-pitch-alignment': 'map',
+          }}
+        />
         <Layer
           id="me-puck-halo"
           type="circle"
           paint={{
             'circle-radius': 11,
-            'circle-color': '#FFFFFF',
+            'circle-color': WHITE,
             'circle-pitch-alignment': 'map',
           }}
         />
@@ -169,7 +184,7 @@ export function MapCanvas(p: Props) {
           type="circle"
           paint={{
             'circle-radius': 7,
-            'circle-color': ['case', ['get', 'stale'], '#8A8F8C', '#2F80ED'],
+            'circle-color': ['case', ['get', 'stale'], c.textMuted, SELF],
           }}
         />
       </GeoJSONSource>
@@ -179,7 +194,7 @@ export function MapCanvas(p: Props) {
           id="adventure-route-casing"
           type="line"
           layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-          paint={{ 'line-color': '#FFFFFF', 'line-width': 7, 'line-opacity': 0.8 }}
+          paint={{ 'line-color': WHITE, 'line-width': 7, 'line-opacity': 0.8 }}
         />
         <Layer
           id="adventure-route-line"
@@ -219,7 +234,7 @@ export function MapCanvas(p: Props) {
           type="circle"
           paint={{
             'circle-radius': 10,
-            'circle-color': ['case', ['get', 'reached'], PRIMARY, '#FFFFFF'],
+            'circle-color': ['case', ['get', 'reached'], PRIMARY, WHITE],
             'circle-stroke-color': PRIMARY,
             'circle-stroke-width': 3,
           }}
@@ -236,7 +251,7 @@ export function MapCanvas(p: Props) {
             'text-allow-overlap': false,
             'text-optional': true,
           }}
-          paint={{ 'text-color': '#103F29', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.8 }}
+          paint={{ 'text-color': c.deep, 'text-halo-color': WHITE, 'text-halo-width': 1.8 }}
         />
       </GeoJSONSource>
 
@@ -251,35 +266,11 @@ export function MapCanvas(p: Props) {
           }
         }}
       >
+        {/* Tap target only; the visible pin is the FlagPin marker below. */}
         <Layer
-          id="meeting-ring"
+          id="meeting-hit"
           type="circle"
-          filter={['==', ['get', 'id'], p.selectedMeetingKey ?? '']}
-          paint={{ 'circle-radius': 21, 'circle-color': MEETING, 'circle-opacity': 0.35 }}
-        />
-        <Layer
-          id="meeting-dot"
-          type="circle"
-          paint={{
-            'circle-radius': 12,
-            'circle-color': MEETING,
-            'circle-stroke-color': ['case', ['get', 'acked'], '#2D6A4F', '#FFFFFF'],
-            'circle-stroke-width': 3,
-          }}
-        />
-        <Layer
-          id="meeting-label"
-          type="symbol"
-          layout={{
-            'text-field': ['get', 'name'],
-            'text-font': [OVERLAY_FONT],
-            'text-size': 14,
-            'text-offset': [0, 1.7],
-            'text-anchor': 'top',
-            'text-allow-overlap': false,
-            'text-optional': true,
-          }}
-          paint={{ 'text-color': '#0B2A66', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.8 }}
+          paint={{ 'circle-radius': 22, 'circle-color': MEETING, 'circle-opacity': 0 }}
         />
       </GeoJSONSource>
 
@@ -298,15 +289,15 @@ export function MapCanvas(p: Props) {
           id="markers-ring"
           type="circle"
           filter={['==', ['get', 'id'], p.selectedMarkerId ?? '']}
-          paint={{ 'circle-radius': 17, 'circle-color': '#D98E04', 'circle-opacity': 0.35 }}
+          paint={{ 'circle-radius': 17, 'circle-color': PRIMARY, 'circle-opacity': 0.25 }}
         />
         <Layer
           id="markers-dot"
           type="circle"
           paint={{
             'circle-radius': 9,
-            'circle-color': '#D98E04',
-            'circle-stroke-color': '#FFFFFF',
+            'circle-color': PRIMARY,
+            'circle-stroke-color': WHITE,
             'circle-stroke-width': 2.5,
           }}
         />
@@ -322,9 +313,32 @@ export function MapCanvas(p: Props) {
             'text-allow-overlap': false,
             'text-optional': true,
           }}
-          paint={{ 'text-color': '#16201A', 'text-halo-color': '#FFFFFF', 'text-halo-width': 1.6 }}
+          paint={{ 'text-color': c.text, 'text-halo-color': WHITE, 'text-halo-width': 1.6 }}
         />
       </GeoJSONSource>
+
+      {meetingFeatures.map(f => {
+        const id = f.properties!.id as string;
+        const [lon, lat] = (f.geometry as { coordinates: number[] }).coordinates as [
+          number,
+          number,
+        ];
+        return (
+          <Marker
+            key={id}
+            id={`meeting-pin-${id}`}
+            lngLat={[lon, lat]}
+            anchor="top"
+            offset={[0, -48]}
+            onPress={() => p.onMeetingPointPress(id)}
+          >
+            <FlagPin
+              label={String(f.properties?.name ?? '')}
+              selected={p.selectedMeetingKey === id}
+            />
+          </Marker>
+        );
+      })}
     </Map>
   );
 }

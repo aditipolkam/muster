@@ -26,7 +26,7 @@ import {
   Text,
 } from '../../ui/components';
 import { MAX_PACE_KMH, MIN_PACE_KMH } from '../../domain/geo/pace';
-import { space, useTheme } from '../../ui/theme';
+import { radius, space, useTheme } from '../../ui/theme';
 import { useNow } from '../../ui/useNow';
 import { OSM_ATTRIBUTION } from '../../shared/attribution';
 
@@ -308,9 +308,10 @@ function Kv({ k, v }: { k: string; v: string }) {
 const styles = StyleSheet.create({
   content: { padding: space.lg, paddingTop: space.sm, gap: space.md },
   input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
+    borderWidth: 1,
+    borderRadius: radius.input,
     padding: space.md,
-    fontSize: 14,
+    minHeight: 52,
+    fontSize: 15,
   },
 });

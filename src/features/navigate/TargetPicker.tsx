@@ -1,7 +1,7 @@
 import React from 'react';
 import { Modal, Pressable, SectionList, StyleSheet, View } from 'react-native';
-import { Button, IconTile, ListRow, Text } from '../../ui/components';
-import { space, useTheme } from '../../ui/theme';
+import { Button, Icon, IconTile, ListRow, Text } from '../../ui/components';
+import { radius, space, useTheme } from '../../ui/theme';
 import { MY_PLACES, TargetOption, TargetSection } from './targets';
 
 /** Bottom-sheet list of locations, grouped by the group they were shared in. */
@@ -24,13 +24,13 @@ export function TargetPicker({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable
-        style={styles.scrim}
+        style={[styles.scrim, { backgroundColor: c.overlay }]}
         onPress={onClose}
         accessibilityLabel="Close"
         accessibilityRole="button"
       />
       <View
-        style={[styles.sheet, { backgroundColor: c.bg, borderColor: c.border }]}
+        style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}
         testID="target-picker"
       >
         <View style={styles.head}>
@@ -39,14 +39,16 @@ export function TargetPicker({
           </Text>
           <Button small variant="ghost" label="Close" onPress={onClose} />
         </View>
-        <ListRow
-          title="Compass only"
-          subtitle="No location"
-          leading={<IconTile name="compass" />}
-          trailing={selectedKey === null ? <Text color={c.primary}>✓</Text> : null}
-          onPress={onClear}
-          testID="target-none"
-        />
+        <View style={{ paddingHorizontal: space.gutter }}>
+          <ListRow
+            title="Compass only"
+            subtitle="No location"
+            leading={<IconTile name="compass" />}
+            trailing={selectedKey === null ? <Icon name="check" color={c.primary} /> : null}
+            onPress={onClear}
+            testID="target-none"
+          />
+        </View>
         {sections.length === 0 ? (
           <Text muted style={styles.empty} testID="target-empty">
             Nothing to pick yet. Meeting points shared in your groups, and places you mark on the
@@ -69,11 +71,10 @@ export function TargetPicker({
                 leading={
                   <IconTile
                     name={item.ref.kind === 'meeting' ? 'flag' : 'pin'}
-                    color={item.ref.kind === 'meeting' ? c.mapMeeting : c.primary}
-                    bg={item.ref.kind === 'meeting' ? c.mapMeeting + '22' : c.primarySoft}
+                    tone={item.ref.kind === 'meeting' ? 'meeting' : 'primary'}
                   />
                 }
-                trailing={item.key === selectedKey ? <Text color={c.primary}>✓</Text> : null}
+                trailing={item.key === selectedKey ? <Icon name="check" color={c.primary} /> : null}
                 onPress={() => onPick(item)}
                 testID={`target-${item.key}`}
               />
@@ -86,12 +87,12 @@ export function TargetPicker({
 }
 
 const styles = StyleSheet.create({
-  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
+  scrim: { flex: 1 },
   sheet: {
     maxHeight: '70%',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    borderWidth: 1,
     paddingBottom: space.xl,
   },
   head: {

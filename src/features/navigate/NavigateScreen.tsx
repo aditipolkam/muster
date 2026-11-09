@@ -1,9 +1,18 @@
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { placeOf } from '../../domain/adventures/model';
 import { bearingDeg, distanceM, formatCoord } from '../../domain/geo';
-import { cardinalOf, etaMinutes, formatDistanceIn, formatEta } from '../../domain/geo/pace';
+import {
+  cardinal16Of,
+  cardinalOf,
+  etaMinutes,
+  formatDistanceIn,
+  formatEta,
+  turnHint,
+} from '../../domain/geo/pace';
+import { usableHeading } from '../../domain/location/fix';
 import { useLocationStore } from '../../platform/locationStore';
 import {
   useAdventures,
@@ -14,8 +23,10 @@ import {
 } from '../../runtime/hooks';
 import { useServices } from '../../runtime/services';
 import { RootTabParamList } from '../../runtime/navigation';
-import { Badge, Card, Icon, IconTile, Screen, Text } from '../../ui/components';
-import { space, useTheme } from '../../ui/theme';
+import { useNavSession } from '../../runtime/navSession';
+import { Badge, Icon, IconTile, Screen, Text } from '../../ui/components';
+import { radius, space, tabular, useTheme } from '../../ui/theme';
+import { MetricStrip, NavControls } from '../../ui/trail';
 import { TargetPicker } from './TargetPicker';
 import { refKey, TargetRef, targetSections } from './targets';
 
@@ -27,7 +38,10 @@ const CARDINALS: { label: string; deg: number }[] = [
   { label: 'S', deg: 180 },
   { label: 'W', deg: 270 },
 ];
-const RING = 220;
+const RING = 260;
+/** Where the letters sit, from the centre. */
+const LETTER_R = RING / 2 - 24;
+const MARK_R = RING / 2 - 2;
 
 /** Deep-link params (a meeting point, marker or checkpoint) -> the target they ask for. */
 function refFromParams(
@@ -49,8 +63,12 @@ function refFromParams(
  * picked from a dropdown: meeting points shared in your groups, or places you marked. Straight
  * line, not turn-by-turn.
  */
-export function NavigateScreen({ route }: Props) {
+export function NavigateScreen({ route, navigation }: Props) {
   const { c } = useTheme();
+  const insets = useSafeAreaInsets();
+  const session = useNavSession(s => s.target);
+  const startSession = useNavSession(s => s.start);
+  const endSession = useNavSession(s => s.end);
   const points = useVisibleMeetingPoints();
   const markers = useMarkers();
   const groups = useGroups();
@@ -67,6 +85,15 @@ export function NavigateScreen({ route }: Props) {
   const [checkpoint, setCheckpoint] = useState<{ name: string; lat: number; lon: number } | null>(
     null,
   );
+
+  // Ending navigation (here or on the map) also clears what was picked here.
+  const hadSession = React.useRef(false);
+  useEffect(() => {
+    if (hadSession.current && !session) {
+      setRef(null);
+    }
+    hadSession.current = !!session;
+  }, [session]);
 
   // A deep link selects its target once per navigation (re-sent with a new `nonce`/params).
   const paramKey = `${p?.groupId ?? ''}|${p?.pointId ?? ''}|${p?.markerId ?? ''}|${
@@ -101,7 +128,7 @@ export function NavigateScreen({ route }: Props) {
     [groups, points, markers],
   );
 
-  const target = useMemo(() => {
+  const refTarget = useMemo(() => {
     if (!ref) {
       return null;
     }
@@ -135,13 +162,253 @@ export function NavigateScreen({ route }: Props) {
       : null;
   }, [checkpoint, groups, markers, points, ref]);
 
+  // Choosing a destination here starts (or switches) the shared navigation session, so the Map
+  // view draws the same line. Without one chosen here, show the session's destination.
+  const refKeyStr = ref ? refKey(ref) : null;
+  useEffect(() => {
+    if (refTarget) {
+      startSession({
+        name: refTarget.name,
+        lat: refTarget.lat,
+        lon: refTarget.lon,
+        kind: refTarget.kind,
+        key:
+          ref?.kind === 'meeting'
+            ? `${ref.groupId}:${ref.id}`
+            : ref?.kind === 'marker'
+            ? ref.id
+            : undefined,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refKeyStr, refTarget?.lat, refTarget?.lon, refTarget?.name]);
+  // The session is the destination (the map may have started or changed it); what was picked
+  // here only adds detail (e.g. the group name) when it is the same place.
+  const sameAsRef =
+    !!refTarget && !!session && refTarget.lat === session.lat && refTarget.lon === session.lon;
+  const target = session
+    ? sameAsRef
+      ? refTarget
+      : {
+          kind: session.kind ?? ('pin' as const),
+          name: session.name,
+          subtitle:
+            session.kind === 'meeting'
+              ? 'Meeting point'
+              : session.kind === 'marker'
+              ? 'Marked by you'
+              : session.kind === 'checkpoint'
+              ? 'Checkpoint'
+              : 'Pin on the map',
+          lat: session.lat,
+          lon: session.lon,
+        }
+    : refTarget;
+
+  const picker = (
+    <TargetPicker
+      visible={pickerOpen}
+      sections={sections}
+      selectedKey={ref ? refKey(ref) : null}
+      onPick={o => {
+        setRef(o.ref);
+        setPickerOpen(false);
+      }}
+      onClear={() => {
+        setRef(null);
+        endSession();
+        setPickerOpen(false);
+      }}
+      onClose={() => setPickerOpen(false)}
+    />
+  );
+
   const dist = fix && target ? distanceM(fix, target) : null;
   const bearing = fix && target ? bearingDeg(fix, target) : null;
-  // The dial turns so north stays north under the phone; the arrow sits on the dial at the
-  // absolute bearing, which puts it at (bearing - heading) relative to where the phone points.
-  const dial = heading === null ? 0 : -heading;
+  const h = usableHeading(heading);
+  // Heading-up: the phone's facing is always at the top. Letters move round the ring but stay
+  // upright; the target sits at (bearing - heading).
+  const rel = (deg: number) => (h === undefined ? deg : deg - h);
   const minutes = etaMinutes(dist, paceKmh);
-  const tone = target?.kind === 'meeting' ? c.mapMeeting : c.primary;
+  const targetRel = bearing === null ? null : rel(bearing);
+  const turn = targetRel === null || h === undefined ? null : turnHint(targetRel);
+  const ringPos = (deg: number, r: number) => {
+    const a = (deg * Math.PI) / 180;
+    return { left: RING / 2 + r * Math.sin(a), top: RING / 2 - r * Math.cos(a) };
+  };
+  // The soft green arc between where you face (0) and the target.
+  const sweep = targetRel === null || h === undefined ? 0 : ((targetRel + 540) % 360) - 180;
+  const arcDots =
+    Math.abs(sweep) < 4
+      ? []
+      : Array.from({ length: Math.floor(Math.abs(sweep) / 4) }, (_, i) => Math.sign(sweep) * i * 4);
+  const end = () => {
+    endSession();
+    setRef(null);
+    navigation.navigate('Map');
+  };
+
+  const dialA11y = target
+    ? bearing === null
+      ? 'Compass unavailable until GPS has a fix'
+      : `${target.name} is ${fmt(dist!)} towards ${cardinalOf(
+          bearing,
+        )}. Straight line, terrain not considered`
+    : heading === null
+    ? 'Compass waiting for a heading'
+    : `Facing ${cardinalOf(heading)}, ${Math.round(heading)} degrees`;
+
+  const dial = (
+    <View style={styles.compass} accessible accessibilityLabel={dialA11y}>
+      <View style={[styles.phoneMark, { borderTopColor: c.text }]} testID="compass-facing" />
+      <View
+        style={[styles.ring, { borderColor: c.border, backgroundColor: c.surface }]}
+        testID="compass-dial"
+      >
+        {arcDots.map(d => {
+          const pos = ringPos(d, MARK_R - 14);
+          return (
+            <View
+              key={d}
+              pointerEvents="none"
+              style={[
+                styles.arcDot,
+                { backgroundColor: c.primarySoft, left: pos.left - 9, top: pos.top - 9 },
+              ]}
+            />
+          );
+        })}
+        {CARDINALS.map(({ label, deg }) => {
+          const pos = ringPos(rel(deg), LETTER_R);
+          return (
+            <View
+              key={label}
+              pointerEvents="none"
+              testID={`dial-${label}`}
+              style={[styles.letter, { left: pos.left - 14, top: pos.top - 12 }]}
+            >
+              <Text
+                variant="cardTitle"
+                color={label === 'N' ? c.danger : c.textMuted}
+                style={{ textAlign: 'center' }}
+              >
+                {label}
+              </Text>
+            </View>
+          );
+        })}
+        {targetRel !== null ? (
+          <>
+            <View
+              pointerEvents="none"
+              style={[
+                styles.targetDot,
+                {
+                  backgroundColor: c.meeting,
+                  borderColor: c.surface,
+                  left: ringPos(targetRel, MARK_R - 14).left - 9,
+                  top: ringPos(targetRel, MARK_R - 14).top - 9,
+                },
+              ]}
+            />
+            <View style={{ transform: [{ rotate: `${targetRel}deg` }] }} testID="compass-arrow">
+              <Icon name="arrowUp" size={92} color={c.meeting} />
+            </View>
+          </>
+        ) : (
+          <Icon name="compass" size={56} color={c.border} />
+        )}
+      </View>
+    </View>
+  );
+
+  if (target) {
+    return (
+      <Screen edges={['top']}>
+        <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.navHead}>
+            <View style={{ flex: 1 }} testID="nav-target">
+              <Text variant="label" muted>
+                Navigating to
+              </Text>
+              <Text variant="title" numberOfLines={1}>
+                {target.name}
+              </Text>
+              <Text variant="caption" muted numberOfLines={1}>
+                {dist === null || bearing === null
+                  ? `${target.subtitle} · ${formatCoord(target)}`
+                  : `${target.subtitle} · ${fmt(dist)} · ${cardinalOf(bearing)} ${Math.round(
+                      bearing,
+                    )}°`}
+              </Text>
+            </View>
+            <Pressable
+              testID="target-select"
+              accessibilityRole="button"
+              accessibilityLabel={`Pointing at ${target.name}. Change location`}
+              onPress={() => setPickerOpen(true)}
+              hitSlop={8}
+              style={styles.change}
+            >
+              <Text variant="caption" color={c.primary} style={{ fontWeight: '800' }}>
+                Change
+              </Text>
+            </Pressable>
+          </View>
+          {dial}
+          <View style={{ alignItems: 'center', gap: space.sm }}>
+            <Text variant="metric" style={styles.big} testID="nav-distance">
+              {dist === null ? '–' : fmt(dist)}
+            </Text>
+            <View style={[styles.turn, { backgroundColor: c.primarySoft }]} testID="nav-turn">
+              <Text variant="cardTitle" color={c.deep}>
+                {bearing === null
+                  ? 'Waiting for GPS'
+                  : turn ?? `Turn to face ${cardinal16Of(bearing)}`}
+              </Text>
+            </View>
+            <Badge tone="warn" icon="warning" label="Straight line · terrain not considered" />
+          </View>
+          <MetricStrip
+            items={[
+              { label: 'On foot', value: minutes === null ? '–' : `~${formatEta(minutes)}` },
+              {
+                label: 'Target bearing',
+                value: bearing === null ? '–' : `${cardinal16Of(bearing)} ${Math.round(bearing)}°`,
+              },
+              {
+                label: 'Compass',
+                value: h === undefined ? 'No heading' : 'On',
+                tone: h === undefined ? 'warn' : 'good',
+              },
+            ]}
+          />
+          <Text variant="caption" muted style={{ textAlign: 'center' }}>
+            {`Time at ${paceKmh} km/h on flat ground. Trails, cliffs and water may not follow this line.`}
+          </Text>
+        </ScrollView>
+        <View
+          style={[
+            styles.panel,
+            {
+              backgroundColor: c.surface,
+              borderColor: c.border,
+              paddingBottom: insets.bottom + space.lg,
+            },
+          ]}
+        >
+          <NavControls
+            name={target.name}
+            subtitle={target.subtitle}
+            view="compass"
+            onView={v => v === 'map' && navigation.navigate('Map')}
+            onEnd={end}
+          />
+        </View>
+        {picker}
+      </Screen>
+    );
+  }
 
   return (
     <Screen title="Compass">
@@ -149,165 +416,55 @@ export function NavigateScreen({ route }: Props) {
         <Pressable
           testID="target-select"
           accessibilityRole="button"
-          accessibilityLabel={
-            target ? `Pointing at ${target.name}. Change location` : 'Choose a location'
-          }
+          accessibilityLabel="Choose a location"
           onPress={() => setPickerOpen(true)}
           style={[styles.select, { backgroundColor: c.surface, borderColor: c.border }]}
         >
-          <IconTile
-            name={target ? (target.kind === 'meeting' ? 'flag' : 'pin') : 'compass'}
-            color={tone}
-            bg={target?.kind === 'meeting' ? c.mapMeeting + '22' : c.primarySoft}
-          />
+          <IconTile name="compass" />
           <View style={{ flex: 1 }} testID="nav-target">
             <Text variant="cardTitle" numberOfLines={1}>
-              {target ? target.name : 'Compass only'}
+              Compass only
             </Text>
             <Text variant="caption" muted numberOfLines={1}>
-              {target
-                ? dist === null || bearing === null
-                  ? `${target.subtitle} · ${formatCoord(target)}`
-                  : `${target.subtitle} · ${fmt(dist)} · ${cardinalOf(bearing)} ${Math.round(
-                      bearing,
-                    )}°`
-                : 'Choose a location to point at'}
+              Choose a location to point at
             </Text>
           </View>
-          <Text muted>▾</Text>
+          <Icon name="down" size={20} color={c.textMuted} />
         </Pressable>
-
-        <View
-          style={styles.compass}
-          accessible
-          accessibilityLabel={
-            target
-              ? bearing === null
-                ? 'Compass unavailable until GPS has a fix'
-                : `${target.name} is ${fmt(dist!)} towards ${cardinalOf(
-                    bearing,
-                  )}. Straight line, terrain not considered`
-              : heading === null
-              ? 'Compass waiting for a heading'
-              : `Facing ${cardinalOf(heading)}, ${Math.round(heading)} degrees`
-          }
-        >
-          <View style={[styles.phoneMark, { borderBottomColor: c.text }]} />
-          <View
-            style={[styles.ring, { borderColor: c.primary, transform: [{ rotate: `${dial}deg` }] }]}
-            testID="compass-dial"
-          >
-            {CARDINALS.map(({ label, deg }) => (
-              <View
-                key={label}
-                style={[styles.tick, { transform: [{ rotate: `${deg}deg` }] }]}
-                pointerEvents="none"
-              >
-                <Text
-                  variant="label"
-                  color={label === 'N' ? c.danger : c.textMuted}
-                  style={styles.tickLabel}
-                >
-                  {label}
-                </Text>
-              </View>
-            ))}
-            {bearing !== null ? (
-              <View style={{ transform: [{ rotate: `${bearing}deg` }] }}>
-                <Icon name="navigate" size={96} color={tone} />
-              </View>
-            ) : null}
-          </View>
-          {target ? (
-            <>
-              <Text variant="metric" testID="nav-distance">
-                {dist === null ? '–' : fmt(dist)}
-              </Text>
-              <Text muted>
-                {bearing === null ? 'Waiting for GPS' : `towards ${cardinalOf(bearing)}`}
-              </Text>
-              <Badge label="Straight line · terrain not considered" tone="warn" />
-            </>
-          ) : (
-            <>
-              <Text variant="metric" testID="compass-heading">
-                {heading === null ? '–' : `${Math.round(heading)}°`}
-              </Text>
-              <Text muted>
-                {heading === null ? 'Waiting for a heading' : `facing ${cardinalOf(heading)}`}
-              </Text>
-            </>
-          )}
+        {dial}
+        <View style={{ alignItems: 'center', gap: space.xs }}>
+          <Text variant="metric" style={styles.big} testID="compass-heading">
+            {heading === null ? '–' : `${Math.round(heading)}°`}
+          </Text>
+          <Text muted>
+            {heading === null ? 'Waiting for a heading' : `facing ${cardinalOf(heading)}`}
+          </Text>
         </View>
-
-        {target ? (
-          <>
-            <View style={styles.metrics}>
-              <Card style={[styles.row, { flex: 1 }]}>
-                <Icon name="walk" size={20} color={c.textMuted} />
-                <View>
-                  <Text variant="cardTitle">
-                    {minutes === null ? '–' : `~ ${formatEta(minutes)}`}
-                  </Text>
-                  <Text variant="caption" muted>{`at ${paceKmh} km/h, flat ground`}</Text>
-                </View>
-              </Card>
-              <Card style={[styles.row, { flex: 1 }]}>
-                <Icon name="bearing" size={20} color={c.textMuted} />
-                <View>
-                  <Text variant="cardTitle">
-                    {bearing === null ? '–' : `${Math.round(bearing)}°`}
-                  </Text>
-                  <Text variant="caption" muted>
-                    bearing
-                  </Text>
-                </View>
-              </Card>
-            </View>
-            <Text variant="caption" muted style={{ textAlign: 'center' }}>
-              This points directly at the target. Trails, cliffs and water may not follow it, and
-              the time ignores climbs.
-            </Text>
-          </>
-        ) : null}
       </ScrollView>
-
-      <TargetPicker
-        visible={pickerOpen}
-        sections={sections}
-        selectedKey={ref ? refKey(ref) : null}
-        onPick={o => {
-          setRef(o.ref);
-          setPickerOpen(false);
-        }}
-        onClear={() => {
-          setRef(null);
-          setPickerOpen(false);
-        }}
-        onClose={() => setPickerOpen(false)}
-      />
+      {picker}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { padding: space.gutter, paddingTop: 0, gap: space.md },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  content: { padding: space.gutter, paddingTop: space.sm, gap: space.lg, paddingBottom: space.xxl },
   select: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
     padding: space.md,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.card,
+    borderWidth: 1,
   },
-  compass: { alignItems: 'center', gap: space.xs, paddingVertical: space.lg },
+  navHead: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
+  change: { minHeight: 44, justifyContent: 'center' },
+  compass: { alignItems: 'center', paddingTop: space.sm },
   phoneMark: {
     width: 0,
     height: 0,
-    borderLeftWidth: 8,
-    borderRightWidth: 8,
-    borderBottomWidth: 12,
+    borderLeftWidth: 9,
+    borderRightWidth: 9,
+    borderTopWidth: 13,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     marginBottom: space.xs,
@@ -316,17 +473,19 @@ const styles = StyleSheet.create({
     width: RING,
     height: RING,
     borderRadius: RING / 2,
-    borderWidth: 3,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: space.md,
   },
-  tick: {
-    position: 'absolute',
-    width: RING,
-    height: RING,
-    alignItems: 'center',
+  letter: { position: 'absolute', width: 28, height: 24 },
+  arcDot: { position: 'absolute', width: 18, height: 18, borderRadius: 9 },
+  targetDot: { position: 'absolute', width: 18, height: 18, borderRadius: 9, borderWidth: 3 },
+  big: { fontSize: 40, lineHeight: 46, ...tabular },
+  turn: { paddingHorizontal: space.lg, paddingVertical: space.sm, borderRadius: radius.pill },
+  panel: {
+    padding: space.gutter,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    borderWidth: 1,
   },
-  tickLabel: { marginTop: space.sm, fontWeight: '700' },
-  metrics: { flexDirection: 'row', gap: space.md },
 });

@@ -50,3 +50,42 @@ export function cardinalOf(deg: number): string {
   const names = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
   return names[Math.round((((deg % 360) + 360) % 360) / 45) % 8]!;
 }
+
+/** 16-point compass name ("NNW"), for the navigation instruction. */
+export function cardinal16Of(deg: number): string {
+  const names = [
+    'N',
+    'NNE',
+    'NE',
+    'ENE',
+    'E',
+    'ESE',
+    'SE',
+    'SSE',
+    'S',
+    'SSW',
+    'SW',
+    'WSW',
+    'W',
+    'WNW',
+    'NW',
+    'NNW',
+  ];
+  return names[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16]!;
+}
+
+/**
+ * Which way to turn from where you face to the target, in plain words. `delta` is the target
+ * bearing minus your heading. Within 10° counts as straight ahead.
+ */
+export function turnHint(delta: number): string {
+  const d = ((((delta + 180) % 360) + 360) % 360) - 180;
+  const a = Math.round(Math.abs(d) / 5) * 5;
+  if (Math.abs(d) <= 10) {
+    return 'Straight ahead';
+  }
+  if (Math.abs(d) >= 170) {
+    return 'Turn around';
+  }
+  return `Turn ${d > 0 ? 'right' : 'left'} about ${a}°`;
+}

@@ -12,7 +12,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { radius, space, useTheme } from './theme';
+import { floating, fontFamily, radius, size as sizes, space, tabular, useTheme } from './theme';
 
 type TextVariant =
   | 'hero'
@@ -25,16 +25,17 @@ type TextVariant =
   | 'label'
   | 'metric';
 
+/** Type scale (design tokens): screen titles 24-30/800, card titles 16-19/800, captions 12-13/600. */
 const textStyles: Record<TextVariant, TextStyle> = {
-  hero: { fontSize: 30, lineHeight: 36, fontWeight: '700' },
-  title: { fontSize: 22, lineHeight: 28, fontWeight: '700' },
-  heading: { fontSize: 18, lineHeight: 24, fontWeight: '700' },
-  cardTitle: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
+  hero: { fontSize: 30, lineHeight: 36, fontWeight: '800', letterSpacing: -0.4 },
+  title: { fontSize: 26, lineHeight: 32, fontWeight: '800', letterSpacing: -0.3 },
+  heading: { fontSize: 19, lineHeight: 25, fontWeight: '800' },
+  cardTitle: { fontSize: 16, lineHeight: 22, fontWeight: '800' },
   body: { fontSize: 15, lineHeight: 22 },
-  caption: { fontSize: 13, lineHeight: 18 },
-  label: { fontSize: 12, lineHeight: 16, fontWeight: '500' },
-  mono: { fontSize: 13, lineHeight: 18, fontVariant: ['tabular-nums'] },
-  metric: { fontSize: 34, lineHeight: 40, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  caption: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  label: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  mono: { fontSize: 13, lineHeight: 18, ...tabular },
+  metric: { fontSize: 34, lineHeight: 40, fontWeight: '800', ...tabular },
 };
 
 /**
@@ -95,6 +96,14 @@ const GLYPHS = {
   region: 'scan-outline',
   rules: 'document-text-outline',
   ribbon: 'ribbon-outline',
+  arrowUp: 'arrow-up',
+  arrowRight: 'arrow-forward',
+  edit: 'create-outline',
+  move: 'move-outline',
+  trash: 'trash-outline',
+  calendar: 'calendar-outline',
+  person: 'person-circle-outline',
+  warning: 'alert-circle-outline',
 } as const;
 export type IconName = keyof typeof GLYPHS;
 
@@ -138,7 +147,12 @@ export function Text({
   return (
     <RNText
       {...rest}
-      style={[textStyles[variant], { color: color ?? (muted ? c.textMuted : c.text) }, style]}
+      style={[
+        textStyles[variant],
+        fontFamily ? { fontFamily } : null,
+        { color: color ?? (muted ? c.textMuted : c.text) },
+        style,
+      ]}
     />
   );
 }
@@ -211,7 +225,11 @@ export function Button({
 }: {
   label: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  /**
+   * primary: the one main action. secondary: soft green. danger: soft red, destructive only.
+   * meeting: soft orange, meeting-point actions only. light: white on a dark card. ghost: text.
+   */
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'meeting' | 'light';
   disabled?: boolean;
   loading?: boolean;
   small?: boolean;
@@ -224,17 +242,25 @@ export function Button({
     variant === 'primary'
       ? c.primary
       : variant === 'danger'
-      ? c.danger
+      ? c.dangerBg
       : variant === 'secondary'
       ? c.primarySoft
+      : variant === 'meeting'
+      ? c.meetingSoft
+      : variant === 'light'
+      ? c.surface
       : 'transparent';
   const fg =
     variant === 'primary'
       ? c.onPrimary
       : variant === 'danger'
-      ? c.onDanger
+      ? c.danger
       : variant === 'secondary'
       ? c.deep
+      : variant === 'meeting'
+      ? c.meetingText
+      : variant === 'light'
+      ? c.text
       : c.primary;
   const off = disabled || loading;
   return (
@@ -258,8 +284,13 @@ export function Button({
         <ActivityIndicator color={fg} />
       ) : (
         <View style={styles.buttonInner}>
-          {icon ? <Icon name={icon} size={18} color={fg} /> : null}
-          <Text variant="body" color={fg} style={{ fontWeight: '600', lineHeight: 20 }}>
+          {icon ? <Icon name={icon} size={small ? 18 : 20} color={fg} /> : null}
+          <Text
+            variant="body"
+            color={fg}
+            numberOfLines={1}
+            style={small ? styles.buttonLabelSmall : styles.buttonLabel}
+          >
             {label}
           </Text>
         </View>
@@ -288,49 +319,75 @@ export function Card({
   );
 }
 
+export type ChipTone = 'neutral' | 'good' | 'warn' | 'bad' | 'meeting';
+
+/** A small rounded chip. `dot` puts a presence dot before the label; `icon` a small glyph. */
 export function Badge({
   label,
   tone = 'neutral',
+  icon,
+  dot,
+  testID,
 }: {
   label: string;
-  tone?: 'neutral' | 'good' | 'warn' | 'bad';
+  tone?: ChipTone;
+  icon?: IconName;
+  dot?: boolean;
+  testID?: string;
 }) {
   const { c } = useTheme();
   const bg =
     tone === 'good'
-      ? c.infoBg
+      ? c.primarySoft
       : tone === 'warn'
       ? c.warningBg
       : tone === 'bad'
       ? c.dangerBg
+      : tone === 'meeting'
+      ? c.meetingSoft
       : c.surfaceAlt;
   const fg =
     tone === 'good'
-      ? c.primary
+      ? c.deep
       : tone === 'warn'
-      ? c.warning
+      ? c.warningText
       : tone === 'bad'
       ? c.danger
+      : tone === 'meeting'
+      ? c.meetingText
       : c.textMuted;
+  const glyph = tone === 'meeting' ? c.meetingStroke : tone === 'good' ? c.primary : fg;
   return (
-    <View style={[styles.badge, { backgroundColor: bg }]}>
-      <Text variant="caption" color={fg} style={{ fontWeight: '600' }}>
+    <View style={[styles.badge, { backgroundColor: bg }]} testID={testID}>
+      {dot ? (
+        <View
+          style={[styles.dot, { backgroundColor: tone === 'good' ? c.connected : c.textMuted }]}
+        />
+      ) : null}
+      {icon ? <Icon name={icon} size={14} color={glyph} /> : null}
+      <Text variant="label" color={fg} numberOfLines={1} style={styles.badgeText}>
         {label}
       </Text>
     </View>
   );
 }
 
+/** Alias: the design calls these chips. */
+export const Chip = Badge;
+
 export function StatusPill({
   label,
   tone = 'neutral',
   style,
   testID,
+  dark,
 }: {
   label: string;
   tone?: 'neutral' | 'good' | 'warn' | 'bad';
   style?: StyleProp<ViewStyle>;
   testID?: string;
+  /** Dark ink pill, for status floating over the map. */
+  dark?: boolean;
 }) {
   const { c } = useTheme();
   const dot =
@@ -345,10 +402,16 @@ export function StatusPill({
     <View
       testID={testID}
       accessibilityLabel={label}
-      style={[styles.pill, { backgroundColor: c.surface, borderColor: c.border }, style]}
+      style={[
+        styles.pill,
+        dark
+          ? [{ backgroundColor: c.ink, borderColor: c.ink }, floating(c)]
+          : { backgroundColor: c.surface, borderColor: c.border },
+        style,
+      ]}
     >
       <View style={[styles.dot, { backgroundColor: dot }]} />
-      <Text variant="caption" style={{ fontWeight: '500' }}>
+      <Text variant="caption" color={dark ? c.onInk : c.text} style={styles.badgeText}>
         {label}
       </Text>
     </View>
@@ -356,11 +419,31 @@ export function StatusPill({
 }
 
 /** Soft-green rounded square for feature rows and special actions only. */
-export function IconTile({ name, color, bg }: { name: IconName; color?: string; bg?: string }) {
+export function IconTile({
+  name,
+  color,
+  bg,
+  size: s = 36,
+  tone,
+}: {
+  name: IconName;
+  color?: string;
+  bg?: string;
+  size?: number;
+  /** meeting: orange flag tile. */
+  tone?: 'primary' | 'meeting';
+}) {
   const { c } = useTheme();
+  const fg = color ?? (tone === 'meeting' ? c.meetingStroke : c.primary);
+  const back = bg ?? (tone === 'meeting' ? c.meetingSoft : c.primarySoft);
   return (
-    <View style={[styles.tile, { backgroundColor: bg ?? c.primarySoft }]}>
-      <Icon name={name} size={20} color={color ?? c.primary} />
+    <View
+      style={[
+        styles.tile,
+        { width: s, height: s, borderRadius: s >= 44 ? 14 : radius.tile, backgroundColor: back },
+      ]}
+    >
+      <Icon name={name} size={Math.round(s * 0.55)} color={fg} />
     </View>
   );
 }
@@ -439,7 +522,7 @@ export function SegmentedTabs<T extends string>({
   const { c } = useTheme();
   return (
     <View
-      style={{ flexDirection: 'row', gap: fill ? space.xs : space.sm }}
+      style={[styles.segTrack, { backgroundColor: c.surfaceAlt }]}
       accessibilityRole="tablist"
       testID={testID}
     >
@@ -454,14 +537,16 @@ export function SegmentedTabs<T extends string>({
             testID={testID ? `${testID}-${o.value}` : undefined}
             style={[
               styles.segment,
-              fill && styles.segmentFill,
-              { backgroundColor: on ? c.primary : c.surfaceAlt, borderColor: c.border },
+              (fill ?? true) && styles.segmentFill,
+              on
+                ? [{ backgroundColor: c.surface, borderColor: c.border }, styles.segmentOn]
+                : { backgroundColor: 'transparent', borderColor: 'transparent' },
             ]}
           >
             <Text
               variant="caption"
-              color={on ? c.onPrimary : c.text}
-              style={{ fontWeight: '600' }}
+              color={on ? c.text : c.textMuted}
+              style={{ fontWeight: on ? '800' : '600' }}
               numberOfLines={1}
             >
               {o.label}
@@ -512,19 +597,26 @@ export function Banner({
   style?: StyleProp<ViewStyle>;
 }) {
   const { c } = useTheme();
-  const bg = tone === 'error' ? c.dangerBg : tone === 'warn' ? c.warningBg : c.infoBg;
-  const fg = tone === 'error' ? c.danger : tone === 'warn' ? c.warning : c.primary;
+  const bg = tone === 'error' ? c.dangerBg : tone === 'warn' ? c.warningBg : c.primarySoft;
+  const fg = tone === 'error' ? c.danger : tone === 'warn' ? c.warning : c.deep;
+  const edge = tone === 'error' ? c.dangerBg : tone === 'warn' ? c.warningBorder : c.primarySoft;
+  const glyph: IconName = tone === 'info' ? 'info' : 'warning';
   return (
     <View
-      style={[styles.banner, { backgroundColor: bg, borderColor: fg }, style]}
+      style={[styles.banner, { backgroundColor: bg, borderColor: edge }, style]}
       accessibilityRole="alert"
     >
+      <Icon name={glyph} size={20} color={fg} />
       <View style={{ flex: 1 }}>
         <Text variant="body" color={fg} style={{ fontWeight: '700' }}>
           {title}
         </Text>
         {body ? (
-          <Text variant="caption" color={c.text} style={{ marginTop: 2 }}>
+          <Text
+            variant="caption"
+            color={tone === 'warn' ? c.warningText : c.textMuted}
+            style={{ marginTop: 2, fontWeight: '500' }}
+          >
             {body}
           </Text>
         ) : null}
@@ -604,9 +696,10 @@ export function IconButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.iconButton,
+        floating(c),
         {
           backgroundColor: active ? c.primary : c.surface,
-          borderColor: c.border,
+          borderColor: active ? c.primary : c.border,
           opacity: pressed ? 0.8 : 1,
         },
       ]}
@@ -656,6 +749,7 @@ export function Menu({
           accessibilityRole="menu"
           style={[
             styles.menu,
+            floating(c),
             { top: insets.top + 56, backgroundColor: c.surface, borderColor: c.border },
           ]}
         >
@@ -713,14 +807,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   button: {
-    minHeight: 52,
+    minHeight: sizes.button,
     paddingHorizontal: space.gutter,
-    borderRadius: radius.md,
+    borderRadius: radius.button,
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonInner: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  buttonSmall: { minHeight: 44, paddingHorizontal: space.lg },
+  buttonSmall: {
+    minHeight: sizes.buttonSmall,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.md,
+  },
+  buttonLabel: { fontSize: 16, lineHeight: 20, fontWeight: '700' },
+  buttonLabelSmall: { fontSize: 15, lineHeight: 20, fontWeight: '700' },
   card: { borderRadius: radius.card, borderWidth: 1, padding: space.lg },
   pill: {
     flexDirection: 'row',
@@ -731,14 +831,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.md,
     borderRadius: radius.pill,
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
   },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  tile: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  tile: { alignItems: 'center', justifyContent: 'center' },
   rowLeading: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   listRow: {
     flexDirection: 'row',
@@ -747,25 +842,22 @@ const styles = StyleSheet.create({
     minHeight: 60,
     paddingVertical: space.sm,
   },
+  segTrack: { flexDirection: 'row', padding: 4, gap: 4, borderRadius: radius.md },
   segment: {
     paddingHorizontal: space.lg,
     minHeight: 40,
     justifyContent: 'center',
-    borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 11,
+    borderWidth: 1,
   },
+  segmentOn: {},
   menu: {
     position: 'absolute',
     right: space.gutter,
     minWidth: 200,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.lg,
+    borderWidth: 1,
     paddingVertical: space.xs,
-    shadowColor: '#000',
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
   },
   menuItem: {
     flexDirection: 'row',
@@ -776,19 +868,24 @@ const styles = StyleSheet.create({
   },
   segmentFill: { flex: 1, paddingHorizontal: space.xs, alignItems: 'center' },
   badge: {
-    paddingHorizontal: space.sm,
-    paddingVertical: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    minHeight: 26,
     borderRadius: radius.pill,
     alignSelf: 'flex-start',
+    flexShrink: 1,
   },
+  badgeText: { fontWeight: '700', flexShrink: 1 },
   track: { height: 10, borderRadius: radius.pill, overflow: 'hidden' },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
     padding: space.md,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.lg,
+    borderWidth: 1,
   },
   empty: {
     flex: 1,
@@ -803,11 +900,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    borderWidth: 1,
   },
 });

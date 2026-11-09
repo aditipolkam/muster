@@ -1,7 +1,8 @@
 import React from 'react';
 import { Alert } from 'react-native';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { parseInviteLink } from '../src/domain/groups/invite';
+import { areaFromBox } from '../src/domain/maps/mapArea';
 import { buildFeed } from '../src/features/groups/GroupsScreens';
 import { MapScreen } from '../src/features/map/MapScreen';
 import {
@@ -53,6 +54,7 @@ jest.mock('@maplibre/maplibre-react-native', () => {
       return R.createElement(View, { testID: `src-${p.id}` }, p.children);
     },
     Layer: () => null,
+    Marker: (p: Record<string, any>) => R.createElement(View, { testID: p.id }, p.children),
   };
 });
 
@@ -126,7 +128,7 @@ describe('Groups screen', () => {
     ]);
   });
 
-  it('the + opens one sheet to start or join a group', async () => {
+  it('the header has Join and New, and the list ends with how to join a trek', async () => {
     const { t } = await twoDevices('organizer');
     const { n, calls } = nav();
     render(
@@ -134,14 +136,12 @@ describe('Groups screen', () => {
         <GroupsScreen navigation={n} route={{} as never} />
       </Harness>,
     );
-    expect(screen.queryByTestId('groups-add-sheet')).toBeNull();
-    fireEvent.press(screen.getByTestId('groups-add'));
-    expect(screen.getByTestId('groups-add-sheet')).toBeTruthy();
     fireEvent.press(screen.getByTestId('groups-add-join'));
     expect(calls).toEqual([['navigate', 'JoinGroup']]);
-    fireEvent.press(screen.getByTestId('groups-add'));
     fireEvent.press(screen.getByTestId('groups-add-create'));
     expect(calls[1]).toEqual(['navigate', 'CreateGroup']);
+    expect(await screen.findByTestId('groups-join-hint')).toBeTruthy();
+    expect(screen.getByText("Joining someone's trek?")).toBeTruthy();
   });
 
   it('lists groups with the role and lets the organizer approve a request', async () => {
@@ -405,10 +405,15 @@ describe('Group page (updates)', () => {
         <GroupDetailsScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
       </Harness>,
     );
-    expect(await screen.findByText('Lake junction')).toBeTruthy();
+    // In the feed, and pinned at the top as the active meeting point.
+    expect((await screen.findAllByText('Lake junction')).length).toBe(2);
+    expect(screen.getByTestId('group-pinned-point')).toBeTruthy();
     expect(screen.getByText('Meeting point shared')).toBeTruthy();
     expect(screen.getByText('Other joined')).toBeTruthy();
-    expect(screen.getByTestId('group-status').props.children).toMatch(/^2 members/);
+    expect(typeof screen.getByTestId('group-status').props.children).toBe('string');
+    expect(
+      screen.getByText("Only you can post here. Followers get your updates when they're in range."),
+    ).toBeTruthy();
     expect(screen.queryByText('Members (2)')).toBeNull();
     expect(screen.queryByTestId('invite-create')).toBeNull();
     expect(p.ok).toBe(true);
@@ -562,6 +567,8 @@ describe('Group info screen', () => {
     expect(screen.getByTestId('info-name')).toBeTruthy();
     expect(screen.getByTestId('info-menu')).toBeTruthy();
 
+    // The invitation opens from the last row of Members.
+    fireEvent.press(screen.getByTestId('info-tab-members'));
     fireEvent.press(screen.getByTestId('info-tab-invite'));
     expect(screen.getByTestId('invite-create')).toBeTruthy();
     expect(screen.queryByText(/Meeting points \(/)).toBeNull();
@@ -613,7 +620,7 @@ describe('Group info screen', () => {
 });
 
 describe('Meeting Point details', () => {
-  it('shows who created and updated it, and lets a member acknowledge', async () => {
+  it('shows who created and updated it; a member only reads it (no acknowledge)', async () => {
     const { t, other, g, all } = await twoDevices('member');
     const first = await other.groups.publishPoint(g.id, {
       name: 'Lake junction',
@@ -642,12 +649,9 @@ describe('Meeting Point details', () => {
     expect(screen.getByTestId('point-coords').props.children).toBe('56.810000, -5.100000');
     expect(screen.getByTestId('point-created').props.children.join('')).toContain('Created by');
     expect(screen.getByTestId('point-updated').props.children).toContain('Updated by');
-    await act(async () => {
-      fireEvent.press(screen.getByTestId('point-ack'));
-      await settle(all);
-    });
-    expect(await screen.findByText('Acknowledged')).toBeTruthy();
-    expect(await other.points.acks(g.id, id)).toMatchObject([{ address: 'off1me', rev: 2 }]);
+    expect(screen.queryByTestId('point-ack')).toBeNull();
+    expect(screen.queryByTestId('point-remove')).toBeNull();
+    expect(await other.points.acks(g.id, id)).toEqual([]);
   });
 
   it('shows a removed point as gone', async () => {
@@ -700,12 +704,19 @@ describe('Share location (group page)', () => {
     const { t, other, g, all } = await withMember();
     fixAt(56.7968, -5.0035);
     open(t, { groupId: g.id });
+    // With a GPS fix, "Share my location" goes straight to step 2 on where you stand.
     fireEvent.press(await screen.findByTestId('group-share-location'));
     expect(screen.getByTestId('share-location-sheet')).toBeTruthy();
+    expect(screen.getByText('Name and share')).toBeTruthy();
+    expect(screen.getByText('STEP 2 OF 2')).toBeTruthy();
+    expect(screen.getByText('Share with Ridge walk')).toBeTruthy();
+    // Change goes back to the choices, which offer where you are.
+    fireEvent.press(screen.getByTestId('share-back'));
     expect(screen.getByText(/Accurate to ±6 m/)).toBeTruthy();
     fireEvent.press(screen.getByTestId('share-here'));
-    expect(screen.getByText('Name this meeting point')).toBeTruthy();
     expect(screen.getByTestId('share-submit').props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByTestId('share-chip-Campsite'));
+    expect(screen.getByTestId('share-name').props.value).toBe('Campsite');
     fireEvent.changeText(screen.getByTestId('share-name'), 'Lake junction');
     fireEvent.changeText(screen.getByTestId('share-note'), 'Lunch at noon');
     await act(async () => {
@@ -715,8 +726,8 @@ describe('Share location (group page)', () => {
     expect(await other.points.list(g.id)).toMatchObject([
       { name: 'Lake junction', note: 'Lunch at noon', lat: 56.7968, lon: -5.0035 },
     ]);
-    // It shows in the feed as this phone's own message.
-    expect(await screen.findByText('Lake junction')).toBeTruthy();
+    // It shows in the feed as this phone's own message (and pinned at the top).
+    expect((await screen.findAllByText('Lake junction')).length).toBeGreaterThan(0);
     expect(screen.queryByTestId('share-location-sheet')).toBeNull();
   });
 
@@ -727,7 +738,7 @@ describe('Share location (group page)', () => {
     fireEvent.press(await screen.findByTestId('group-share-location'));
     expect(screen.getByText('Finding your location…')).toBeTruthy();
     fireEvent.press(screen.getByTestId('share-here'));
-    expect(screen.queryByText('Name this meeting point')).toBeNull();
+    expect(screen.queryByText('Name and share')).toBeNull();
   });
 
   it('offers saved places, with the name filled in', async () => {
@@ -760,7 +771,7 @@ describe('Share location (group page)', () => {
   it('back from the map, it opens on the chosen place ready to name and share', async () => {
     const { t, other, g, all } = await withMember();
     open(t, { groupId: g.id, picked: { lat: 56.8, lon: -5.1, nonce: 1 } });
-    expect(await screen.findByText('Name this meeting point')).toBeTruthy();
+    expect(await screen.findByText('Name and share')).toBeTruthy();
     fireEvent.changeText(screen.getByTestId('share-name'), 'Hut');
     await act(async () => {
       fireEvent.press(screen.getByTestId('share-submit'));
@@ -818,7 +829,7 @@ describe('Map: meeting point controls', () => {
     expect(screen.queryByTestId('meeting-editor')).toBeNull();
   });
 
-  it('a member sees a received point at its coordinates and can acknowledge it', async () => {
+  it('a member sees a received point at its coordinates; followers only read it', async () => {
     const { t, other, g, all } = await twoDevices('member');
     const p = await other.groups.publishPoint(g.id, { name: 'Hut', lat: 56.8, lon: -5.1 });
     await settle(all);
@@ -836,16 +847,18 @@ describe('Map: meeting point controls', () => {
     const before = calls.length;
     fireEvent.press(screen.getByTestId('meeting-navigate'));
     expect(calls).toHaveLength(before);
-    expect(await screen.findByTestId('navigation-bar')).toBeTruthy();
-    expect(screen.getByText('Hut')).toBeTruthy();
+    const bar = await screen.findByTestId('navigation-bar');
+    expect(within(bar).getByText('Hut')).toBeTruthy();
     fireEvent.press(screen.getByTestId('navigation-end'));
     await pressMarker(key);
     expect(await screen.findByTestId('meeting-sheet')).toBeTruthy();
-    await act(async () => {
-      fireEvent.press(screen.getByTestId('meeting-ack'));
-      await settle(all);
-    });
-    expect(await screen.findByText('Acknowledged')).toBeTruthy();
+    // Pub/sub: a follower cannot send anything back to the group, so there is no Acknowledge.
+    expect(screen.queryByTestId('meeting-ack')).toBeNull();
+    expect(screen.getByTestId('meeting-compass')).toBeTruthy();
+    expect(
+      screen.getByText('Straight-line estimate. Trails and climbs not included.'),
+    ).toBeTruthy();
+    void settle(all);
   });
 
   it('a removal disappears from the map', async () => {
@@ -859,5 +872,178 @@ describe('Map: meeting point controls', () => {
       await settle(all);
     });
     await waitFor(() => expect(mockMap.sources['meeting-points']!.data.features).toHaveLength(0));
+  });
+});
+
+describe('Trip map', () => {
+  const AREA = areaFromBox([-5.05, 56.77, -4.95, 56.83], 'Ridge walk');
+  const installedOver = (bbox: number[]) => ({
+    id: 'r1',
+    name: 'Ridge',
+    bbox: [bbox[0]! - 0.01, bbox[1]! - 0.01, bbox[2]! + 0.01, bbox[3]! + 0.01],
+    minZoom: 8,
+    maxZoom: 15,
+    bytes: 1000,
+    sha256: null,
+    osmDataDate: null,
+    schemaV: 1,
+    progressBytes: 1000,
+    filePath: '/r.pmtiles',
+    installedAt: 1,
+    source: 'custom' as const,
+    errorCode: null,
+    sourceUrl: null,
+    state: 'installed' as const,
+  });
+
+  /** This phone joins a group whose organizer set a trip map first. */
+  async function memberOfGroupWithMap() {
+    const net = new FakeNetwork();
+    const t = await makeTestServices({ net, address: 'off1me' });
+    const other = await makeGroupNode(net, 'off1other', { name: 'Other' });
+    await t.mesh.start();
+    await t.services.groups.start({ poll: false });
+    const og = await other.groups.createGroup({ name: 'Ridge walk' });
+    const g = og.ok ? og.value : (undefined as never);
+    expect((await other.groups.setTripArea(g.id, AREA)).ok).toBe(true);
+    const inv = await other.groups.createInvite(g.id, { autoApprove: true });
+    const parsed = inv.ok ? parseInviteLink(inv.value.link) : null;
+    await t.services.groups.joinFromInvite(
+      parsed && parsed.ok ? parsed.invite : (undefined as never),
+    );
+    await settle([{ groups: t.services.groups }, other]);
+    return { t, other, g };
+  }
+
+  it('the organizer chooses it on the map before inviting anyone', async () => {
+    const { t, g } = await twoDevices('organizer');
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    expect(await screen.findByTestId('trip-map-summary')).toHaveTextContent(
+      /set it before inviting anyone/,
+    );
+    fireEvent.press(screen.getByTestId('trip-map-choose'));
+    expect(calls.at(-1)).toEqual([
+      'navigate',
+      'Map',
+      { pickTripMap: { groupId: g.id, region: null }, nonce: expect.any(Number) },
+    ]);
+  });
+
+  it('the area chosen on the map is saved, named after the group, and invites come next', async () => {
+    const { t, g } = await twoDevices('organizer');
+    const bbox = [-5.05, 56.77, -4.95, 56.83];
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen
+          navigation={nav().n}
+          route={{ params: { groupId: g.id, pickedArea: { bbox, nonce: 1 } } } as never}
+        />
+      </Harness>,
+    );
+    await waitFor(async () =>
+      expect((await t.services.groupsRepo.get(g.id))?.tripArea?.bbox).toEqual(bbox),
+    );
+    expect((await t.services.groupsRepo.get(g.id))?.tripArea?.name).toBe('Ridge walk');
+    expect(await screen.findByText(/Ridge walk · About/)).toBeTruthy();
+    expect(screen.getByTestId('invite-create')).toBeTruthy();
+    expect(screen.getByTestId('trip-map-remove')).toBeTruthy();
+  });
+
+  it('is locked for the organizer once someone has joined', async () => {
+    const { t, other, all, g } = await twoDevices('organizer');
+    await t.services.groups.setTripArea(g.id, AREA);
+    const inv = await t.services.groups.createInvite(g.id, { autoApprove: true });
+    const parsed = inv.ok ? parseInviteLink(inv.value.link) : null;
+    await other.groups.joinFromInvite(parsed && parsed.ok ? parsed.invite : (undefined as never));
+    await settle(all);
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    expect(await screen.findByTestId('trip-map-locked')).toBeTruthy();
+    expect(screen.queryByTestId('trip-map-choose')).toBeNull();
+    expect(screen.queryByTestId('trip-map-remove')).toBeNull();
+  });
+
+  it('a member who joined is asked to download it on the group page and in the list', async () => {
+    const { t, g } = await memberOfGroupWithMap();
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    expect(
+      await screen.findByText(/^Save the trip map \(\d+ (KB|MB)\) before you lose signal$/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Ridge walk · About \d+ (KB|MB)\. Get it while you have internet/),
+    ).toBeTruthy();
+    screen.unmount();
+    render(
+      <Harness services={t.services}>
+        <GroupsScreen navigation={nav().n} route={{} as never} />
+      </Harness>,
+    );
+    expect(await screen.findByText(/^Trip map not saved offline · \d+ (KB|MB)$/)).toBeTruthy();
+  });
+
+  it('one tap on the group page starts the download of that area', async () => {
+    const { t, g } = await memberOfGroupWithMap();
+    const plan = jest.spyOn(t.services.packs, 'planArea').mockResolvedValue({
+      ok: true,
+      value: { fileBytes: 1000 } as any,
+    });
+    const start = jest.spyOn(t.services.packs, 'startArea').mockResolvedValue({
+      ok: true,
+      value: {} as any,
+    });
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    const button = await screen.findByText('Save');
+    await act(async () => {
+      fireEvent.press(button);
+    });
+    expect(plan).toHaveBeenCalledWith(AREA.bbox, AREA.maxZoom);
+    expect(start).toHaveBeenCalledWith({ fileBytes: 1000 }, 'Ridge walk');
+  });
+
+  it('the nudge goes away once a downloaded map covers the area', async () => {
+    const { t, g } = await memberOfGroupWithMap();
+    jest.spyOn(t.services.regions, 'list').mockResolvedValue([installedOver(AREA.bbox)] as any);
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    expect(await screen.findByTestId('trip-map-ready')).toBeTruthy();
+    expect(screen.queryByTestId('trip-map-choose')).toBeNull();
+    screen.unmount();
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    await screen.findByTestId('group-title');
+    expect(screen.queryByTestId('trip-map-banner')).toBeNull();
+  });
+
+  it('a member of a group without a trip map sees nothing about it', async () => {
+    const { t, g } = await twoDevices('member');
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    await screen.findByTestId('info-name');
+    expect(screen.queryByTestId('trip-map')).toBeNull();
   });
 });

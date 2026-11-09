@@ -257,3 +257,13 @@ achievement_unlocks(id PK, unlocked_at, adventure_id NULL)
 - **Statistics and history** are derived: the recap is computed from these tables when opened (`buildRecap`), the journal is `adventures` with a final status. Nothing is estimated; a missing route or distance stays missing.
 - **Retention.** Adventures, routes and notes stay until the user deletes the adventure ("Delete from journal"). Deleting removes every row above for it. "Delete all data" in Settings is unchanged. Route points are capped at 20,000 per adventure.
 - Migration 4 is additive: no existing table is altered; applying it to a version-3 database keeps all data (tested).
+
+## Group trip map (migration 7, `group_trip_map`)
+
+```sql
+ALTER TABLE groups ADD COLUMN trip_area TEXT   -- MapAreaWire JSON {b, n, z}, NULL when none
+```
+
+- The organizer's trip map for the group (ADR 0013). Written only by `GroupsRepo.setTripArea`, so `save` (an upsert of the other columns) never drops it. A member's copy comes from its welcome.
+- A stored value that does not parse as a valid area reads as none.
+- Additive: an existing database keeps all its data; groups start with no trip map.

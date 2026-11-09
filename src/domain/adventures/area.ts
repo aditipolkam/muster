@@ -1,11 +1,16 @@
 import type { LatLon } from '../geo';
-import { CoverageRegion, covers } from '../maps/coverage';
-import { MAP_AREA_NAME_MAX, MAX_AREA_SPAN_DEG, MapArea } from './model';
+import {
+  DEFAULT_AREA_MAX_ZOOM,
+  DEFAULT_AREA_MIN_ZOOM,
+  MAP_AREA_NAME_MAX,
+  MAX_AREA_SPAN_DEG,
+  MapArea,
+} from '../maps/mapArea';
+
+export { DEFAULT_AREA_MAX_ZOOM, DEFAULT_AREA_MIN_ZOOM } from '../maps/mapArea';
 
 /** About 1 km at mid latitudes: room around the outermost places so the trail edges are mapped. */
 export const AREA_PADDING_DEG = 0.01;
-export const DEFAULT_AREA_MIN_ZOOM = 8;
-export const DEFAULT_AREA_MAX_ZOOM = 15;
 
 export type AreaResult =
   | { ok: true; area: MapArea }
@@ -105,35 +110,4 @@ export function areaForBoxes(boxes: Box[], name: string): AreaResult {
   };
 }
 
-/**
- * Rough download size for an area, before anything is fetched. It is a guess from the tile count
- * and a flat average per tile [ASSUMPTION A-34: not measured against real regions], so the screens
- * say "about"; the exact size is shown when the download starts.
- */
-export const AVG_TILE_BYTES = 40_000;
-export function estimateAreaBytes(box: Box, minZoom: number, maxZoom: number): number {
-  let tiles = 0;
-  for (let z = minZoom; z <= maxZoom; z++) {
-    const n = 2 ** z;
-    const x = (lon: number) => Math.floor(((lon + 180) / 360) * n);
-    const y = (lat: number) => {
-      const r = (lat * Math.PI) / 180;
-      return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n);
-    };
-    tiles += (x(box[2]) - x(box[0]) + 1) * (y(box[1]) - y(box[3]) + 1);
-  }
-  return tiles * AVG_TILE_BYTES;
-}
-
-/** Is the whole box (its corners and centre) inside regions the person has installed? */
-export function boxIsInstalled(regions: CoverageRegion[], box: Box): boolean {
-  const [w, s, e, n] = box;
-  const pts = [
-    { lat: s, lon: w },
-    { lat: s, lon: e },
-    { lat: n, lon: w },
-    { lat: n, lon: e },
-    { lat: (s + n) / 2, lon: (w + e) / 2 },
-  ];
-  return pts.every(p => covers(regions, p));
-}
+export { AVG_TILE_BYTES, boxIsInstalled, estimateAreaBytes } from '../maps/mapArea';

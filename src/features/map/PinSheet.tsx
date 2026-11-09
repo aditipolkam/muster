@@ -4,7 +4,7 @@ import { bearingDeg, distanceM, formatCoord } from '../../domain/geo';
 import { formatDistanceIn, Units } from '../../domain/geo/pace';
 import { Fix } from '../../domain/location/fix';
 import { Button, Row, Text } from '../../ui/components';
-import { radius, space, useTheme } from '../../ui/theme';
+import { floating, radius, space, useTheme } from '../../ui/theme';
 
 type Props = {
   pin: { lat: number; lon: number };
@@ -22,7 +22,7 @@ export function PinSheet({ pin, fix, units, onNavigate, onSave, onClose }: Props
   const brg = fix ? bearingDeg(fix, pin) : null;
   return (
     <View
-      style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}
+      style={[styles.sheet, floating(c), { backgroundColor: c.surface, borderColor: c.border }]}
       testID="pin-sheet"
     >
       <Row>
@@ -42,7 +42,8 @@ export function PinSheet({ pin, fix, units, onNavigate, onSave, onClose }: Props
       <Row style={{ marginTop: space.sm }}>
         <Button
           style={{ flex: 1 }}
-          label="Start navigation"
+          label="Navigate"
+          icon="navigate"
           onPress={onNavigate}
           testID="pin-navigate"
         />
@@ -61,17 +62,13 @@ export function PinSheet({ pin, fix, units, onNavigate, onSave, onClose }: Props
 const styles = StyleSheet.create({
   sheet: {
     position: 'absolute',
-    left: space.md,
-    right: space.md,
-    bottom: space.md,
-    padding: space.lg,
-    gap: space.xs,
-    borderRadius: radius.sheet,
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: space.gutter,
+    gap: space.sm,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    borderWidth: 1,
   },
 });

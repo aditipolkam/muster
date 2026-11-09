@@ -16,23 +16,38 @@ import { POINT_NAME_MAX, POINT_NOTE_MAX } from '../../domain/groups/model';
 import { useLocationStore } from '../../platform/locationStore';
 import { useMarkers } from '../../runtime/hooks';
 import { useServices } from '../../runtime/services';
-import { Banner, Button, Card, IconButton, IconTile, ListRow, Row, Text } from '../../ui/components';
+import {
+  Banner,
+  Button,
+  Card,
+  Icon,
+  IconButton,
+  IconTile,
+  ListRow,
+  Row,
+  Text,
+} from '../../ui/components';
 import { useNow } from '../../ui/useNow';
-import { radius, space, useTheme } from '../../ui/theme';
+import { radius, size, space, useTheme } from '../../ui/theme';
+
+/** One tap names the point; the leader can still edit it. */
+const QUICK_NAMES = ['Lunch stop', 'Campsite', 'Summit', 'Regroup here'];
 
 /** Where the place came from: it decides the name suggested for it. */
 export type SharePlace = { lat: number; lon: number; name?: string };
 
 /**
- * "Share location" on the group page, like attaching a location in a chat: send where you are,
- * choose a place on the map, or pick a saved place; then name it and share it with the group as a
- * meeting point. Opening it with `place` (back from the map) goes straight to naming.
+ * Step 2 of setting a meeting point, "Name and share" (leader only). Opening it with `place`
+ * (back from the map) or `startHere` (Share my location, with a GPS fix) goes straight to naming;
+ * otherwise it first offers where you are, the map, or a saved place.
  */
 export function ShareLocationSheet({
   visible,
   groupId,
   groupName,
   place,
+  startHere,
+  inRange = 0,
   onChooseOnMap,
   onClose,
 }: {
@@ -40,6 +55,10 @@ export function ShareLocationSheet({
   groupId: string;
   groupName: string;
   place: SharePlace | null;
+  /** Start on the current location when there is a usable fix. */
+  startHere?: boolean;
+  /** Followers in range right now: they receive it straight away. */
+  inRange?: number;
   onChooseOnMap: () => void;
   onClose: () => void;
 }) {
@@ -56,21 +75,23 @@ export function ShareLocationSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // A fresh start each time it opens; a place from the map skips straight to naming it.
+  const gps = gpsStatus(now, fix, permission, watchingSince);
+  const canSendHere = !!fix && (gps === 'ok' || gps === 'poor');
+
+  // A fresh start each time it opens; a place from the map (or where you stand) skips straight
+  // to naming it.
   useEffect(() => {
     if (!visible) {
       return;
     }
-    setChosen(place);
+    setChosen(place ?? (startHere && canSendHere && fix ? { lat: fix.lat, lon: fix.lon } : null));
     setName(place?.name ?? '');
     setNote('');
     setError(null);
     // Make sure a current fix is coming in (the Map may not have been opened yet).
     void location.start();
-  }, [visible, place, location]);
-
-  const gps = gpsStatus(now, fix, permission, watchingSince);
-  const canSendHere = !!fix && (gps === 'ok' || gps === 'poor');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, place, startHere, location]);
   const hereSubtitle =
     gps === 'unavailable'
       ? permissionAction(permission) === 'request'
@@ -110,7 +131,10 @@ export function ShareLocationSheet({
     }
   };
 
-  const field = [styles.input, { color: c.text, borderColor: c.border, backgroundColor: c.bg }];
+  const field = [
+    styles.input,
+    { color: c.text, borderColor: c.border, backgroundColor: c.surface },
+  ];
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
@@ -122,58 +146,114 @@ export function ShareLocationSheet({
           style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}
           testID="share-location-sheet"
         >
+          <View style={[styles.grabber, { backgroundColor: c.border }]} />
           <View style={styles.head}>
-            {chosen && !place ? (
-              <IconButton
-                icon="back"
-                label="Choose another place"
-                onPress={() => setChosen(null)}
-                testID="share-back"
-              />
-            ) : null}
-            <Text variant="heading" style={{ flex: 1 }}>
-              {chosen ? 'Name this meeting point' : 'Share location'}
-            </Text>
+            <View style={{ flex: 1 }}>
+              {chosen ? (
+                <Text variant="label" muted style={styles.step}>
+                  STEP 2 OF 2
+                </Text>
+              ) : null}
+              <Text variant="heading">{chosen ? 'Name and share' : 'Share location'}</Text>
+            </View>
             <IconButton icon="close" label="Close" onPress={onClose} testID="share-close" />
           </View>
 
           {chosen ? (
             <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
               <Card style={styles.placeCard}>
-                <IconTile name="flag" color={c.mapMeeting} bg={c.mapMeeting + '22'} />
+                <IconTile name="flag" tone="meeting" />
                 <View style={{ flex: 1 }}>
-                  <Text variant="caption" muted>
-                    Everyone in "{groupName}" sees it on their map
-                  </Text>
                   <Text variant="cardTitle" testID="share-coords">
                     {formatCoord(chosen)}
                   </Text>
+                  <Text variant="caption" muted>
+                    Everyone in "{groupName}" sees it on their map
+                  </Text>
                 </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Change the place"
+                  onPress={place ? onChooseOnMap : () => setChosen(null)}
+                  hitSlop={10}
+                  style={styles.link}
+                  testID="share-back"
+                >
+                  <Text variant="caption" color={c.primary} style={{ fontWeight: '800' }}>
+                    Change
+                  </Text>
+                </Pressable>
               </Card>
-              <TextInput
-                testID="share-name"
-                style={field}
-                value={name}
-                onChangeText={setName}
-                maxLength={POINT_NAME_MAX}
-                placeholder="Name, e.g. Lake junction"
-                accessibilityLabel="Meeting point name"
-                autoFocus
-              />
-              <TextInput
-                testID="share-note"
-                style={[field, styles.note]}
-                value={note}
-                onChangeText={setNote}
-                maxLength={POINT_NOTE_MAX}
-                multiline
-                placeholder="Note (optional), e.g. wait by the bridge"
-                accessibilityLabel="Meeting point note"
-              />
+              <View style={{ gap: space.sm }}>
+                <Text variant="label" muted>
+                  Name
+                </Text>
+                <TextInput
+                  testID="share-name"
+                  style={field}
+                  value={name}
+                  onChangeText={setName}
+                  maxLength={POINT_NAME_MAX}
+                  placeholder="e.g. Lake junction"
+                  placeholderTextColor={c.textMuted}
+                  accessibilityLabel="Meeting point name"
+                  autoFocus
+                />
+                <View style={styles.chips}>
+                  {QUICK_NAMES.map(q => {
+                    const on = name.trim() === q;
+                    return (
+                      <Pressable
+                        key={q}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: on }}
+                        onPress={() => setName(q)}
+                        testID={`share-chip-${q}`}
+                        style={[
+                          styles.chip,
+                          on
+                            ? { backgroundColor: c.primary, borderColor: c.primary }
+                            : { backgroundColor: c.surface, borderColor: c.border },
+                        ]}
+                      >
+                        <Text variant="caption" color={on ? c.onPrimary : c.text}>
+                          {q}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+              <View style={{ gap: space.sm }}>
+                <Text variant="label" muted>
+                  Note (optional)
+                </Text>
+                <TextInput
+                  testID="share-note"
+                  style={[field, styles.note]}
+                  value={note}
+                  onChangeText={setNote}
+                  maxLength={POINT_NOTE_MAX}
+                  multiline
+                  placeholder="e.g. wait by the bridge"
+                  placeholderTextColor={c.textMuted}
+                  accessibilityLabel="Meeting point note"
+                />
+              </View>
+              <Row style={{ gap: space.sm, alignItems: 'flex-start' }}>
+                <Icon name="radio" size={18} color={inRange > 0 ? c.primary : c.textMuted} />
+                <Text variant="caption" muted style={{ flex: 1 }} testID="share-in-range">
+                  {inRange > 0
+                    ? `${inRange} ${
+                        inRange === 1 ? 'person is' : 'people are'
+                      } in range and get it now. Others get it when they come close.`
+                    : 'Nobody is in range right now. Followers get it when they come close.'}
+                </Text>
+              </Row>
               {error ? <Banner tone="error" title={error} /> : null}
               <Button
                 icon="send"
-                label="Share with the group"
+                label={`Share with ${groupName}`}
                 onPress={() => void share()}
                 loading={busy}
                 disabled={!name.trim()}
@@ -201,7 +281,7 @@ export function ShareLocationSheet({
                   testID="share-on-map"
                   title="Choose on the map"
                   subtitle="Search for a place or move the map under a pin"
-                  leading={<IconTile name="map" />}
+                  leading={<IconTile name="flag" tone="meeting" />}
                   onPress={onChooseOnMap}
                   chevron
                   divider={false}
@@ -245,27 +325,39 @@ export function ShareLocationSheet({
 const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
-    maxHeight: '85%',
+    maxHeight: '90%',
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     paddingBottom: space.lg,
   },
+  grabber: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, marginTop: space.sm },
   head: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.sm,
     paddingHorizontal: space.gutter,
-    paddingTop: space.md,
+    paddingTop: space.sm,
   },
-  body: { padding: space.gutter, gap: space.md },
-  placeCard: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  input: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radius.input,
+  step: { letterSpacing: 0.8 },
+  body: { padding: space.gutter, gap: space.lg },
+  placeCard: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md },
+  link: { minHeight: size.touch, justifyContent: 'center' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  chip: {
+    minHeight: 36,
     paddingHorizontal: space.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    justifyContent: 'center',
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: radius.input,
+    paddingHorizontal: space.lg,
+    minHeight: size.input,
     paddingVertical: space.sm,
     fontSize: 16,
   },
-  note: { height: 80, textAlignVertical: 'top' },
+  note: { height: 88, textAlignVertical: 'top' },
 });

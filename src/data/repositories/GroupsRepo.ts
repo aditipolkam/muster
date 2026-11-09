@@ -1,4 +1,5 @@
 import { Group, GroupMember, GroupRole, GroupStatus, MemberState } from '../../domain/groups/model';
+import { MapArea, parseMapArea, toMapAreaWire } from '../../domain/maps/mapArea';
 import { mergeMember } from '../../domain/groups/merge';
 import type { InviteRecord } from '../../domain/groups/invite';
 import { DbPort, DbReader, DbTx } from '../DbPort';
@@ -13,6 +14,7 @@ type GroupRow = {
   created_at: number;
   joined_at: number | null;
   member_rev: number;
+  trip_area: string | null;
 };
 type MemberRow = {
   group_id: string;
@@ -32,6 +34,17 @@ type InviteRow = {
   used_by: string | null;
 };
 
+const parseTripArea = (raw: string | null): MapArea | null => {
+  if (!raw) {
+    return null;
+  }
+  try {
+    return parseMapArea(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+};
+
 const toGroup = (r: GroupRow): Group => ({
   id: r.id,
   name: r.name,
@@ -41,6 +54,7 @@ const toGroup = (r: GroupRow): Group => ({
   createdAt: r.created_at,
   joinedAt: r.joined_at,
   memberRev: r.member_rev,
+  tripArea: parseTripArea(r.trip_area),
 });
 const toMember = (r: MemberRow): GroupMember => ({
   groupId: r.group_id,
@@ -70,6 +84,7 @@ export class GroupsRepo {
     return row ? toGroup(row) : null;
   }
 
+  /** Upserts the group. The trip map is written only by `setTripArea`, so a save never drops it. */
   async save(g: Group): Promise<void> {
     await this.db.run(
       `INSERT INTO groups(id, name, organizer, role, status, created_at, joined_at, member_rev)
@@ -79,6 +94,14 @@ export class GroupsRepo {
          member_rev = excluded.member_rev`,
       [g.id, g.name, g.organizer, g.role, g.status, g.createdAt, g.joinedAt, g.memberRev],
     );
+    this.changes.emit();
+  }
+
+  async setTripArea(id: string, area: MapArea | null): Promise<void> {
+    await this.db.run('UPDATE groups SET trip_area = ? WHERE id = ?', [
+      area ? JSON.stringify(toMapAreaWire(area)) : null,
+      id,
+    ]);
     this.changes.emit();
   }
 

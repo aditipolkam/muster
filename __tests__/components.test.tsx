@@ -43,6 +43,7 @@ jest.mock('@maplibre/maplibre-react-native', () => {
     GeoJSONSource: (p: Record<string, any>) =>
       React.createElement(View, { testID: `src-${p.id}` }, p.children),
     Layer: () => null,
+    Marker: (p: Record<string, any>) => React.createElement(View, { testID: p.id }, p.children),
   };
 });
 
@@ -596,7 +597,7 @@ describe('OnboardingScreen', () => {
   it('welcome lists the benefits and does not ask for a name yet', () => {
     open();
     expect(screen.getByText('Offline maps')).toBeTruthy();
-    expect(screen.getByText('Group sync')).toBeTruthy();
+    expect(screen.getByText('Follow your leader')).toBeTruthy();
     expect(screen.queryByTestId('onboarding-name')).toBeNull();
   });
 

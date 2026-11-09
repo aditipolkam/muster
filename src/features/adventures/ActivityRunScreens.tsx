@@ -11,11 +11,9 @@ import {
   View,
 } from 'react-native';
 import { proximity } from '../../domain/adventures/arrival';
-import { boxIsInstalled, estimateAreaBytes } from '../../domain/adventures/area';
 import { activityStanding, completedAt, elapsedMs } from '../../domain/adventures/lifecycle';
 import { CHECKPOINT_DESC_MAX, MapArea, placeOf } from '../../domain/adventures/model';
 import {
-  formatBytesShort,
   formatDurationRange,
   isPhaseUnlocked,
   PhaseStatus,
@@ -28,12 +26,12 @@ import { useLocationStore } from '../../platform/locationStore';
 import {
   AdventureDetail,
   useAdventureDetail,
+  useAreaDownload,
   useCheckpointRadius,
   useGroupMembers,
   useGroups,
   useNavPrefs,
   usePhaseRecords,
-  useRegions,
 } from '../../runtime/hooks';
 import { ActivityStackParamList } from '../../runtime/navigation';
 import { useServices } from '../../runtime/services';
@@ -239,52 +237,23 @@ function Overview({
 
 // ---- One-tap download of the activity's map area -----------------------------------------------
 
-const boxHas = (outer: [number, number, number, number], inner: [number, number, number, number]) =>
-  outer[0] <= inner[0] && outer[1] <= inner[1] && outer[2] >= inner[2] && outer[3] >= inner[3];
-
 /**
  * Download Map Region: one tap plans the area and starts the download, which is the only place
  * the activity uses the network and only because the person pressed it.
  */
 export function MapRegionCard({ area }: { area: MapArea }) {
   const { c } = useTheme();
-  const { packs } = useServices();
-  const regions = useRegions();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const installed = regions.filter(r => r.state === 'installed' && r.filePath);
-  const covered = boxIsInstalled(installed, area.bbox);
-  const inFlight = regions.find(
-    r =>
-      (r.state === 'downloading' || r.state === 'paused' || r.state === 'verifying') &&
-      boxHas(r.bbox, area.bbox),
-  );
-  const size = formatBytesShort(estimateAreaBytes(area.bbox, area.minZoom, area.maxZoom));
-
-  const download = async () => {
-    setBusy(true);
-    setError(null);
-    const plan = await packs.planArea(area.bbox, area.maxZoom);
-    if (!plan.ok) {
-      setBusy(false);
-      setError(plan.error.userMessage);
-      return;
-    }
-    const r = await packs.startArea(plan.value, area.name);
-    setBusy(false);
-    if (!r.ok) {
-      setError(r.error.userMessage);
-    }
-  };
+  const { covered, progress, sizeText, busy, error, download } = useAreaDownload(area);
+  const inFlight = progress !== null;
 
   return (
     <View style={{ gap: space.sm }}>
       <Pressable
         testID="download-region"
         accessibilityRole="button"
-        accessibilityState={{ disabled: covered || !!inFlight || busy }}
+        accessibilityState={{ disabled: covered || inFlight || busy }}
         accessibilityLabel={covered ? 'Map region downloaded' : 'Download Map Region'}
-        disabled={covered || !!inFlight || busy}
+        disabled={covered || inFlight || busy}
         onPress={() => void download()}
         style={[styles.regionCard, { backgroundColor: c.primarySoft, borderColor: c.border }]}
       >
@@ -301,14 +270,10 @@ export function MapRegionCard({ area }: { area: MapArea }) {
             {covered
               ? 'Ready for offline use'
               : inFlight
-              ? `${Math.round(
-                  inFlight.bytes > 0 ? (inFlight.progressBytes / inFlight.bytes) * 100 : 0,
-                )}%`
-              : `About ${size}  ·  Offline use`}
+              ? `${Math.round((progress ?? 0) * 100)}%`
+              : `${sizeText}  ·  Offline use`}
           </Text>
-          {inFlight ? (
-            <ProgressBar value={inFlight.bytes > 0 ? inFlight.progressBytes / inFlight.bytes : 0} />
-          ) : null}
+          {inFlight ? <ProgressBar value={progress ?? 0} /> : null}
         </View>
       </Pressable>
       {error ? <Banner tone="error" title={error} /> : null}
@@ -915,7 +880,7 @@ const styles = StyleSheet.create({
     gap: space.md,
     padding: space.lg,
     borderRadius: radius.card,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
   footer: {
     flexDirection: 'row',

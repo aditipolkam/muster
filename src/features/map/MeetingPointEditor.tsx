@@ -102,10 +102,10 @@ const styles = StyleSheet.create({
     gap: space.sm,
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
   input: {
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderRadius: radius.input,
     paddingHorizontal: space.md,
     paddingVertical: space.sm,
