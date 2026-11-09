@@ -9,11 +9,13 @@ import {
   sortByPresence,
 } from '../src/domain/groups/presence';
 import {
+  cardinal16Of,
   cardinalOf,
   clampPace,
   etaMinutes,
   formatDistanceIn,
   formatEta,
+  turnHint,
 } from '../src/domain/geo/pace';
 
 const NOW = 10_000_000;
@@ -117,5 +119,19 @@ describe('pace and units', () => {
     expect(cardinalOf(359)).toBe('N');
     expect(cardinalOf(92)).toBe('E');
     expect(cardinalOf(-90)).toBe('W');
+  });
+  it('names the 16-point cardinal used by the navigation card', () => {
+    expect(cardinal16Of(339)).toBe('NNW');
+    expect(cardinal16Of(0)).toBe('N');
+    expect(cardinal16Of(22)).toBe('NNE');
+    expect(cardinal16Of(-90)).toBe('W');
+  });
+  it('says which way to turn', () => {
+    expect(turnHint(5)).toBe('Straight ahead');
+    expect(turnHint(-8)).toBe('Straight ahead');
+    expect(turnHint(41)).toBe('Turn right about 40°');
+    expect(turnHint(-90)).toBe('Turn left about 90°');
+    expect(turnHint(320)).toBe('Turn left about 40°');
+    expect(turnHint(180)).toBe('Turn around');
   });
 });

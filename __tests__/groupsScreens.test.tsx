@@ -1,6 +1,6 @@
 import React from 'react';
 import { Alert } from 'react-native';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { parseInviteLink } from '../src/domain/groups/invite';
 import { areaFromBox } from '../src/domain/maps/mapArea';
 import { buildFeed } from '../src/features/groups/GroupsScreens';
@@ -54,6 +54,7 @@ jest.mock('@maplibre/maplibre-react-native', () => {
       return R.createElement(View, { testID: `src-${p.id}` }, p.children);
     },
     Layer: () => null,
+    Marker: (p: Record<string, any>) => R.createElement(View, { testID: p.id }, p.children),
   };
 });
 
@@ -819,7 +820,7 @@ describe('Map: meeting point controls', () => {
     expect(screen.queryByTestId('meeting-editor')).toBeNull();
   });
 
-  it('a member sees a received point at its coordinates and can acknowledge it', async () => {
+  it('a member sees a received point at its coordinates; followers only read it', async () => {
     const { t, other, g, all } = await twoDevices('member');
     const p = await other.groups.publishPoint(g.id, { name: 'Hut', lat: 56.8, lon: -5.1 });
     await settle(all);
@@ -837,16 +838,18 @@ describe('Map: meeting point controls', () => {
     const before = calls.length;
     fireEvent.press(screen.getByTestId('meeting-navigate'));
     expect(calls).toHaveLength(before);
-    expect(await screen.findByTestId('navigation-bar')).toBeTruthy();
-    expect(screen.getByText('Hut')).toBeTruthy();
+    const bar = await screen.findByTestId('navigation-bar');
+    expect(within(bar).getByText('Hut')).toBeTruthy();
     fireEvent.press(screen.getByTestId('navigation-end'));
     await pressMarker(key);
     expect(await screen.findByTestId('meeting-sheet')).toBeTruthy();
-    await act(async () => {
-      fireEvent.press(screen.getByTestId('meeting-ack'));
-      await settle(all);
-    });
-    expect(await screen.findByText('Acknowledged')).toBeTruthy();
+    // Pub/sub: a follower cannot send anything back to the group, so there is no Acknowledge.
+    expect(screen.queryByTestId('meeting-ack')).toBeNull();
+    expect(screen.getByTestId('meeting-compass')).toBeTruthy();
+    expect(
+      screen.getByText('Straight-line estimate. Trails and climbs not included.'),
+    ).toBeTruthy();
+    void settle(all);
   });
 
   it('a removal disappears from the map', async () => {

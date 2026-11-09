@@ -4,7 +4,7 @@ import { bearingDeg, distanceM, formatCoord, formatDistance } from '../../domain
 import { Fix, GpsStatus } from '../../domain/location/fix';
 import { Marker, MARKER_NAME_MAX } from '../../domain/markers/marker';
 import { Button, Row, Text } from '../../ui/components';
-import { radius, space, useTheme } from '../../ui/theme';
+import { floating, radius, space, useTheme } from '../../ui/theme';
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const compassPoint = (deg: number) => COMPASS[Math.round(deg / 45) % 8] ?? 'N';
@@ -39,7 +39,7 @@ export function MarkerSheet({
 
   return (
     <View
-      style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}
+      style={[styles.sheet, floating(c), { backgroundColor: c.surface, borderColor: c.border }]}
       testID="marker-sheet"
     >
       <Row>
@@ -72,7 +72,8 @@ export function MarkerSheet({
       </Text>
       <Button
         style={{ marginTop: space.sm }}
-        label="Start navigation"
+        label="Navigate"
+        icon="navigate"
         onPress={onNavigate}
         testID="marker-navigate"
       />
@@ -99,18 +100,14 @@ export function MarkerSheet({
 const styles = StyleSheet.create({
   sheet: {
     position: 'absolute',
-    left: space.md,
-    right: space.md,
-    bottom: space.md,
-    padding: space.lg,
-    gap: space.xs,
-    borderRadius: radius.sheet,
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: space.gutter,
+    gap: space.sm,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    borderWidth: 1,
   },
   name: {
     flex: 1,

@@ -62,6 +62,7 @@ jest.mock('@maplibre/maplibre-react-native', () => {
       return R.createElement(V, { testID: `src-${p.id}` }, p.children);
     },
     Layer: () => null,
+    Marker: (p: Record<string, any>) => R.createElement(V, { testID: p.id }, p.children),
   };
 });
 

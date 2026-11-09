@@ -4,7 +4,8 @@ import { boxSideKm, MAX_REGION_SIDE_KM, MIN_REGION_SIDE_KM } from '../../domain/
 import { formatBytesShort } from '../../domain/adventures/phases';
 import { formatCoord } from '../../domain/geo';
 import { Button, Icon, IconButton, Text } from '../../ui/components';
-import { radius, space, useTheme } from '../../ui/theme';
+import { floating, radius, size, space, useTheme } from '../../ui/theme';
+import { FlagPin, HintChip } from '../../ui/trail';
 
 export type PickStep = 'pin' | 'region';
 
@@ -30,6 +31,9 @@ export function PickLocationOverlay({
   onBack,
   title = 'Select Location',
   confirmLabel = 'Confirm Location',
+  meeting,
+  distanceText,
+  onUseHere,
 }: {
   step: PickStep;
   top: number;
@@ -49,30 +53,44 @@ export function PickLocationOverlay({
   onBack: () => void;
   title?: string;
   confirmLabel?: string;
+  /** Step 1 of setting a meeting point: orange pin, plain-language copy, "Use where I'm standing". */
+  meeting?: boolean;
+  /** "2.03 km NNW of you", when there is a fix. */
+  distanceText?: string | null;
+  onUseHere?: () => void;
 }) {
   const { c } = useTheme();
   const side = region ? boxSideKm(region) : null;
   return (
     <>
       <View style={[styles.top, { top }]} pointerEvents="box-none">
-        <View style={[styles.header, { backgroundColor: c.surface, borderColor: c.border }]}>
+        <View
+          style={[
+            styles.header,
+            floating(c),
+            { backgroundColor: c.surface, borderColor: c.border },
+          ]}
+        >
           <Pressable
             testID="pick-back"
             accessibilityRole="button"
             accessibilityLabel="Back"
             onPress={onBack}
             hitSlop={8}
+            style={styles.back}
           >
             <Icon name="back" size={26} />
           </Pressable>
-          <Text
-            variant="heading"
-            style={{ flex: 1, textAlign: 'center' }}
-            accessibilityRole="header"
-          >
-            {title}
-          </Text>
-          <View style={{ width: 26 }} />
+          <View style={{ flex: 1 }}>
+            <Text variant="cardTitle" accessibilityRole="header">
+              {meeting ? 'Set meeting point' : title}
+            </Text>
+            {meeting ? (
+              <Text variant="caption" muted>
+                Step 1 of 2 · Choose the spot
+              </Text>
+            ) : null}
+          </View>
         </View>
         {step === 'pin' ? (
           <Pressable
@@ -80,16 +98,23 @@ export function PickLocationOverlay({
             accessibilityRole="search"
             accessibilityLabel="Search for a place"
             onPress={onSearch}
-            style={[styles.search, { backgroundColor: c.surface, borderColor: c.border }]}
+            style={[
+              styles.search,
+              floating(c),
+              { backgroundColor: c.surface, borderColor: c.border },
+            ]}
           >
             <Icon name="search" size={20} color={c.textMuted} />
-            <Text muted style={{ flex: 1 }}>
-              Search for a place
+            <Text muted style={{ flex: 1 }} numberOfLines={1}>
+              {meeting ? 'Search a place or paste coordinates' : 'Search for a place'}
             </Text>
           </Pressable>
         ) : null}
-        {step === 'pin' ? (
-          <View style={[styles.hint, { backgroundColor: c.primarySoft }]} testID="pick-hint">
+        {step === 'pin' && !meeting ? (
+          <View
+            style={[styles.hint, { backgroundColor: c.surface, borderColor: c.border }]}
+            testID="pick-hint"
+          >
             <Icon name="pin" size={18} color={c.primary} />
             <Text variant="caption" style={{ flex: 1 }}>
               {hint}
@@ -107,7 +132,18 @@ export function PickLocationOverlay({
         />
       </View>
 
-      {step === 'pin' ? (
+      {step === 'pin' && meeting ? (
+        // A fixed orange pin whose tip sits on the map centre; the map moves under it.
+        <View style={styles.crosshairWrap} pointerEvents="none" testID="pick-crosshair">
+          <View style={styles.meetingPin}>
+            <View testID="pick-hint">
+              <HintChip text="Drag the map to move the pin" />
+            </View>
+            <View style={{ height: space.sm }} />
+            <FlagPin />
+          </View>
+        </View>
+      ) : step === 'pin' ? (
         <View style={styles.crosshairWrap} pointerEvents="none" testID="pick-crosshair">
           <View style={[styles.ring, { borderColor: c.primary }]} />
           <View style={[styles.crossH, { backgroundColor: c.primary }]} />
@@ -115,8 +151,37 @@ export function PickLocationOverlay({
         </View>
       ) : null}
 
-      <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
-        {step === 'pin' ? (
+      <View
+        style={[styles.card, floating(c), { backgroundColor: c.surface, borderColor: c.border }]}
+      >
+        <View style={[styles.grabber, { backgroundColor: c.border }]} />
+        {step === 'pin' && meeting ? (
+          <>
+            <View style={{ gap: 2 }}>
+              <Text variant="cardTitle" testID="pick-coords">
+                {center ? formatCoord(center) : 'Move the map'}
+              </Text>
+              <Text variant="caption" muted testID="pick-distance">
+                {distanceText ?? 'Distance from you shows once GPS has a fix'}
+              </Text>
+            </View>
+            <Button
+              testID="pick-place-pin"
+              label="Use this spot →"
+              onPress={onPlace}
+              disabled={!center}
+            />
+            {onUseHere ? (
+              <Button
+                testID="pick-use-here"
+                variant="ghost"
+                icon="locate"
+                label="Use where I'm standing"
+                onPress={onUseHere}
+              />
+            ) : null}
+          </>
+        ) : step === 'pin' ? (
           <>
             <Text variant="cardTitle" style={{ textAlign: 'center' }} testID="pick-coords">
               {center ? formatCoord(center) : 'Move the map'}
@@ -176,20 +241,21 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space.sm,
-    paddingHorizontal: space.md,
-    minHeight: 48,
-    borderRadius: radius.input,
-    borderWidth: StyleSheet.hairlineWidth,
+    gap: space.xs,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.sm,
+    borderRadius: radius.card,
+    borderWidth: 1,
   },
+  back: { width: size.touch, height: size.touch, alignItems: 'center', justifyContent: 'center' },
   search: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.sm,
-    minHeight: 48,
-    paddingHorizontal: space.md,
-    borderRadius: radius.input,
-    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: size.search,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.button,
+    borderWidth: 1,
   },
   hint: {
     flexDirection: 'row',
@@ -197,7 +263,11 @@ const styles = StyleSheet.create({
     gap: space.sm,
     padding: space.md,
     borderRadius: radius.input,
+    borderWidth: 1,
   },
+  // The pin's tip (bottom of the column) sits on the centre: lift the column by its height.
+  meetingPin: { alignItems: 'center', marginBottom: 92 },
+  grabber: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, marginTop: -space.sm },
   side: { position: 'absolute', right: space.md, gap: space.sm },
   crosshairWrap: {
     ...StyleSheet.absoluteFillObject,
@@ -217,7 +287,7 @@ const styles = StyleSheet.create({
     paddingBottom: space.xl,
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
   regionHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   stepper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.lg },

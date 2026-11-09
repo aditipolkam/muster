@@ -4,7 +4,8 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BBox, bboxCenter } from '../../domain/geo';
+import { BBox, bboxCenter, bearingDeg, distanceM } from '../../domain/geo';
+import { cardinal16Of, formatDistanceIn } from '../../domain/geo/pace';
 import { fixToLatLon, gpsStatus } from '../../domain/location/fix';
 import {
   canTrackLocation,
@@ -24,6 +25,7 @@ import {
   useVisibleMeetingPoints,
 } from '../../runtime/hooks';
 import { PickedLocation, RootTabParamList } from '../../runtime/navigation';
+import { useNavSession } from '../../runtime/navSession';
 import { useServices } from '../../runtime/services';
 import { createLogger } from '../../shared/logger';
 import { OSM_ATTRIBUTION } from '../../shared/attribution';
@@ -39,8 +41,9 @@ import {
 } from '../../domain/adventures/area';
 import { canEditAdventure } from '../../domain/adventures/authorize';
 import { useAdventureMapState } from './AdventureOverlay';
-import { Icon, IconButton, Text } from '../../ui/components';
-import { radius, space, useTheme } from '../../ui/theme';
+import { Icon, IconButton, StatusPill, Text } from '../../ui/components';
+import { floating, radius, size, space, useTheme } from '../../ui/theme';
+import { FlagPin } from '../../ui/trail';
 import { MapCanvas } from './MapCanvas';
 import { AreaDownloadSheet } from './AreaDownloadSheet';
 import { PlaceSearchSheet } from './PlaceSearchSheet';
@@ -87,7 +90,9 @@ export function MapScreen({ navigation, route }: Props) {
   const markers = useMarkers();
   const meetingPoints = useVisibleMeetingPoints();
   const groupList = useGroups();
-  const myAddress = useMesh().localAddress;
+  const meshSnap = useMesh();
+  const myAddress = meshSnap.localAddress;
+  const nearbyCount = meshSnap.peers.filter(x => x.state === 'nearby').length;
   const adventureList = useAdventures();
   const adv = useAdventureMapState(route.params?.showAdventure);
   const allRegions = useRegions();
@@ -126,7 +131,11 @@ export function MapScreen({ navigation, route }: Props) {
   const [draftBusy, setDraftBusy] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [pin, setPin] = useState<{ lat: number; lon: number } | null>(null);
-  const [navTarget, setNavTarget] = useState<NavTarget | null>(null);
+  // Navigation is shared with the Compass view (Map | Compass toggle), so it lives in a store.
+  const navTarget = useNavSession(s => s.target) as NavTarget | null;
+  const startSession = useNavSession(s => s.start);
+  const endSession = useNavSession(s => s.end);
+  const setPicking = useNavSession(s => s.setPicking);
   const [mapReady, setMapReady] = useState(false);
 
   // "Select Location": a place for a phase (and its offline region), or a meeting point to share
@@ -148,6 +157,12 @@ export function MapScreen({ navigation, route }: Props) {
         : null),
     [phasePick, meetingPick, tripPick],
   );
+  // Placing a pin is full screen: the tab bar hides meanwhile.
+  const picking = !!pickReq;
+  useEffect(() => {
+    setPicking(picking);
+    return () => setPicking(false);
+  }, [picking, setPicking]);
   const [pickStep, setPickStep] = useState<PickStep>('pin');
   const [pickPoint, setPickPoint] = useState<{ lat: number; lon: number } | null>(null);
   const [pickSideKm, setPickSideKm] = useState(DEFAULT_REGION_SIDE_KM);
@@ -557,12 +572,31 @@ export function MapScreen({ navigation, route }: Props) {
     [moving, movingMeeting, pickReq, pin, selectedId, selectedMeeting],
   );
 
-  const startNavigation = useCallback((target: NavTarget) => {
-    setNavTarget(target);
-    setSelectedId(null);
-    setSelectedMeeting(null);
-    setPin(null);
-  }, []);
+  const startNavigation = useCallback(
+    (target: NavTarget) => {
+      startSession(target);
+      setSelectedId(null);
+      setSelectedMeeting(null);
+      setPin(null);
+    },
+    [startSession],
+  );
+  // Map | Compass: the compass view reads the same session; meeting points and markers are also
+  // passed as params so the compass can show their details.
+  const openCompass = useCallback(
+    (t: NavTarget) => {
+      const [groupId, pointId] = t.kind === 'meeting' && t.key ? t.key.split(':') : [];
+      navigation.navigate(
+        'Navigate',
+        groupId && pointId
+          ? { groupId, pointId }
+          : t.kind === 'marker' && t.key
+          ? { markerId: t.key }
+          : undefined,
+      );
+    },
+    [navigation],
+  );
 
   const submitDraft = useCallback(
     async (d: MeetingDraft) => {
@@ -703,12 +737,45 @@ export function MapScreen({ navigation, route }: Props) {
 
   const navPrefs = useNavPrefs();
   const sheetOpen = !!(selected || selectedPoint || pin || moving || movingMeeting);
-  const bottomClear = pickReq ? 250 : sheetOpen ? 250 : navTarget ? 96 : space.sm;
+  const bottomClear = pickReq
+    ? 250
+    : selectedPoint && !movingMeeting
+    ? 400
+    : sheetOpen
+    ? 250
+    : navTarget
+    ? 250
+    : space.sm;
+  const pickDistance =
+    meetingPick && fix && view
+      ? (() => {
+          const at = { lat: view.center[1], lon: view.center[0] };
+          return `${formatDistanceIn(distanceM(fix, at), navPrefs.units)} ${cardinal16Of(
+            bearingDeg(fix, at),
+          )} of you`;
+        })()
+      : null;
   const offlineLabel = availableOffline
     ? 'Available offline'
     : useOnline
     ? 'Online map · not saved'
     : 'No offline map for this area';
+  const statusLabel = `${
+    availableOffline ? 'Offline' : useOnline ? 'Online map' : 'No map saved'
+  } · ${nearbyCount} nearby`;
+  const showOffline = () =>
+    availableOffline
+      ? Alert.alert('Available offline', 'This area is saved on your device.')
+      : Alert.alert(
+          offlineLabel,
+          useOnline
+            ? 'This map is streamed and is not available without internet. Download the area to keep it.'
+            : 'Download this area to use the map without internet.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Download this area', onPress: openArea },
+          ],
+        );
 
   return (
     <View style={[styles.root, { backgroundColor: c.bg }]}>
@@ -776,6 +843,14 @@ export function MapScreen({ navigation, route }: Props) {
           }
           title={tripPick ? 'Trip Map' : undefined}
           confirmLabel={tripPick ? 'Use This Area' : undefined}
+          meeting={!!meetingPick}
+          distanceText={pickDistance}
+          onUseHere={
+            meetingPick && fix
+              ? () =>
+                  returnToEditor({ lat: fix.lat, lon: fix.lon, region: null, nonce: Date.now() })
+              : undefined
+          }
           region={pickRegion}
           sideKm={pickSideKm}
           sizeBytes={
@@ -790,7 +865,7 @@ export function MapScreen({ navigation, route }: Props) {
           onConfirm={confirmPick}
           onBack={pickBack}
         />
-      ) : (
+      ) : navTarget ? null : (
         <>
           <View style={[styles.top, { top: insets.top + space.sm }]} pointerEvents="box-none">
             <Pressable
@@ -798,63 +873,94 @@ export function MapScreen({ navigation, route }: Props) {
               accessibilityRole="search"
               accessibilityLabel="Search for a place"
               onPress={() => setSearchOpen(true)}
-              style={[styles.search, { backgroundColor: c.surface, borderColor: c.border }]}
+              style={[
+                styles.search,
+                floating(c),
+                { backgroundColor: c.surface, borderColor: c.border },
+              ]}
             >
               <Icon name="search" size={20} color={c.textMuted} />
               <Text muted numberOfLines={1} style={{ flex: 1 }}>
                 Search places
               </Text>
             </Pressable>
-          </View>
-
-          <View style={[styles.controls, { bottom: bottomClear + 28 }]} pointerEvents="box-none">
-            <IconButton
-              testID="map-offline-indicator"
-              icon={availableOffline ? 'offline' : 'online'}
-              label={offlineLabel}
-              active={availableOffline}
-              onPress={() =>
-                availableOffline
-                  ? Alert.alert('Available offline', 'This area is saved on your device.')
-                  : Alert.alert(
-                      offlineLabel,
-                      useOnline
-                        ? 'This map is streamed and is not available without internet. Download the area to keep it.'
-                        : 'Download this area to use the map without internet.',
-                      [
-                        { text: 'Not now', style: 'cancel' },
-                        { text: 'Download this area', onPress: openArea },
-                      ],
-                    )
-              }
-            />
-            <IconButton
-              testID="map-download-button"
-              icon="download"
-              label="Download offline maps"
-              onPress={openArea}
-            />
-            <IconButton
-              testID="locate-button"
-              icon={mode === 'follow-heading' ? 'follow' : 'locate'}
-              label={
-                mode === 'free'
-                  ? 'Center on my location'
-                  : mode === 'follow'
-                  ? 'Follow with heading'
-                  : 'Stop following'
-              }
-              active={mode !== 'free'}
-              onPress={cycleMode}
-            />
+            <View style={styles.statusRow} pointerEvents="box-none">
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${statusLabel}. ${offlineLabel}`}
+                onPress={showOffline}
+              >
+                <StatusPill
+                  dark
+                  testID="map-status"
+                  tone={meshSnap.lifecycle === 'running' ? 'good' : 'neutral'}
+                  label={statusLabel}
+                />
+              </Pressable>
+              <View
+                style={[
+                  styles.toolPill,
+                  floating(c),
+                  { backgroundColor: c.surface, borderColor: c.border },
+                ]}
+              >
+                <Pressable
+                  testID="map-offline-indicator"
+                  accessibilityRole="button"
+                  accessibilityLabel={offlineLabel}
+                  onPress={showOffline}
+                  style={styles.tool}
+                >
+                  <Icon
+                    name={availableOffline ? 'offline' : 'online'}
+                    size={22}
+                    color={availableOffline ? c.primary : c.textMuted}
+                  />
+                </Pressable>
+                <View style={[styles.toolDivider, { backgroundColor: c.border }]} />
+                <Pressable
+                  testID="map-download-button"
+                  accessibilityRole="button"
+                  accessibilityLabel="Download offline maps"
+                  onPress={openArea}
+                  style={styles.tool}
+                >
+                  <Icon name="download" size={22} color={c.text} />
+                </Pressable>
+              </View>
+            </View>
           </View>
         </>
       )}
 
-      {moving || movingMeeting ? (
+      {pickReq ? null : (
+        <View style={[styles.controls, { bottom: bottomClear + 28 }]} pointerEvents="box-none">
+          <IconButton
+            testID="locate-button"
+            icon={mode === 'follow-heading' ? 'follow' : 'locate'}
+            label={
+              mode === 'free'
+                ? 'Center on my location'
+                : mode === 'follow'
+                ? 'Follow with heading'
+                : 'Stop following'
+            }
+            active={mode !== 'free'}
+            onPress={cycleMode}
+          />
+        </View>
+      )}
+
+      {movingMeeting ? (
         <View style={styles.crosshairWrap} pointerEvents="none">
-          <View style={[styles.crossH, { backgroundColor: c.danger }]} />
-          <View style={[styles.crossV, { backgroundColor: c.danger }]} />
+          <View style={styles.movePin}>
+            <FlagPin />
+          </View>
+        </View>
+      ) : moving ? (
+        <View style={styles.crosshairWrap} pointerEvents="none">
+          <View style={[styles.crossH, { backgroundColor: c.primary }]} />
+          <View style={[styles.crossV, { backgroundColor: c.primary }]} />
         </View>
       ) : null}
 
@@ -863,17 +969,26 @@ export function MapScreen({ navigation, route }: Props) {
         pointerEvents="none"
         testID="attribution"
       >
-        <Text variant="caption" color="#16201A" style={styles.attributionText}>
+        <Text
+          variant="label"
+          color={c.text}
+          style={[styles.attributionText, { backgroundColor: c.surface + 'CC' }]}
+        >
           {OSM_ATTRIBUTION}
         </Text>
       </View>
 
-      {navTarget && !sheetOpen ? (
+      {navTarget && !sheetOpen && !pickReq ? (
         <NavigationBar
           target={navTarget}
           fix={fix}
+          heading={headingDeg}
           units={navPrefs.units}
-          onEnd={() => setNavTarget(null)}
+          paceKmh={navPrefs.paceKmh}
+          top={insets.top + space.sm}
+          bottom={insets.bottom}
+          onView={v => v === 'compass' && openCompass(navTarget)}
+          onEnd={endSession}
         />
       ) : null}
 
@@ -882,7 +997,9 @@ export function MapScreen({ navigation, route }: Props) {
           pin={pin}
           fix={fix}
           units={navPrefs.units}
-          onNavigate={() => startNavigation({ name: 'Dropped pin', lat: pin.lat, lon: pin.lon })}
+          onNavigate={() =>
+            startNavigation({ name: 'Dropped pin', lat: pin.lat, lon: pin.lon, kind: 'pin' })
+          }
           onSave={() => void addMarker([pin.lon, pin.lat])}
           onClose={() => setPin(null)}
         />
@@ -896,7 +1013,13 @@ export function MapScreen({ navigation, route }: Props) {
           onMove={() => setMoving(true)}
           onDelete={confirmDelete}
           onNavigate={() =>
-            startNavigation({ name: selected.name, lat: selected.lat, lon: selected.lon })
+            startNavigation({
+              name: selected.name,
+              lat: selected.lat,
+              lon: selected.lon,
+              kind: 'marker',
+              key: selected.id,
+            })
           }
           onClose={() => setSelectedId(null)}
         />
@@ -921,19 +1044,28 @@ export function MapScreen({ navigation, route }: Props) {
           }}
           onMove={() => setMovingMeeting(true)}
           onRemove={confirmRemoveMeeting}
-          onAcknowledge={() => {
-            void groupService
-              .acknowledge(selectedPoint.groupId, selectedPoint.id)
-              .then(r => !r.ok && Alert.alert('Could not tell the organizer', r.error.userMessage));
-          }}
           units={navPrefs.units}
+          paceKmh={navPrefs.paceKmh}
           onNavigate={() =>
             startNavigation({
               name: selectedPoint.name,
               lat: selectedPoint.lat,
               lon: selectedPoint.lon,
+              kind: 'meeting',
+              key: meetingPointKey(selectedPoint),
             })
           }
+          onCompass={() => {
+            const t: NavTarget = {
+              name: selectedPoint.name,
+              lat: selectedPoint.lat,
+              lon: selectedPoint.lon,
+              kind: 'meeting',
+              key: meetingPointKey(selectedPoint),
+            };
+            startNavigation(t);
+            openCompass(t);
+          }}
           onDetails={() =>
             navigation.navigate('Groups', {
               screen: 'MeetingPoint',
@@ -1029,18 +1161,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.sm,
-    minHeight: 48,
-    paddingHorizontal: space.md,
-    borderRadius: radius.input,
-    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: size.search,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.button,
+    borderWidth: 1,
   },
+  statusRow: {
+    position: 'absolute',
+    top: size.search + space.sm,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  toolPill: { borderRadius: radius.button, borderWidth: 1, overflow: 'hidden' },
+  tool: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  toolDivider: { height: 1, marginHorizontal: space.sm },
+  movePin: { marginBottom: 56 },
   controls: { position: 'absolute', right: space.md, gap: space.sm },
   attribution: { position: 'absolute', right: space.sm },
   attributionText: {
     backgroundColor: 'rgba(255,255,255,0.8)',
     paddingHorizontal: 6,
     paddingVertical: 1,
-    borderRadius: 4,
+    borderRadius: radius.sm,
     overflow: 'hidden',
   },
   crosshairWrap: {
@@ -1057,6 +1202,6 @@ const styles = StyleSheet.create({
     bottom: space.xl,
     padding: space.md,
     borderRadius: radius.sheet,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
   },
 });

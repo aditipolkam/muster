@@ -43,6 +43,7 @@ jest.mock('@maplibre/maplibre-react-native', () => {
     GeoJSONSource: (p: Record<string, any>) =>
       React.createElement(View, { testID: `src-${p.id}` }, p.children),
     Layer: () => null,
+    Marker: (p: Record<string, any>) => React.createElement(View, { testID: p.id }, p.children),
   };
 });
 

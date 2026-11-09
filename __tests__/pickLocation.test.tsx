@@ -37,6 +37,7 @@ jest.mock('@maplibre/maplibre-react-native', () => {
       return R.createElement(V, { testID: `src-${p.id}` }, p.children);
     },
     Layer: () => null,
+    Marker: (p: Record<string, any>) => R.createElement(V, { testID: p.id }, p.children),
   };
 });
 
@@ -240,7 +241,9 @@ describe('Map: Select Location for a phase', () => {
       </Harness>,
     );
     await waitFor(() => expect(mockMap.map).not.toBeNull());
-    expect(screen.getByText('Move the map and place the pin at the meeting point.')).toBeTruthy();
+    expect(screen.getByText('Set meeting point')).toBeTruthy();
+    expect(screen.getByText('Step 1 of 2 · Choose the spot')).toBeTruthy();
+    expect(screen.getByText('Drag the map to move the pin')).toBeTruthy();
     await moveTo([-5.0035, 56.7968]);
     await act(async () => {
       fireEvent.press(screen.getByTestId('pick-place-pin'));
