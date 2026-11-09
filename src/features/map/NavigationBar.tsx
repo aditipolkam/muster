@@ -32,6 +32,7 @@ export function NavigationBar({
   heading,
   units,
   paceKmh,
+  trail,
   top,
   bottom,
   onView,
@@ -42,14 +43,18 @@ export function NavigationBar({
   heading: number | null;
   units: Units;
   paceKmh: number;
+  /** A walking route was found (metres left along it, and a point a little ahead), or is being looked for. */
+  trail?: { remainingM: number; ahead: { lat: number; lon: number } } | 'finding' | null;
   top: number;
   bottom: number;
   onView: (v: NavView) => void;
   onEnd: () => void;
 }) {
   const { c } = useTheme();
-  const dist = fix ? distanceM(fix, target) : null;
-  const brg = fix ? bearingDeg(fix, target) : null;
+  const route = trail && trail !== 'finding' ? trail : null;
+  // Along the route: distance left on it, and head for the next stretch of path.
+  const dist = route ? route.remainingM : fix ? distanceM(fix, target) : null;
+  const brg = fix ? bearingDeg(fix, route ? route.ahead : target) : null;
   const h = usableHeading(heading);
   const minutes = etaMinutes(dist, paceKmh);
   return (
@@ -71,8 +76,18 @@ export function NavigationBar({
             </Text>
           </View>
         </View>
-        <View style={{ alignSelf: 'flex-start' }}>
-          <Badge tone="warn" icon="warning" label="Straight line, not a trail route" />
+        <View style={{ alignSelf: 'flex-start' }} testID="nav-route-kind">
+          {route ? (
+            <Badge
+              tone="good"
+              icon="trail"
+              label={`Via trail · ${formatDistanceIn(route.remainingM, units)}`}
+            />
+          ) : trail === 'finding' ? (
+            <Badge icon="trail" label="Looking for a trail route…" />
+          ) : (
+            <Badge tone="warn" icon="warning" label="Straight line, not a trail route" />
+          )}
         </View>
       </View>
       <View

@@ -51,6 +51,7 @@ import { MarkerSheet } from './MarkerSheet';
 import { MeetingDraft, MeetingPointEditor } from './MeetingPointEditor';
 import { MeetingPointSheet } from './MeetingPointSheet';
 import { NavigationBar, NavTarget } from './NavigationBar';
+import { createTrailRouter, useTrailRoute } from './trailRouter';
 import { PickLocationOverlay, PickStep } from './PickLocation';
 import { PinSheet } from './PinSheet';
 import { buildStyle } from './StyleBuilder';
@@ -65,6 +66,7 @@ import {
   mePuck,
   metresPerPixel,
   pinCollection,
+  routeCollection,
 } from './overlays';
 
 const log = createLogger('map');
@@ -86,7 +88,7 @@ type Props = BottomTabScreenProps<RootTabParamList, 'Map'>;
 export function MapScreen({ navigation, route }: Props) {
   const { c } = useTheme();
   const insets = useSafeAreaInsets();
-  const { style, points, location, packs, groups: groupService } = useServices();
+  const { style, points, location, packs, groups: groupService, fs } = useServices();
   const markers = useMarkers();
   const meetingPoints = useVisibleMeetingPoints();
   const groupList = useGroups();
@@ -726,9 +728,21 @@ export function MapScreen({ navigation, route }: Props) {
   const regionBoxData = useMemo(() => boxCollection(pickRegion), [pickRegion]);
   const markerData = useMemo(() => markersCollection(markers), [markers]);
   const meetingData = useMemo(() => meetingPointsCollection(meetingPoints), [meetingPoints]);
+  // Offline walking route (experiment, ADR 0015): along the paths in the downloaded map; the
+  // dashed straight line stays until (and unless) one is found.
+  const router = useMemo(() => createTrailRouter(fs, installed), [fs, installed]);
+  const trail = useTrailRoute(router, navTarget, fix ? { lat: fix.lat, lon: fix.lon } : null);
+  const trailData = useMemo(
+    () => routeCollection(trail.status === 'ok' ? trail.route.coords : []),
+    [trail],
+  );
   const guide = useMemo(
-    () => guideLine(fix ? { lat: fix.lat, lon: fix.lon } : null, navTarget),
-    [fix, navTarget],
+    () =>
+      guideLine(
+        fix && trail.status !== 'ok' ? { lat: fix.lat, lon: fix.lon } : null,
+        trail.status === 'ok' ? null : navTarget,
+      ),
+    [fix, navTarget, trail.status],
   );
   const pinData = useMemo(
     () => pinCollection(pickReq ? (pickStep === 'region' ? pickPoint : null) : pin ?? navTarget),
@@ -789,6 +803,7 @@ export function MapScreen({ navigation, route }: Props) {
         route={adv.route}
         pulse={adv.pulse}
         guide={guide}
+        trail={trailData}
         pin={pinData}
         regionBox={regionBoxData}
         onCheckpointPress={id => {
@@ -985,6 +1000,13 @@ export function MapScreen({ navigation, route }: Props) {
           heading={headingDeg}
           units={navPrefs.units}
           paceKmh={navPrefs.paceKmh}
+          trail={
+            trail.status === 'ok'
+              ? { remainingM: trail.remainingM, ahead: trail.ahead }
+              : trail.status === 'finding'
+              ? 'finding'
+              : null
+          }
           top={insets.top + space.sm}
           bottom={insets.bottom}
           onView={v => v === 'compass' && openCompass(navTarget)}
