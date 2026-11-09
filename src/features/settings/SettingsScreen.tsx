@@ -12,6 +12,7 @@ import { useLocationStore } from '../../platform/locationStore';
 import { MAX_RADIUS_M, MIN_RADIUS_M } from '../../domain/adventures/arrival';
 import { useCheckpointRadius, useMarkers, useNavPrefs, useRegions } from '../../runtime/hooks';
 import { useServices } from '../../runtime/services';
+import { AppLogo } from '../../ui/AppLogo';
 import { config } from '../../shared/config';
 import { setDebugPositions } from '../../shared/logger';
 import { perf } from '../../shared/perf';
@@ -275,7 +276,10 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
           <Text variant="label" muted>
             About
           </Text>
-          <Text variant="heading">TrailMesh {APP_VERSION}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+            <AppLogo size={44} />
+            <Text variant="heading">TrailMesh {APP_VERSION}</Text>
+          </View>
           <Text>{OSM_ATTRIBUTION}</Text>
           <Text variant="caption" muted>
             Map data is from OpenStreetMap, available under the Open Database Licence. Basemap
