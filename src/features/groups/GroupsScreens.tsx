@@ -55,6 +55,7 @@ import { isEnabled } from '../../shared/features';
 import { ToggleRow } from '../../ui/activity';
 import { radius, space, useTheme } from '../../ui/theme';
 import { QrScanner } from './QrScanner';
+import { SharePlace, ShareLocationSheet } from './ShareLocationSheet';
 
 type Nav<T extends keyof GroupsStackParamList> = NativeStackScreenProps<GroupsStackParamList, T>;
 
@@ -753,7 +754,7 @@ export function JoinGroupScreen({ navigation, route }: Nav<'JoinGroup'>) {
 
 /** WhatsApp-style group page. Opens on Updates; tap the title for members and settings. */
 export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
-  const { groupId } = route.params;
+  const { groupId, picked } = route.params;
   const group = useGroup(groupId);
   const members = useGroupMembers(groupId);
   const points = useGroupPoints(groupId);
@@ -761,6 +762,15 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
   const { c } = useTheme();
   const now = useNow();
   const presence = useGroupPresence(group, members, now);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [sharePlace, setSharePlace] = useState<SharePlace | null>(null);
+  // Back from choosing a meeting point on the map: open the sheet on that place to name it.
+  useEffect(() => {
+    if (picked) {
+      setSharePlace({ lat: picked.lat, lon: picked.lon });
+      setShareOpen(true);
+    }
+  }, [picked?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!group) {
     return (
@@ -831,7 +841,9 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
         contentContainerStyle={styles.feed}
         ListEmptyComponent={
           <Text muted style={styles.feedEmpty} testID="updates-empty">
-            No updates yet. Meeting points and people joining show up here.
+            {organizer
+              ? 'No updates yet. Tap "Share location" to send the group a meeting point.'
+              : 'No updates yet. Meeting points and people joining show up here.'}
           </Text>
         }
         renderItem={({ item: e }) =>
@@ -881,18 +893,41 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
       />
       {organizer && group.status === 'active' ? (
         <View style={[styles.actionBar, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <Text variant="caption" muted style={{ flex: 1 }}>
-            Press and hold the map to share a meeting point.
-          </Text>
-          <Button
-            small
-            variant="secondary"
+          <IconButton
+            icon="map"
             label="Open map"
             onPress={() => navigation.getParent()?.navigate('Map' as never)}
             testID="group-open-map"
           />
+          <Button
+            style={{ flex: 1 }}
+            icon="pin"
+            label="Share location"
+            onPress={() => {
+              setSharePlace(null);
+              setShareOpen(true);
+            }}
+            testID="group-share-location"
+          />
         </View>
       ) : null}
+      <ShareLocationSheet
+        visible={shareOpen}
+        groupId={groupId}
+        groupName={group.name}
+        place={sharePlace}
+        onChooseOnMap={() => {
+          setShareOpen(false);
+          (
+            navigation.getParent() as { navigate: (n: string, p: object) => void } | undefined
+          )?.navigate('Map', { pickMeeting: { groupId }, nonce: Date.now() });
+        }}
+        onClose={() => {
+          setShareOpen(false);
+          setSharePlace(null);
+          navigation.setParams({ picked: undefined });
+        }}
+      />
     </Screen>
   );
 }
@@ -1205,7 +1240,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
             {points.length === 0 ? (
               <Text muted>
                 {organizer
-                  ? 'Press and hold on the map, then choose "Meeting point" to share one.'
+                  ? 'None yet. Share one from the group page with "Share location".'
                   : 'None yet. Meeting points the organizer shares appear here and on your map.'}
               </Text>
             ) : (

@@ -127,13 +127,25 @@ export function MapScreen({ navigation, route }: Props) {
   const [navTarget, setNavTarget] = useState<NavTarget | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
-  // "Select Location" for a phase: choose a place (and its offline region) and send it back.
-  const pickReq = route.params?.pick ?? null;
+  // "Select Location": a place for a phase (and its offline region), or a meeting point to share
+  // with a group. Either way the place goes back to the screen that asked.
+  const phasePick = route.params?.pick ?? null;
+  const meetingPick = route.params?.pickMeeting ?? null;
+  const pickReq = useMemo(
+    () =>
+      phasePick ??
+      (meetingPick
+        ? { includeRegion: false, region: null, lat: meetingPick.lat, lon: meetingPick.lon }
+        : null),
+    [phasePick, meetingPick],
+  );
   const [pickStep, setPickStep] = useState<PickStep>('pin');
   const [pickPoint, setPickPoint] = useState<{ lat: number; lon: number } | null>(null);
   const [pickSideKm, setPickSideKm] = useState(DEFAULT_REGION_SIDE_KM);
-  const pickKey = pickReq
-    ? `${pickReq.adventureId}|${pickReq.checkpointId ?? ''}|${route.params?.nonce ?? ''}`
+  const pickKey = phasePick
+    ? `${phasePick.adventureId}|${phasePick.checkpointId ?? ''}|${route.params?.nonce ?? ''}`
+    : meetingPick
+    ? `meeting|${meetingPick.groupId}|${route.params?.nonce ?? ''}`
     : null;
   const pickRegion = useMemo(
     () =>
@@ -334,21 +346,32 @@ export function MapScreen({ navigation, route }: Props) {
 
   const returnToEditor = useCallback(
     (picked?: PickedLocation) => {
-      if (!pickReq) {
+      if (meetingPick) {
+        navigation.setParams({ pickMeeting: undefined });
+        navigation.navigate('Groups', {
+          screen: 'GroupDetails',
+          params: {
+            groupId: meetingPick.groupId,
+            picked: picked ? { lat: picked.lat, lon: picked.lon, nonce: picked.nonce } : undefined,
+          },
+        });
+        return;
+      }
+      if (!phasePick) {
         return;
       }
       navigation.setParams({ pick: undefined });
       navigation.navigate('Activity', {
         screen: 'CheckpointEditor',
         params: {
-          adventureId: pickReq.adventureId,
-          checkpointId: pickReq.checkpointId,
-          type: pickReq.type,
+          adventureId: phasePick.adventureId,
+          checkpointId: phasePick.checkpointId,
+          type: phasePick.type,
           picked,
         },
       });
     },
-    [navigation, pickReq],
+    [navigation, phasePick, meetingPick],
   );
   const placePin = () => {
     if (!view) {
@@ -442,8 +465,6 @@ export function MapScreen({ navigation, route }: Props) {
     [markers, moving, movingMeeting, points],
   );
 
-  // Long-press: an organizer chooses between a personal marker and a meeting point for the group.
-  const organized = groupList.filter(g => g.role === 'organizer' && g.status === 'active');
   // The adventure a long-press can add a checkpoint to: the one in progress, else a planned one.
   const currentAdventureId = adv.current?.adventure.id;
   const checkpointTarget = useMemo(() => {
@@ -463,7 +484,8 @@ export function MapScreen({ navigation, route }: Props) {
       if (moving || movingMeeting || pickReq) {
         return;
       }
-      if (organized.length === 0 && !checkpointTarget) {
+      // Meeting points are shared from the group page, not from here.
+      if (!checkpointTarget) {
         void addMarker([lon, lat]);
         return;
       }
@@ -480,18 +502,11 @@ export function MapScreen({ navigation, route }: Props) {
               },
             ]
           : []),
-        ...organized.slice(0, 2).map(g => ({
-          text: `Meeting point: ${g.name}`,
-          onPress: () => {
-            setDraftError(null);
-            setDraft({ groupId: g.id, groupName: g.name, name: '', note: '', lat, lon });
-          },
-        })),
         { text: 'Personal marker', onPress: () => void addMarker([lon, lat]) },
         { text: 'Cancel', style: 'cancel' as const },
       ]);
     },
-    [addMarker, checkpointTarget, moving, movingMeeting, navigation, organized, pickReq],
+    [addMarker, checkpointTarget, moving, movingMeeting, navigation, pickReq],
   );
 
   // Tap on empty map: clear a selection, otherwise drop a temporary pin.
@@ -726,6 +741,11 @@ export function MapScreen({ navigation, route }: Props) {
           top={insets.top + space.sm}
           center={view ? { lat: view.center[1], lon: view.center[0] } : null}
           includeRegion={pickReq.includeRegion}
+          hint={
+            meetingPick
+              ? 'Move the map and place the pin at the meeting point.'
+              : 'Move the map and place the pin at the checkpoint location.'
+          }
           region={pickRegion}
           sideKm={pickSideKm}
           sizeBytes={

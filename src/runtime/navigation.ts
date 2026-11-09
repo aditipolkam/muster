@@ -67,7 +67,11 @@ export type GroupsStackParamList = {
   JoinGroup:
     | { link?: string; v?: string; g?: string; o?: string; t?: string; n?: string }
     | undefined;
-  GroupDetails: { groupId: string };
+  GroupDetails: {
+    groupId: string;
+    /** Coming back from choosing a meeting point on the map. */
+    picked?: { lat: number; lon: number; nonce: number };
+  };
   /** `justCreated`: show the invitation QR straight away so the organizer can add people. */
   GroupInfo: { groupId: string; justCreated?: boolean };
   MeetingPoint: { groupId: string; pointId: string };
@@ -85,6 +89,8 @@ export type RootTabParamList = {
         nonce?: number;
         /** Choose a place for a phase: shows the pin-placing flow instead of the usual map. */
         pick?: PickLocationRequest;
+        /** Choose a meeting point for a group; the place goes back to the group page. */
+        pickMeeting?: { groupId: string; lat?: number; lon?: number };
       }
     | undefined;
   Groups: NavigatorScreenParams<GroupsStackParamList> | undefined;

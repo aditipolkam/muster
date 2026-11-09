@@ -18,6 +18,7 @@ export function PickLocationOverlay({
   top,
   center,
   includeRegion,
+  hint,
   region,
   sideKm,
   sizeBytes,
@@ -33,6 +34,8 @@ export function PickLocationOverlay({
   /** What the crosshair points at. */
   center: { lat: number; lon: number } | null;
   includeRegion: boolean;
+  /** What to put the pin on, shown above the crosshair. */
+  hint: string;
   region: [number, number, number, number] | null;
   sideKm: number;
   sizeBytes: number;
@@ -85,7 +88,7 @@ export function PickLocationOverlay({
           <View style={[styles.hint, { backgroundColor: c.primarySoft }]} testID="pick-hint">
             <Icon name="pin" size={18} color={c.primary} />
             <Text variant="caption" style={{ flex: 1 }}>
-              Move the map and place the pin at the checkpoint location.
+              {hint}
             </Text>
           </View>
         ) : null}

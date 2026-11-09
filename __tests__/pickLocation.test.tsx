@@ -221,4 +221,36 @@ describe('Map: Select Location for a phase', () => {
     });
     expect(screen.queryByTestId('pin-sheet')).toBeNull();
   });
+
+  it('choosing a meeting point sends the place back to the group page', async () => {
+    const t = await makeTestServices();
+    const { n, calls } = nav();
+    render(
+      <Harness services={t.services}>
+        <MapScreen
+          navigation={n}
+          route={
+            {
+              key: 'Map',
+              name: 'Map',
+              params: { pickMeeting: { groupId: 'g1' }, nonce: 1 },
+            } as never
+          }
+        />
+      </Harness>,
+    );
+    await waitFor(() => expect(mockMap.map).not.toBeNull());
+    expect(screen.getByText('Move the map and place the pin at the meeting point.')).toBeTruthy();
+    await moveTo([-5.0035, 56.7968]);
+    await act(async () => {
+      fireEvent.press(screen.getByTestId('pick-place-pin'));
+    });
+    expect(calls).toContainEqual(['setParams', { pickMeeting: undefined }]);
+    const go = calls.find(c => c[0] === 'navigate');
+    expect(go?.[1]).toBe('Groups');
+    expect(go?.[2]).toMatchObject({
+      screen: 'GroupDetails',
+      params: { groupId: 'g1', picked: { lat: 56.7968, lon: -5.0035 } },
+    });
+  });
 });
