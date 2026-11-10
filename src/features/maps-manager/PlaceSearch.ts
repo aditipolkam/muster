@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { NominatimHitSchema, PlaceResult, placeFromHit } from '../../domain/maps/places';
 import { AppError, Result, appError, err, ok } from '../../shared/result';
+import { config } from '../../shared/config';
 import { HttpClient } from './http';
 
 /**
@@ -37,7 +38,7 @@ export class PlaceSearch {
         `${this.baseUrl}/search?format=jsonv2&limit=8&q=${encodeURIComponent(q)}`,
         {
           signal,
-          headers: { 'User-Agent': 'Muster-dev/0.1 (offline hiking app, development build)' },
+          headers: { 'User-Agent': config.userAgent },
         },
       );
       const hits = z.array(z.unknown()).parse(json);

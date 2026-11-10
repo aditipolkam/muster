@@ -1,6 +1,6 @@
 {
   "name": "muster",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -73,5 +73,6 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "license": "AGPL-3.0-only"
 }

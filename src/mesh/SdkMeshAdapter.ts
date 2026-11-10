@@ -1,5 +1,6 @@
 import type { Clock } from '../shared/clock';
 import { Emitter, Unsubscribe } from '../shared/emitter';
+import { config } from '../shared/config';
 import { createLogger } from '../shared/logger';
 import { appError, err, ok, Result } from '../shared/result';
 import type { PermissionsPort } from './permissions';
@@ -26,7 +27,7 @@ const LINK_REFRESH_MS = 1000;
 /** Config per docs/SDK_INTEGRATION.md section 11, minus Wi-Fi Direct (Phase 2 is BLE only). */
 export function buildProtocolConfig(): ProtocolConfig {
   return {
-    appId: 'app.muster',
+    appId: config.meshAppId,
     profile: 'main',
     network: { initialTtl: 8 },
     transports: {

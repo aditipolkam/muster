@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { version } from '../../package.json';
 
 /**
  * D-3 (where region files are hosted) is undecided, so release builds ship with no remote catalog
@@ -13,6 +14,14 @@ export const config = {
   bundledCatalogBase: 'http://localhost:8787',
   devHost,
   dbName: 'muster.db',
+  /**
+   * The SDK app id: phones only see each other's mesh traffic when it matches. Forks must change
+   * it so they do not join Muster's network. Changing it on an installed app resets SDK storage
+   * and the device's mesh identity.
+   */
+  meshAppId: 'app.muster',
+  /** Sent to Nominatim, whose usage policy asks for an identifying User-Agent. Forks: change it. */
+  userAgent: `Muster/${version} (+https://github.com/aditipolkam/muster)`,
 } as const;
 
 /**
