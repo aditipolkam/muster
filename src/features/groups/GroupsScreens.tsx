@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -9,7 +9,6 @@ import {
   ScrollView,
   Share,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import { ActivityStanding } from '../../domain/adventures/lifecycle';
@@ -46,6 +45,7 @@ import {
   Icon,
   IconName,
   IconTile,
+  Input,
   ListRow,
   Row,
   Screen,
@@ -57,21 +57,13 @@ import { useNow } from '../../ui/useNow';
 import { QrCode } from '../../ui/QrCode';
 import { isEnabled } from '../../shared/features';
 import { ToggleRow } from '../../ui/activity';
-import { radius, size, space, tabular, useTheme } from '../../ui/theme';
+import { iconSize, radius, size, space, tabular, useTheme } from '../../ui/theme';
 import { FlagPin } from '../../ui/trail';
 import { QrScanner } from './QrScanner';
 import { SharePlace, ShareLocationSheet } from './ShareLocationSheet';
 import { TripMapBanner, TripMapCard, TripMapChip, TripMapFooter } from './TripMap';
 
 type Nav<T extends keyof GroupsStackParamList> = NativeStackScreenProps<GroupsStackParamList, T>;
-
-function useInput() {
-  const { c } = useTheme();
-  return useMemo(
-    () => [styles.input, { color: c.text, borderColor: c.border, backgroundColor: c.surface }],
-    [c],
-  );
-}
 
 /** Your name lives in the Profile tab; group screens only read it. */
 function useProfileName(): string {
@@ -112,7 +104,7 @@ function MeshBanner() {
     <Banner
       tone="warn"
       title="Mesh is off"
-      body="Groups share over Bluetooth. Start the mesh to create, join or sync a group."
+      body="Needed to create, join or sync a group."
       actionLabel={busy ? 'Starting…' : 'Start mesh'}
       onAction={() => {
         setBusy(true);
@@ -229,8 +221,8 @@ function Avatar({
       <View
         style={[
           styles.avatar,
-          { width: s, height: s, borderRadius: s / 2 },
-          { backgroundColor: c.primarySoft, opacity: dim ? 0.5 : 1 },
+          { width: s, height: s, borderRadius: radius.pill },
+          { borderColor: c.border, backgroundColor: c.surface, opacity: dim ? 0.5 : 1 },
         ]}
       >
         <Text variant={s > 40 ? 'heading' : 'cardTitle'} color={c.deep}>
@@ -246,7 +238,7 @@ function Avatar({
   );
 }
 
-/** The group's rounded-square tile: its initial on soft green. */
+/** The group's avatar: its initial in an outlined circle (no tinted box). */
 function GroupTile({ name, dim, size: s = 48 }: { name: string; dim?: boolean; size?: number }) {
   const { c } = useTheme();
   return (
@@ -257,13 +249,14 @@ function GroupTile({ name, dim, size: s = 48 }: { name: string; dim?: boolean; s
         {
           width: s,
           height: s,
-          borderRadius: s >= 48 ? 16 : radius.tile,
-          backgroundColor: c.primarySoft,
+          borderRadius: radius.pill,
+          borderColor: c.border,
+          backgroundColor: c.surface,
           opacity: dim ? 0.5 : 1,
         },
       ]}
     >
-      <Text variant="heading" color={c.deep}>
+      <Text variant={s >= 48 ? 'heading' : 'cardTitle'} color={c.deep}>
         {(name.trim()[0] ?? '?').toUpperCase()}
       </Text>
     </View>
@@ -315,7 +308,7 @@ function StartCard({
     <Card style={{ paddingVertical: space.xs }}>
       <ListRow
         title={title}
-        subtitle={body}
+        subtitle={body || undefined}
         leading={<IconTile name={icon} />}
         chevron
         divider={false}
@@ -422,10 +415,10 @@ function JoinHint({ onScan }: { onScan: () => void }) {
   const { c } = useTheme();
   return (
     <View style={[styles.joinHint, { borderColor: c.border }]} testID="groups-join-hint">
-      <IconTile name="qr" size={44} />
+      <Icon name="qr" size={28} color={c.primary} />
       <Text variant="cardTitle">Joining someone's trek?</Text>
       <Text variant="caption" muted style={{ textAlign: 'center' }}>
-        Scan the leader's QR code or open their invite link. Works without internet.
+        Scan the leader's QR code. Works offline.
       </Text>
       <Button small variant="secondary" icon="qr" label="Scan QR code" onPress={onScan} />
     </View>
@@ -514,19 +507,19 @@ export function GroupsScreen({ navigation }: Nav<'GroupsList'>) {
               No groups yet
             </Text>
             <Text muted style={{ textAlign: 'center' }}>
-              A group shares meeting points and who is nearby, over Bluetooth, with no internet.
+              Meeting points and who's nearby, over Bluetooth.
             </Text>
             <StartCard
               icon="plus"
               title="Start a group"
-              body="Name it, then invite people with a QR code."
+              body=""
               onPress={() => navigation.navigate('CreateGroup')}
               testID="groups-create"
             />
             <StartCard
-              icon="group"
+              icon="qr"
               title="Join a group"
-              body="Scan an invitation, or find a group open nearby."
+              body=""
               onPress={() => navigation.navigate('JoinGroup')}
               testID="groups-join"
             />
@@ -550,7 +543,6 @@ export function GroupsScreen({ navigation }: Nav<'GroupsList'>) {
 
 export function CreateGroupScreen({ navigation }: Nav<'CreateGroup'>) {
   const { groups } = useServices();
-  const input = useInput();
   const [name, setName] = useState('');
   const yourName = useProfileName();
   const [error, setError] = useState<string | null>(null);
@@ -572,12 +564,8 @@ export function CreateGroupScreen({ navigation }: Nav<'CreateGroup'>) {
     <Screen title="Create group" onBack={() => navigation.goBack()}>
       <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
         <MeshBanner />
-        <Text variant="label" muted>
-          Group name
-        </Text>
-        <TextInput
+        <Input
           testID="group-name"
-          style={input}
           value={name}
           onChangeText={setName}
           maxLength={GROUP_NAME_MAX}
@@ -588,8 +576,7 @@ export function CreateGroupScreen({ navigation }: Nav<'CreateGroup'>) {
         />
         {yourName.trim() ? (
           <Text variant="caption" muted testID="create-as">
-            You will join as {yourName.trim()}. You become the organizer: you decide who joins and
-            you are the only one who can share meeting points.
+            You'll lead as {yourName.trim()}. Only you can share meeting points.
           </Text>
         ) : (
           <NameNeededBanner navigation={navigation} />
@@ -611,7 +598,6 @@ export function CreateGroupScreen({ navigation }: Nav<'CreateGroup'>) {
 
 export function JoinGroupScreen({ navigation, route }: Nav<'JoinGroup'>) {
   const { groups } = useServices();
-  const input = useInput();
   const rt = useGroupRuntime();
   const all = useGroups();
   const yourName = useProfileName();
@@ -748,14 +734,13 @@ export function JoinGroupScreen({ navigation, route }: Nav<'JoinGroup'>) {
 
             <Text variant="heading">Open nearby</Text>
             <Text variant="caption" muted>
-              Organizers can open their group for a few minutes so people in range can ask to join.
-              They still approve each person.
+              Leaders can open their group to phones in range.
             </Text>
             {rt.discovered.length === 0 ? (
               <Row>
                 <ActivityIndicator />
                 <Text muted testID="nearby-empty">
-                  Looking for groups nearby… none found yet.
+                  Looking for groups nearby…
                 </Text>
               </Row>
             ) : (
@@ -795,9 +780,8 @@ export function JoinGroupScreen({ navigation, route }: Nav<'JoinGroup'>) {
             <Divider />
             {pasting ? (
               <>
-                <TextInput
+                <Input
                   testID="invite-link"
-                  style={input}
                   value={link}
                   onChangeText={setLink}
                   placeholder="muster://join?…"
@@ -889,7 +873,7 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
   const pinnedBrg = pinned && fix ? bearingDeg(fix, pinned) : null;
 
   return (
-    <Screen onBack={() => navigation.navigate('GroupsList')} edges={['top', 'bottom']}>
+    <Screen onBack={() => navigation.navigate('GroupsList')}>
       <View style={styles.pageHeader}>
         <Pressable
           accessibilityRole="button"
@@ -898,7 +882,7 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
           hitSlop={8}
           style={styles.headerBtn}
         >
-          <Icon name="back" size={28} />
+          <Icon name="back" size={iconSize.lg} />
         </Pressable>
         <Pressable
           testID="group-title"
@@ -1013,7 +997,7 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
       {organizer && group.status === 'active' ? (
         <View style={[styles.composer, { backgroundColor: c.surface, borderColor: c.border }]}>
           <Text variant="caption" muted style={{ textAlign: 'center' }}>
-            Only you can post here. Followers get your updates when they're in range.
+            Only you can post.
           </Text>
           <Row style={{ gap: space.sm }}>
             <Pressable
@@ -1022,7 +1006,7 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
               onPress={() =>
                 parent?.navigate('Map', { pickMeeting: { groupId }, nonce: Date.now() })
               }
-              style={[styles.flagBtn, { backgroundColor: c.meetingSoft }]}
+              style={[styles.flagBtn, { backgroundColor: c.surface, borderColor: c.border }]}
               testID="group-open-map"
             >
               <Icon name="flag" size={24} color={c.meetingStroke} />
@@ -1258,9 +1242,6 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
   const nearbyOpen = nearbyUntil > now;
   const inviteSection = (
     <>
-      <Text variant="label" muted style={styles.sectionLabel}>
-        Invitation code
-      </Text>
       {invite ? (
         <Card style={styles.inviteCard} testID="invite-card">
           <View style={[styles.qrPlate, { borderColor: c.border }]}>
@@ -1312,10 +1293,6 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
           />
         </Card>
       )}
-
-      <Text variant="label" muted style={styles.sectionLabel}>
-        Joining
-      </Text>
       <Card style={{ paddingVertical: space.xs }}>
         <ToggleRow
           title="Approve automatically"
@@ -1415,8 +1392,8 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
             title="Group created"
             body={
               group.tripArea
-                ? 'Show this code to the people you want to add. They scan it and appear here.'
-                : 'Set the trip map below first, then show this code to the people you want to add.'
+                ? 'Share this code with the people you want to add.'
+                : 'Set the trip map, then share this code.'
             }
             actionLabel="Done"
             onAction={back}
@@ -1459,9 +1436,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
             <Text variant="heading">Meeting points ({points.length})</Text>
             {points.length === 0 ? (
               <Text muted>
-                {organizer
-                  ? 'None yet. Set one from the group page with the flag button.'
-                  : 'None yet. Meeting points the organizer shares appear here and on your map.'}
+                {organizer ? 'None yet. Use the flag on the group page.' : 'None yet.'}
               </Text>
             ) : (
               <Card style={{ paddingVertical: space.xs }}>
@@ -1748,7 +1723,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 2,
   },
-  groupTile: { alignItems: 'center', justifyContent: 'center' },
+  groupTile: { alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   groupPress: { marginBottom: space.md },
   groupMain: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.lg },
   joinHint: {
@@ -1780,7 +1755,8 @@ const styles = StyleSheet.create({
   flagBtn: {
     width: 54,
     height: 54,
-    borderRadius: radius.button,
+    borderRadius: radius.pill,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1817,7 +1793,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.xs,
-    paddingHorizontal: space.md,
+    paddingHorizontal: space.gutter,
     paddingVertical: space.sm,
   },
   pageTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md },
@@ -1833,20 +1809,20 @@ const styles = StyleSheet.create({
   },
   bubbleMine: { alignSelf: 'flex-end' },
   infoHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  sectionLabel: { textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: -space.xs },
   inviteCard: { alignItems: 'center', gap: space.md, paddingVertical: space.xl },
   qrPlate: {
     padding: space.md,
     // A QR code needs a white plate in both themes to scan.
     backgroundColor: '#FFFFFF',
-    borderRadius: radius.md,
+    borderRadius: radius.card,
     borderWidth: 1,
   },
   inviteActions: { flexDirection: 'row', gap: space.sm, alignSelf: 'stretch' },
   avatar: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: radius.pill,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

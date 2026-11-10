@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, StyleSheet, View } from 'react-native';
 import { BBox, bboxAreaKm2, formatBytes } from '../../domain/geo';
 import { useServices } from '../../runtime/services';
-import { Banner, Button, Row, SegmentedTabs, Text } from '../../ui/components';
+import { Banner, Button, Input, Row, SegmentedTabs, Text } from '../../ui/components';
 import { AreaPlan } from '../../domain/maps/area';
 import { radius, space, useTheme } from '../../ui/theme';
 
@@ -99,15 +99,13 @@ export function AreaDownloadSheet({
           <Text variant="label" muted>
             Name
           </Text>
-          <TextInput
+          <Input
             testID="area-name"
             value={name}
             onChangeText={setName}
             maxLength={80}
             placeholder="e.g. Weekend hike"
-            placeholderTextColor={c.textMuted}
             accessibilityLabel="Area name"
-            style={[styles.input, { color: c.text, borderColor: c.border, backgroundColor: c.bg }]}
           />
           <Text variant="label" muted>
             Detail
@@ -169,13 +167,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
     borderWidth: 1,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.input,
-    paddingHorizontal: space.lg,
-    minHeight: 52,
-    fontSize: 15,
   },
   estimate: { borderRadius: radius.card, padding: space.lg, gap: space.xs, minHeight: 64 },
 });

@@ -1,15 +1,6 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  Alert,
-  Image,
-  Pressable,
-  ScrollView,
-  Share,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Image, Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { proximity } from '../../domain/adventures/arrival';
 import { activityStanding, completedAt, elapsedMs } from '../../domain/adventures/lifecycle';
 import { CHECKPOINT_DESC_MAX, MapArea, placeOf } from '../../domain/adventures/model';
@@ -44,6 +35,7 @@ import {
   EmptyState,
   Icon,
   IconName,
+  Input,
   ListRow,
   ProgressBar,
   Screen,
@@ -636,6 +628,7 @@ export function PhaseScreen({ navigation, route }: Nav<'CheckpointDetails'>) {
                   accessibilityRole="button"
                   accessibilityLabel="Remove photo"
                   onPress={() => void removePhoto()}
+                  hitSlop={6}
                   style={[styles.photoX, { backgroundColor: c.surface }]}
                 >
                   <Icon name="close" size={18} />
@@ -710,12 +703,8 @@ export function PhaseScreen({ navigation, route }: Nav<'CheckpointDetails'>) {
           <Text variant="label" muted>
             Note (optional)
           </Text>
-          <TextInput
+          <Input
             testID="phase-note"
-            style={[
-              styles.input,
-              { color: c.text, borderColor: c.border, backgroundColor: c.surface },
-            ]}
             value={note}
             onChangeText={setNote}
             onEndEditing={() => void service.setPhaseNote(a.id, cp.id, note)}
@@ -723,7 +712,6 @@ export function PhaseScreen({ navigation, route }: Nav<'CheckpointDetails'>) {
             maxLength={CHECKPOINT_DESC_MAX * 2}
             multiline
             placeholder="Found a beautiful wild orchid!"
-            placeholderTextColor={c.textMuted}
             accessibilityLabel="Note"
           />
 
@@ -901,7 +889,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space.md,
     padding: space.md,
-    borderRadius: radius.md,
+    borderRadius: radius.card,
   },
   railCol: { alignItems: 'center', alignSelf: 'stretch', width: 28 },
   dot: {
@@ -941,15 +929,6 @@ const styles = StyleSheet.create({
     gap: space.md,
     padding: space.lg,
     borderRadius: radius.card,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.input,
-    paddingHorizontal: space.lg,
-    paddingVertical: space.md,
-    minHeight: 72,
-    fontSize: 15,
-    textAlignVertical: 'top',
   },
   celebrate: {
     alignSelf: 'stretch',

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, StyleSheet, View } from 'react-native';
 import { formatCoord } from '../../domain/geo';
 import { POINT_NAME_MAX, POINT_NOTE_MAX } from '../../domain/groups/model';
-import { Button, Row, Text } from '../../ui/components';
+import { Button, Input, Row, Text } from '../../ui/components';
 import { radius, space, useTheme } from '../../ui/theme';
 
 export type MeetingDraft = {
@@ -38,7 +38,6 @@ export function MeetingPointEditor({
     setNote(draft?.note ?? '');
   }, [draft]);
 
-  const field = [styles.input, { color: c.text, borderColor: c.border, backgroundColor: c.bg }];
   return (
     <Modal visible={!!draft} transparent animationType="slide" onRequestClose={onCancel}>
       <KeyboardAvoidingView
@@ -56,9 +55,8 @@ export function MeetingPointEditor({
             <Text variant="caption" muted>
               Shared with everyone in "{draft.groupName}" · {formatCoord(draft)}
             </Text>
-            <TextInput
+            <Input
               testID="meeting-name-input"
-              style={field}
               value={name}
               onChangeText={setName}
               maxLength={POINT_NAME_MAX}
@@ -66,9 +64,8 @@ export function MeetingPointEditor({
               accessibilityLabel="Meeting point name"
               autoFocus
             />
-            <TextInput
+            <Input
               testID="meeting-note-input"
-              style={[field, { height: 80, textAlignVertical: 'top' }]}
               value={note}
               onChangeText={setNote}
               maxLength={POINT_NOTE_MAX}
@@ -103,12 +100,5 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
     borderWidth: 1,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.input,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-    fontSize: 16,
   },
 });

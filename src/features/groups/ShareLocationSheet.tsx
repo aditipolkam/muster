@@ -6,7 +6,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import { formatCoord } from '../../domain/geo';
@@ -20,9 +19,11 @@ import {
   Banner,
   Button,
   Card,
+  Chip,
   Icon,
   IconButton,
   IconTile,
+  Input,
   ListRow,
   Row,
   Text,
@@ -131,10 +132,6 @@ export function ShareLocationSheet({
     }
   };
 
-  const field = [
-    styles.input,
-    { color: c.text, borderColor: c.border, backgroundColor: c.surface },
-  ];
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
@@ -149,11 +146,6 @@ export function ShareLocationSheet({
           <View style={[styles.grabber, { backgroundColor: c.border }]} />
           <View style={styles.head}>
             <View style={{ flex: 1 }}>
-              {chosen ? (
-                <Text variant="label" muted style={styles.step}>
-                  STEP 2 OF 2
-                </Text>
-              ) : null}
               <Text variant="heading">{chosen ? 'Name and share' : 'Share location'}</Text>
             </View>
             <IconButton icon="close" label="Close" onPress={onClose} testID="share-close" />
@@ -166,9 +158,6 @@ export function ShareLocationSheet({
                 <View style={{ flex: 1 }}>
                   <Text variant="cardTitle" testID="share-coords">
                     {formatCoord(chosen)}
-                  </Text>
-                  <Text variant="caption" muted>
-                    Everyone in "{groupName}" sees it on their map
                   </Text>
                 </View>
                 <Pressable
@@ -185,58 +174,35 @@ export function ShareLocationSheet({
                 </Pressable>
               </Card>
               <View style={{ gap: space.sm }}>
-                <Text variant="label" muted>
-                  Name
-                </Text>
-                <TextInput
+                <Input
                   testID="share-name"
-                  style={field}
                   value={name}
                   onChangeText={setName}
                   maxLength={POINT_NAME_MAX}
-                  placeholder="e.g. Lake junction"
-                  placeholderTextColor={c.textMuted}
+                  placeholder="Name"
                   accessibilityLabel="Meeting point name"
                   autoFocus
                 />
                 <View style={styles.chips}>
-                  {QUICK_NAMES.map(q => {
-                    const on = name.trim() === q;
-                    return (
-                      <Pressable
-                        key={q}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: on }}
-                        onPress={() => setName(q)}
-                        testID={`share-chip-${q}`}
-                        style={[
-                          styles.chip,
-                          on
-                            ? { backgroundColor: c.primary, borderColor: c.primary }
-                            : { backgroundColor: c.surface, borderColor: c.border },
-                        ]}
-                      >
-                        <Text variant="caption" color={on ? c.onPrimary : c.text}>
-                          {q}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                  {QUICK_NAMES.map(q => (
+                    <Chip
+                      key={q}
+                      label={q}
+                      selected={name.trim() === q}
+                      onPress={() => setName(q)}
+                      testID={`share-chip-${q}`}
+                    />
+                  ))}
                 </View>
               </View>
               <View style={{ gap: space.sm }}>
-                <Text variant="label" muted>
-                  Note (optional)
-                </Text>
-                <TextInput
+                <Input
                   testID="share-note"
-                  style={[field, styles.note]}
                   value={note}
                   onChangeText={setNote}
                   maxLength={POINT_NOTE_MAX}
                   multiline
-                  placeholder="e.g. wait by the bridge"
-                  placeholderTextColor={c.textMuted}
+                  placeholder="Note (optional)"
                   accessibilityLabel="Meeting point note"
                 />
               </View>
@@ -244,10 +210,8 @@ export function ShareLocationSheet({
                 <Icon name="radio" size={18} color={inRange > 0 ? c.primary : c.textMuted} />
                 <Text variant="caption" muted style={{ flex: 1 }} testID="share-in-range">
                   {inRange > 0
-                    ? `${inRange} ${
-                        inRange === 1 ? 'person is' : 'people are'
-                      } in range and get it now. Others get it when they come close.`
-                    : 'Nobody is in range right now. Followers get it when they come close.'}
+                    ? `${inRange} in range now. Others get it when they come close.`
+                    : 'Nobody in range yet. Followers get it when they come close.'}
                 </Text>
               </Row>
               {error ? <Banner tone="error" title={error} /> : null}
@@ -308,12 +272,6 @@ export function ShareLocationSheet({
                   </Card>
                 </>
               ) : null}
-              <Row>
-                <Text variant="caption" muted style={{ flex: 1 }}>
-                  Shared over Bluetooth with the people in range; others get it when they come
-                  close. No internet needed.
-                </Text>
-              </Row>
             </ScrollView>
           )}
         </View>
@@ -339,25 +297,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.gutter,
     paddingTop: space.sm,
   },
-  step: { letterSpacing: 0.8 },
   body: { padding: space.gutter, gap: space.lg },
-  placeCard: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md },
+  placeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingVertical: space.md,
+  },
   link: { minHeight: size.touch, justifyContent: 'center' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  chip: {
-    minHeight: 36,
-    paddingHorizontal: space.md,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    justifyContent: 'center',
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.input,
-    paddingHorizontal: space.lg,
-    minHeight: size.input,
-    paddingVertical: space.sm,
-    fontSize: 16,
-  },
-  note: { height: 88, textAlignVertical: 'top' },
 });

@@ -1,6 +1,6 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { proximity } from '../../domain/adventures/arrival';
 import { canEditAdventure } from '../../domain/adventures/authorize';
 import { isPhaseUnlocked } from '../../domain/adventures/phases';
@@ -31,8 +31,10 @@ import {
   Banner,
   Button,
   Card,
+  Chip,
   EmptyState,
   IconTile,
+  Input,
   Screen,
   Text,
 } from '../../ui/components';
@@ -40,7 +42,7 @@ import { PulseRing } from '../../ui/motion';
 import { PhaseScreen } from './ActivityRunScreens';
 import { PhaseEditor } from './ActivityScreens';
 import { isActivity } from './activityFlag';
-import { radius, space, useTheme } from '../../ui/theme';
+import { space, useTheme } from '../../ui/theme';
 import { useNow } from '../../ui/useNow';
 import { KIND_ICON, SAFETY_NOTE, formatDate, formatTime } from './format';
 
@@ -61,7 +63,6 @@ export function CheckpointEditorScreen(props: Nav<'CheckpointEditor'>) {
 function CheckpointForm({ navigation, route }: Nav<'CheckpointEditor'>) {
   const { adventureId, checkpointId } = route.params;
   const { adventures: service, adventuresRepo } = useServices();
-  const { c } = useTheme();
   const fix = useLocationStore(s => s.fix);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -73,10 +74,6 @@ function CheckpointForm({ navigation, route }: Nav<'CheckpointEditor'>) {
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const input = useMemo(
-    () => [styles.input, { color: c.text, borderColor: c.border, backgroundColor: c.surface }],
-    [c],
-  );
 
   useEffect(() => {
     if (!checkpointId) {
@@ -144,9 +141,8 @@ function CheckpointForm({ navigation, route }: Nav<'CheckpointEditor'>) {
         <Text variant="label" muted>
           Name
         </Text>
-        <TextInput
+        <Input
           testID="checkpoint-name"
-          style={input}
           value={name}
           onChangeText={setName}
           maxLength={CHECKPOINT_NAME_MAX}
@@ -157,37 +153,21 @@ function CheckpointForm({ navigation, route }: Nav<'CheckpointEditor'>) {
           What kind of place?
         </Text>
         <View style={styles.chips}>
-          {CHECKPOINT_KINDS.map(k => {
-            const on = k.kind === kind;
-            return (
-              <Pressable
-                key={k.kind}
-                testID={`kind-${k.kind}`}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-                onPress={() => setKind(k.kind)}
-                style={[
-                  styles.chip,
-                  { backgroundColor: on ? c.primary : c.surfaceAlt, borderColor: c.border },
-                ]}
-              >
-                <Text
-                  variant="caption"
-                  color={on ? c.onPrimary : c.text}
-                  style={{ fontWeight: '600' }}
-                >
-                  {k.label}
-                </Text>
-              </Pressable>
-            );
-          })}
+          {CHECKPOINT_KINDS.map(k => (
+            <Chip
+              key={k.kind}
+              label={k.label}
+              selected={k.kind === kind}
+              onPress={() => setKind(k.kind)}
+              testID={`kind-${k.kind}`}
+            />
+          ))}
         </View>
         <Text variant="label" muted>
           Description (optional)
         </Text>
-        <TextInput
+        <Input
           testID="checkpoint-description"
-          style={[input, styles.multiline]}
           value={description}
           onChangeText={setDescription}
           maxLength={CHECKPOINT_DESC_MAX}
@@ -468,22 +448,7 @@ function CheckpointPage({ navigation, route }: Nav<'CheckpointDetails'>) {
 
 const styles = StyleSheet.create({
   list: { padding: space.gutter, paddingTop: 0, gap: space.md, paddingBottom: space.xxl },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.input,
-    paddingHorizontal: space.lg,
-    minHeight: 52,
-    fontSize: 15,
-  },
-  multiline: { minHeight: 80, paddingTop: space.md, textAlignVertical: 'top' },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   rowGap: { flexDirection: 'row', gap: space.sm },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  chip: {
-    paddingHorizontal: space.md,
-    minHeight: 40,
-    justifyContent: 'center',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-  },
 });

@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { bearingDeg, distanceM, formatCoord, formatDistance } from '../../domain/geo';
 import { Fix, GpsStatus } from '../../domain/location/fix';
 import { Marker, MARKER_NAME_MAX } from '../../domain/markers/marker';
-import { Button, Row, Text } from '../../ui/components';
-import { floating, radius, space, useTheme } from '../../ui/theme';
+import { Button, Input, Row, Text } from '../../ui/components';
+import { radius, space, useTheme } from '../../ui/theme';
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const compassPoint = (deg: number) => COMPASS[Math.round(deg / 45) % 8] ?? 'N';
@@ -39,18 +39,18 @@ export function MarkerSheet({
 
   return (
     <View
-      style={[styles.sheet, floating(c), { backgroundColor: c.surface, borderColor: c.border }]}
+      style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}
       testID="marker-sheet"
     >
       <Row>
-        <TextInput
+        <Input
           testID="marker-name"
           value={name}
           maxLength={MARKER_NAME_MAX}
           onChangeText={setName}
           onEndEditing={() => name.trim() && name !== marker.name && onRename(name.trim())}
           accessibilityLabel="Marker name"
-          style={[styles.name, { color: c.text, borderColor: c.border }]}
+          style={{ flex: 1 }}
           returnKeyType="done"
         />
         <Button small variant="ghost" label="Close" onPress={onClose} />
@@ -108,12 +108,5 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
     borderWidth: 1,
-  },
-  name: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '600',
-    paddingVertical: space.xs,
-    borderBottomWidth: StyleSheet.hairlineWidth,
   },
 });

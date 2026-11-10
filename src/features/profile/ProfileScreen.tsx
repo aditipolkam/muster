@@ -1,12 +1,22 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as DocumentPicker from 'expo-document-picker';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { MEMBER_NAME_MAX } from '../../domain/groups/model';
 import { useMarkers, useMesh, useRegions } from '../../runtime/hooks';
 import { ProfileStackParamList } from '../../runtime/navigation';
 import { useServices } from '../../runtime/services';
-import { Button, Card, Icon, IconName, IconTile, ListRow, Screen, Text } from '../../ui/components';
+import {
+  Button,
+  Card,
+  Icon,
+  IconName,
+  IconTile,
+  Input,
+  ListRow,
+  Screen,
+  Text,
+} from '../../ui/components';
 import { radius, space, useTheme } from '../../ui/theme';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'ProfileHome'>;
@@ -140,23 +150,12 @@ export function ProfileScreen({ navigation }: Props) {
           </Pressable>
           {photo ? (
             <Button small variant="ghost" label="Remove photo" onPress={() => void removePhoto()} />
-          ) : (
-            <Text variant="caption" muted>
-              Tap to add a photo. It stays on this device.
-            </Text>
-          )}
+          ) : null}
         </View>
         {error ? <Text color={c.danger}>{error}</Text> : null}
 
-        <Text variant="label" muted>
-          Your name
-        </Text>
-        <TextInput
+        <Input
           testID="profile-name"
-          style={[
-            styles.input,
-            { color: c.text, borderColor: c.border, backgroundColor: c.surface },
-          ]}
           value={name}
           onChangeText={setName}
           onBlur={() => void saveName()}
@@ -167,7 +166,7 @@ export function ProfileScreen({ navigation }: Props) {
           accessibilityLabel="Your name"
         />
         <Text variant="caption" muted>
-          Group members see this name. Changes apply to groups you create or join next.
+          Your group sees this name.
         </Text>
 
         <Card style={styles.group}>

@@ -42,7 +42,7 @@ import {
 import { canEditAdventure } from '../../domain/adventures/authorize';
 import { useAdventureMapState } from './AdventureOverlay';
 import { Icon, IconButton, StatusPill, Text } from '../../ui/components';
-import { floating, radius, size, space, useTheme } from '../../ui/theme';
+import { radius, size, space, useTheme } from '../../ui/theme';
 import { FlagPin } from '../../ui/trail';
 import { MapCanvas } from './MapCanvas';
 import { AreaDownloadSheet } from './AreaDownloadSheet';
@@ -783,8 +783,8 @@ export function MapScreen({ navigation, route }: Props) {
       : Alert.alert(
           offlineLabel,
           useOnline
-            ? 'This map is streamed and is not available without internet. Download the area to keep it.'
-            : 'Download this area to use the map without internet.',
+            ? 'Streamed, not saved. Download the area to use it offline.'
+            : 'Download this area to use it offline.',
           [
             { text: 'Not now', style: 'cancel' },
             { text: 'Download this area', onPress: openArea },
@@ -888,11 +888,7 @@ export function MapScreen({ navigation, route }: Props) {
               accessibilityRole="search"
               accessibilityLabel="Search for a place"
               onPress={() => setSearchOpen(true)}
-              style={[
-                styles.search,
-                floating(c),
-                { backgroundColor: c.surface, borderColor: c.border },
-              ]}
+              style={[styles.search, { backgroundColor: c.surface, borderColor: c.border }]}
             >
               <Icon name="search" size={20} color={c.textMuted} />
               <Text muted numberOfLines={1} style={{ flex: 1 }}>
@@ -913,11 +909,7 @@ export function MapScreen({ navigation, route }: Props) {
                 />
               </Pressable>
               <View
-                style={[
-                  styles.toolPill,
-                  floating(c),
-                  { backgroundColor: c.surface, borderColor: c.border },
-                ]}
+                style={[styles.toolPill, { backgroundColor: c.surface, borderColor: c.border }]}
               >
                 <Pressable
                   testID="map-offline-indicator"

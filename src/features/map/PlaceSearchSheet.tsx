@@ -6,13 +6,12 @@ import {
   Modal,
   Platform,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import { PlaceResult } from '../../domain/maps/places';
 import { useServices } from '../../runtime/services';
-import { Button, IconTile, ListRow, Text } from '../../ui/components';
-import { radius, space, useTheme } from '../../ui/theme';
+import { Button, IconTile, ListRow, SearchField, Text } from '../../ui/components';
+import { space, useTheme } from '../../ui/theme';
 
 /** Search the world by name (needs internet) and pick a place to download a map for. */
 export function PlaceSearchSheet({
@@ -65,25 +64,20 @@ export function PlaceSearchSheet({
         testID="place-search"
       >
         <View style={styles.bar}>
-          <TextInput
+          <SearchField
             testID="place-query"
             autoFocus
             value={query}
             onChangeText={setQuery}
             onSubmitEditing={() => void run()}
-            returnKeyType="search"
             placeholder="Search a place or region"
-            placeholderTextColor={c.textMuted}
             accessibilityLabel="Search for a place"
-            style={[
-              styles.input,
-              { color: c.text, borderColor: c.border, backgroundColor: c.surface },
-            ]}
+            containerStyle={{ flex: 1 }}
           />
           <Button small variant="ghost" label="Close" onPress={onClose} />
         </View>
         <Text variant="caption" muted style={styles.hint}>
-          Searching needs an internet connection. The map you download works without one.
+          Search needs internet. Downloaded maps work offline.
         </Text>
         {busy ? <ActivityIndicator color={c.primary} style={{ margin: space.lg }} /> : null}
         {error ? (
@@ -124,14 +118,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space.sm,
     paddingHorizontal: space.gutter,
-  },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: radius.input,
-    paddingHorizontal: space.lg,
-    minHeight: 52,
-    fontSize: 15,
   },
   hint: { paddingHorizontal: space.gutter, paddingVertical: space.sm },
 });

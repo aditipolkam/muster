@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal, Pressable, SectionList, StyleSheet, View } from 'react-native';
 import { Button, Icon, IconTile, ListRow, Text } from '../../ui/components';
 import { radius, space, useTheme } from '../../ui/theme';
-import { MY_PLACES, TargetOption, TargetSection } from './targets';
+import { TargetOption, TargetSection } from './targets';
 
 /** Bottom-sheet list of locations, grouped by the group they were shared in. */
 export function TargetPicker({
@@ -42,7 +42,6 @@ export function TargetPicker({
         <View style={{ paddingHorizontal: space.gutter }}>
           <ListRow
             title="Compass only"
-            subtitle="No location"
             leading={<IconTile name="compass" />}
             trailing={selectedKey === null ? <Icon name="check" color={c.primary} /> : null}
             onPress={onClear}
@@ -51,8 +50,7 @@ export function TargetPicker({
         </View>
         {sections.length === 0 ? (
           <Text muted style={styles.empty} testID="target-empty">
-            Nothing to pick yet. Meeting points shared in your groups, and places you mark on the
-            map, show up here.
+            Meeting points and places you mark show up here.
           </Text>
         ) : (
           <SectionList
@@ -61,13 +59,12 @@ export function TargetPicker({
             stickySectionHeadersEnabled={false}
             renderSectionHeader={({ section }) => (
               <Text variant="label" muted style={styles.section}>
-                {section.title === MY_PLACES ? 'MY PLACES' : section.title.toUpperCase()}
+                {section.title}
               </Text>
             )}
             renderItem={({ item }) => (
               <ListRow
                 title={item.name}
-                subtitle={item.subtitle}
                 leading={
                   <IconTile
                     name={item.ref.kind === 'meeting' ? 'flag' : 'pin'}

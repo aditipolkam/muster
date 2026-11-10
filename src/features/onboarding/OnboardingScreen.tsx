@@ -5,11 +5,10 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, Card, Icon, IconName, IconTile, ListRow, Text } from '../../ui/components';
+import { Button, Card, Icon, IconName, IconTile, Input, ListRow, Text } from '../../ui/components';
 import { MEMBER_NAME_MAX } from '../../domain/groups/model';
 import { AppLogo } from '../../ui/AppLogo';
 import { radius, space, useTheme } from '../../ui/theme';
@@ -114,9 +113,6 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
           ))}
         </Card>
         <Button label="Get started" icon="navigate" onPress={onNext} testID="onboarding-start" />
-        <Text variant="caption" muted style={{ textAlign: 'center' }}>
-          No account needed. Location permission is asked later, when you open the map.
-        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -165,10 +161,9 @@ function NameStep({ onBack, onDone }: { onBack: () => void; onDone: (name: strin
             What should your group call you?
           </Text>
           <Text muted style={{ textAlign: 'center' }}>
-            People in your groups see this name next to your location and updates. You can change it
-            later in Profile.
+            Your group sees this name.
           </Text>
-          <TextInput
+          <Input
             testID="onboarding-name"
             value={name}
             onChangeText={setName}
@@ -180,10 +175,6 @@ function NameStep({ onBack, onDone }: { onBack: () => void; onDone: (name: strin
             returnKeyType="done"
             onSubmitEditing={() => ready && onDone(trimmed)}
             accessibilityLabel="Your name"
-            style={[
-              styles.input,
-              { color: c.text, borderColor: c.border, backgroundColor: c.surface },
-            ]}
           />
         </ScrollView>
         <View style={styles.nameFooter}>

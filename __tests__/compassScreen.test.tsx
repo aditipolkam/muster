@@ -87,7 +87,6 @@ describe('Compass screen', () => {
     render(ui(t, { markerId: m.id }));
     expect(await screen.findByTestId('nav-distance')).toBeTruthy();
     expect(screen.getAllByText('Hut').length).toBeGreaterThan(0);
-    expect(screen.getByText('Navigating to')).toBeTruthy();
     expect(screen.getByText(/Marked by you · 1\.11 km · N 0°/)).toBeTruthy();
     expect(screen.getByText('Straight line · terrain not considered')).toBeTruthy();
     expect(screen.getByTestId('navigation-end')).toBeTruthy();
@@ -120,8 +119,8 @@ describe('Compass screen', () => {
 
     fireEvent.press(await screen.findByTestId('target-select'));
     const picker = await screen.findByTestId('target-picker');
-    await waitFor(() => expect(within(picker).getByText('RIDGE WALK')).toBeTruthy());
-    expect(within(picker).getByText('MY PLACES')).toBeTruthy();
+    await waitFor(() => expect(within(picker).getByText('Ridge walk')).toBeTruthy());
+    expect(within(picker).getByText('My places')).toBeTruthy();
     expect(within(picker).getByText('Cairn')).toBeTruthy();
 
     fireEvent.press(within(picker).getByText('Lake junction'));

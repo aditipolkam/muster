@@ -401,7 +401,7 @@ describe('navigation falls back to the straight line', () => {
     view.rerender(bar({ none: 'no_map' }));
     expect(screen.getByText('Straight line, not a trail route')).toBeTruthy();
     expect(screen.getByTestId('nav-route-reason').props.children).toBe(
-      'Download the map of this area to get a trail route.',
+      'Download this area for a trail route.',
     );
     view.rerender(bar({ none: 'off_network' }));
     expect(screen.getByTestId('nav-route-reason').props.children).toMatch(/No path within 250 m/);

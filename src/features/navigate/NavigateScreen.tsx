@@ -328,9 +328,6 @@ export function NavigateScreen({ route, navigation }: Props) {
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.navHead}>
             <View style={{ flex: 1 }} testID="nav-target">
-              <Text variant="label" muted>
-                Navigating to
-              </Text>
               <Text variant="title" numberOfLines={1}>
                 {target.name}
               </Text>

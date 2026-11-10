@@ -1,18 +1,35 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { SymbolView } from 'expo-symbols';
 import React from 'react';
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   StyleProp,
   StyleSheet,
   Text as RNText,
+  TextInput,
+  TextInputProps,
   TextStyle,
   View,
   ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { floating, fontFamily, radius, size as sizes, space, tabular, useTheme } from './theme';
+import { GLYPHS, IconName } from './glyphs';
+import {
+  fontFamily,
+  iconSize,
+  iconWeight,
+  radius,
+  size as sizes,
+  space,
+  tabular,
+  type,
+  useTheme,
+} from './theme';
+
+export type { IconName };
 
 type TextVariant =
   | 'hero'
@@ -25,109 +42,69 @@ type TextVariant =
   | 'label'
   | 'metric';
 
-/** Type scale (design tokens): screen titles 24-30/800, card titles 16-19/800, captions 12-13/600. */
+/** Text variants read the type scale in theme.tsx. */
 const textStyles: Record<TextVariant, TextStyle> = {
-  hero: { fontSize: 30, lineHeight: 36, fontWeight: '800', letterSpacing: -0.4 },
-  title: { fontSize: 26, lineHeight: 32, fontWeight: '800', letterSpacing: -0.3 },
-  heading: { fontSize: 19, lineHeight: 25, fontWeight: '800' },
-  cardTitle: { fontSize: 16, lineHeight: 22, fontWeight: '800' },
-  body: { fontSize: 15, lineHeight: 22 },
-  caption: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
-  label: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  hero: type.hero,
+  title: type.title,
+  heading: type.heading,
+  cardTitle: type.cardTitle,
+  body: type.body,
+  caption: type.caption,
+  label: type.label,
   mono: { fontSize: 13, lineHeight: 18, ...tabular },
   metric: { fontSize: 34, lineHeight: 40, fontWeight: '800', ...tabular },
 };
 
 /**
- * One icon family (Ionicons, via @expo/vector-icons, which ships with expo and loads its font
- * through the already-linked expo-font). Names are app concepts; this is the only place that
- * knows the family, so swapping it later (the design system names Lucide) touches one table.
- * Each entry is the outline name; `filled` drops the `-outline` suffix for the solid variant.
+ * SF Symbols only when the native module is in the installed build. A build made before
+ * expo-symbols was added renders SymbolView as an "Unimplemented component" box, so it falls
+ * back to Ionicons (bundled with the app) until the next native rebuild.
  */
-const GLYPHS = {
-  map: 'map-outline',
-  group: 'people-outline',
-  navigate: 'navigate-outline',
-  compass: 'compass-outline',
-  offline: 'checkmark-circle-outline',
-  online: 'cloud-outline',
-  profile: 'person-outline',
-  more: 'ellipsis-horizontal',
-  menu: 'ellipsis-vertical',
-  qr: 'qr-code-outline',
-  exit: 'exit-outline',
-  sync: 'sync-outline',
-  stop: 'stop-circle-outline',
-  radio: 'radio-outline',
-  back: 'chevron-back',
-  chevron: 'chevron-forward',
-  layers: 'layers-outline',
-  locate: 'locate-outline',
-  follow: 'navigate',
-  plus: 'add',
-  check: 'checkmark',
-  close: 'close',
-  flag: 'flag-outline',
-  mesh: 'git-network-outline',
-  settings: 'settings-outline',
-  pin: 'location-outline',
-  trail: 'trail-sign-outline',
-  trophy: 'trophy-outline',
-  walk: 'walk-outline',
-  help: 'help-circle-outline',
-  share: 'share-outline',
-  bearing: 'compass-outline',
-  download: 'download-outline',
-  search: 'search-outline',
-  bluetooth: 'bluetooth',
-  grip: 'reorder-two-outline',
-  up: 'chevron-up',
-  down: 'chevron-down',
-  flower: 'flower-outline',
-  camera: 'camera-outline',
-  image: 'image-outline',
-  list: 'list-outline',
-  send: 'send-outline',
-  time: 'time-outline',
-  info: 'information-circle-outline',
-  lock: 'lock-closed-outline',
-  circle: 'ellipse-outline',
-  done: 'checkmark-circle',
-  region: 'scan-outline',
-  rules: 'document-text-outline',
-  ribbon: 'ribbon-outline',
-  arrowUp: 'arrow-up',
-  arrowRight: 'arrow-forward',
-  edit: 'create-outline',
-  move: 'move-outline',
-  trash: 'trash-outline',
-  calendar: 'calendar-outline',
-  person: 'person-circle-outline',
-  warning: 'alert-circle-outline',
-} as const;
-export type IconName = keyof typeof GLYPHS;
+const hasSymbols =
+  Platform.OS === 'ios' &&
+  !!(globalThis as { expo?: { modules?: Record<string, unknown> } }).expo?.modules?.SymbolModule;
 
+/**
+ * Apple-style icons: SF Symbols on iOS (thin, regular weight, sized like the text around them),
+ * the matching Ionicons outline elsewhere. No icon ever sits in a coloured box.
+ */
 export function Icon({
   name,
-  size = 20,
+  size = iconSize.md,
   color,
   filled,
 }: {
   name: IconName;
   size?: number;
   color?: string;
-  /** Solid variant, used for the selected tab. */
+  /** Solid variant, used for the selected tab and the meeting flag. */
   filled?: boolean;
 }) {
   const { c } = useTheme();
-  const glyph = GLYPHS[name];
-  return (
+  const g: { sf: string; sfFilled?: string; ion: string; ionFilled?: string } = GLYPHS[name];
+  const tint = color ?? c.text;
+  const ion = (
     <Ionicons
       accessibilityElementsHidden
       importantForAccessibility="no"
-      name={(filled ? glyph.replace('-outline', '') : glyph) as never}
+      name={((filled && g.ionFilled) || g.ion) as never}
       size={size}
-      color={color ?? c.text}
+      color={tint}
+    />
+  );
+  if (!hasSymbols) {
+    return ion;
+  }
+  return (
+    <SymbolView
+      name={((filled && g.sfFilled) || g.sf) as never}
+      size={size}
+      tintColor={tint}
+      weight={iconWeight}
+      type="monochrome"
+      fallback={ion}
+      accessibilityElementsHidden
+      importantForAccessibility="no"
     />
   );
 }
@@ -157,6 +134,10 @@ export function Text({
   );
 }
 
+/**
+ * Root tabs: a large title on the left, actions on the right. Detail screens (with `onBack`): a
+ * centred title between two equal 44pt slots, so the title sits in the middle of the screen.
+ */
 export function ScreenHeader({
   title,
   right,
@@ -166,9 +147,19 @@ export function ScreenHeader({
   right?: React.ReactNode;
   onBack?: () => void;
 }) {
+  if (!onBack) {
+    return (
+      <View style={styles.header}>
+        <Text variant="title" style={{ flex: 1 }} accessibilityRole="header" numberOfLines={1}>
+          {title}
+        </Text>
+        {right}
+      </View>
+    );
+  }
   return (
     <View style={styles.header}>
-      {onBack ? (
+      <View style={styles.headerSide}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Back"
@@ -176,16 +167,84 @@ export function ScreenHeader({
           hitSlop={8}
           style={styles.back}
         >
-          <Icon name="back" size={30} />
+          <Icon name="back" size={iconSize.lg} />
         </Pressable>
-      ) : null}
-      <Text variant="title" style={{ flex: 1 }} accessibilityRole="header" numberOfLines={1}>
+      </View>
+      <Text
+        variant="heading"
+        style={styles.headerTitle}
+        accessibilityRole="header"
+        numberOfLines={1}
+      >
         {title}
       </Text>
-      {right}
+      <View style={[styles.headerSide, { alignItems: 'flex-end' }]}>{right}</View>
     </View>
   );
 }
+
+/** A full-pill text field (multi-line notes get the large container radius). */
+export const Input = React.forwardRef<TextInput, TextInputProps>(function Input(
+  { style, multiline, ...rest },
+  ref,
+) {
+  const { c } = useTheme();
+  return (
+    <TextInput
+      ref={ref}
+      placeholderTextColor={c.textMuted}
+      multiline={multiline}
+      {...rest}
+      style={[
+        styles.input,
+        multiline && styles.inputMulti,
+        { color: c.text, borderColor: c.border, backgroundColor: c.surface },
+        style,
+      ]}
+    />
+  );
+});
+
+/** A pill search field: leading magnifier, and a clear button once there is text. */
+export const SearchField = React.forwardRef<
+  TextInput,
+  TextInputProps & { onClear?: () => void; containerStyle?: StyleProp<ViewStyle> }
+>(function SearchField({ style, containerStyle, value, onClear, onChangeText, ...rest }, ref) {
+  const { c } = useTheme();
+  const clear = onClear ?? (onChangeText ? () => onChangeText('') : undefined);
+  return (
+    <View
+      style={[
+        styles.search,
+        { borderColor: c.border, backgroundColor: c.surface },
+        containerStyle,
+      ]}
+    >
+      <Icon name="search" size={iconSize.md} color={c.textMuted} />
+      <TextInput
+        ref={ref}
+        placeholderTextColor={c.textMuted}
+        returnKeyType="search"
+        autoCorrect={false}
+        value={value}
+        onChangeText={onChangeText}
+        {...rest}
+        style={[styles.searchInput, { color: c.text }, style]}
+      />
+      {value && clear ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Clear search"
+          onPress={clear}
+          hitSlop={8}
+          style={styles.searchClear}
+        >
+          <Icon name="close" size={iconSize.sm} color={c.textMuted} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+});
 
 /** Detail screens pass `onBack`; main tabs omit it. */
 export function Screen({
@@ -372,8 +431,54 @@ export function Badge({
   );
 }
 
-/** Alias: the design calls these chips. */
-export const Chip = Badge;
+/**
+ * A selectable pill (filters, kinds, quick picks). Without `onPress` it is a static badge.
+ * 36pt tall with hit slop, so the touch target is 44.
+ */
+export function Chip({
+  label,
+  selected,
+  onPress,
+  icon,
+  tone,
+  testID,
+}: {
+  label: string;
+  selected?: boolean;
+  onPress?: () => void;
+  icon?: IconName;
+  tone?: ChipTone;
+  testID?: string;
+}) {
+  const { c } = useTheme();
+  if (!onPress) {
+    return <Badge label={label} icon={icon} tone={tone} testID={testID} />;
+  }
+  const fg = selected ? c.onPrimary : c.text;
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!selected }}
+      accessibilityLabel={label}
+      onPress={onPress}
+      hitSlop={4}
+      style={({ pressed }) => [
+        styles.chip,
+        {
+          backgroundColor: selected ? c.primary : c.surface,
+          borderColor: selected ? c.primary : c.border,
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      {icon ? <Icon name={icon} size={iconSize.sm} color={fg} /> : null}
+      <Text variant="caption" color={fg} numberOfLines={1} style={styles.badgeText}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
 
 export function StatusPill({
   label,
@@ -405,7 +510,7 @@ export function StatusPill({
       style={[
         styles.pill,
         dark
-          ? [{ backgroundColor: c.ink, borderColor: c.ink }, floating(c)]
+          ? { backgroundColor: c.ink, borderColor: c.ink }
           : { backgroundColor: c.surface, borderColor: c.border },
         style,
       ]}
@@ -418,32 +523,34 @@ export function StatusPill({
   );
 }
 
-/** Soft-green rounded square for feature rows and special actions only. */
+/**
+ * A leading icon for rows and headers. No box behind it: the icon alone, in the primary colour
+ * (or the meeting orange for meeting points), centred in a fixed slot so rows line up.
+ */
 export function IconTile({
   name,
   color,
-  bg,
-  size: s = 36,
+  size: s = 28,
   tone,
 }: {
   name: IconName;
   color?: string;
+  /** Kept for older callers; there is no background any more. */
   bg?: string;
   size?: number;
-  /** meeting: orange flag tile. */
+  /** meeting: the orange flag. */
   tone?: 'primary' | 'meeting';
 }) {
   const { c } = useTheme();
   const fg = color ?? (tone === 'meeting' ? c.meetingStroke : c.primary);
-  const back = bg ?? (tone === 'meeting' ? c.meetingSoft : c.primarySoft);
   return (
-    <View
-      style={[
-        styles.tile,
-        { width: s, height: s, borderRadius: s >= 44 ? 14 : radius.tile, backgroundColor: back },
-      ]}
-    >
-      <Icon name={name} size={Math.round(s * 0.55)} color={fg} />
+    <View style={[styles.tile, { width: Math.max(28, s), height: Math.max(28, s) }]}>
+      <Icon
+        name={name}
+        size={Math.round(Math.min(26, s * 0.75))}
+        color={fg}
+        filled={tone === 'meeting'}
+      />
     </View>
   );
 }
@@ -696,7 +803,6 @@ export function IconButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.iconButton,
-        floating(c),
         {
           backgroundColor: active ? c.primary : c.surface,
           borderColor: active ? c.primary : c.border,
@@ -705,7 +811,7 @@ export function IconButton({
       ]}
     >
       {icon ? (
-        <Icon name={icon} size={22} color={active ? c.onPrimary : c.text} />
+        <Icon name={icon} size={iconSize.lg} color={active ? c.onPrimary : c.text} />
       ) : (
         <Text variant="heading" color={active ? c.onPrimary : c.text}>
           {glyph}
@@ -749,7 +855,6 @@ export function Menu({
           accessibilityRole="menu"
           style={[
             styles.menu,
-            floating(c),
             { top: insets.top + 56, backgroundColor: c.surface, borderColor: c.border },
           ]}
         >
@@ -794,22 +899,65 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: space.gutter,
-    paddingTop: space.md,
+    paddingTop: space.sm,
     paddingBottom: space.md,
-    minHeight: 56,
+    minHeight: 60,
     gap: space.sm,
   },
+  headerSide: { width: sizes.touch, justifyContent: 'center' },
+  headerTitle: { flex: 1, textAlign: 'center' },
   back: {
-    width: 44,
-    height: 44,
-    marginLeft: -space.sm,
+    width: sizes.touch,
+    height: sizes.touch,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  input: {
+    minHeight: sizes.input,
+    paddingHorizontal: space.gutter,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    ...type.input,
+  },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    minHeight: sizes.search,
+    paddingLeft: space.lg,
+    paddingRight: space.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  searchInput: { flex: 1, minHeight: sizes.search, ...type.input },
+  searchClear: {
+    width: sizes.touch - space.sm,
+    height: sizes.touch - space.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    minHeight: sizes.chip,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  inputMulti: {
+    minHeight: 96,
+    paddingTop: space.md,
+    paddingBottom: space.md,
+    borderRadius: radius.card,
+    textAlignVertical: 'top',
+  },
   button: {
     minHeight: sizes.button,
-    paddingHorizontal: space.gutter,
-    borderRadius: radius.button,
+    paddingHorizontal: space.xl,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -817,11 +965,10 @@ const styles = StyleSheet.create({
   buttonSmall: {
     minHeight: sizes.buttonSmall,
     paddingHorizontal: space.lg,
-    borderRadius: radius.md,
   },
-  buttonLabel: { fontSize: 16, lineHeight: 20, fontWeight: '700' },
-  buttonLabelSmall: { fontSize: 15, lineHeight: 20, fontWeight: '700' },
-  card: { borderRadius: radius.card, borderWidth: 1, padding: space.lg },
+  buttonLabel: type.button,
+  buttonLabelSmall: { ...type.button, fontSize: 15 },
+  card: { borderRadius: radius.card, borderWidth: 1, padding: space.gutter },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -832,59 +979,61 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: 1,
   },
-  dot: { width: 8, height: 8, borderRadius: 4 },
+  dot: { width: 8, height: 8, borderRadius: radius.pill },
   tile: { alignItems: 'center', justifyContent: 'center' },
-  rowLeading: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  rowLeading: { width: sizes.iconSlot, alignItems: 'center', justifyContent: 'center' },
   listRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    minHeight: 60,
-    paddingVertical: space.sm,
+    minHeight: 56,
+    paddingVertical: space.md,
   },
-  segTrack: { flexDirection: 'row', padding: 4, gap: 4, borderRadius: radius.md },
+  segTrack: { flexDirection: 'row', padding: 4, gap: 4, borderRadius: radius.pill },
   segment: {
     paddingHorizontal: space.lg,
-    minHeight: 40,
+    minHeight: sizes.segment,
     justifyContent: 'center',
-    borderRadius: 11,
+    borderRadius: radius.pill,
     borderWidth: 1,
   },
   segmentOn: {},
   menu: {
     position: 'absolute',
     right: space.gutter,
-    minWidth: 200,
-    borderRadius: radius.lg,
+    minWidth: 220,
+    borderRadius: radius.card,
     borderWidth: 1,
-    paddingVertical: space.xs,
+    paddingVertical: space.sm,
+    overflow: 'hidden',
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    paddingHorizontal: space.lg,
-    minHeight: 44,
+    paddingHorizontal: space.gutter,
+    minHeight: sizes.touch,
   },
   segmentFill: { flex: 1, paddingHorizontal: space.xs, alignItems: 'center' },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    minHeight: 26,
+    gap: 6,
+    paddingHorizontal: space.md,
+    minHeight: 28,
     borderRadius: radius.pill,
     alignSelf: 'flex-start',
     flexShrink: 1,
   },
   badgeText: { fontWeight: '700', flexShrink: 1 },
-  track: { height: 10, borderRadius: radius.pill, overflow: 'hidden' },
+  track: { height: 8, borderRadius: radius.pill, overflow: 'hidden' },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    padding: space.md,
-    borderRadius: radius.lg,
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.card,
     borderWidth: 1,
   },
   empty: {
@@ -895,9 +1044,9 @@ const styles = StyleSheet.create({
     gap: space.md,
   },
   iconButton: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
+    width: sizes.iconButton,
+    height: sizes.iconButton,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
