@@ -10,3 +10,9 @@ jest.mock('@expo/vector-icons/Ionicons', () => {
     default: ({ name }) => R.createElement(Text, { testID: `icon-${name}` }),
   };
 });
+
+// SF Symbols are native (iOS). In tests, render the Ionicons fallback the Icon component passes.
+jest.mock('expo-symbols', () => ({
+  __esModule: true,
+  SymbolView: ({ fallback }) => fallback ?? null,
+}));

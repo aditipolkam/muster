@@ -1,18 +1,25 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { SymbolView } from 'expo-symbols';
 import React from 'react';
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   StyleProp,
   StyleSheet,
   Text as RNText,
+  TextInput,
+  TextInputProps,
   TextStyle,
   View,
   ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { floating, fontFamily, radius, size as sizes, space, tabular, useTheme } from './theme';
+import { GLYPHS, IconName } from './glyphs';
+import { fontFamily, radius, size as sizes, space, tabular, useTheme } from './theme';
+
+export type { IconName };
 
 type TextVariant =
   | 'hero'
@@ -39,74 +46,9 @@ const textStyles: Record<TextVariant, TextStyle> = {
 };
 
 /**
- * One icon family (Ionicons, via @expo/vector-icons, which ships with expo and loads its font
- * through the already-linked expo-font). Names are app concepts; this is the only place that
- * knows the family, so swapping it later (the design system names Lucide) touches one table.
- * Each entry is the outline name; `filled` drops the `-outline` suffix for the solid variant.
+ * Apple-style icons: SF Symbols on iOS (thin, regular weight, sized like the text around them),
+ * the matching Ionicons outline elsewhere. No icon ever sits in a coloured box.
  */
-const GLYPHS = {
-  map: 'map-outline',
-  group: 'people-outline',
-  navigate: 'navigate-outline',
-  compass: 'compass-outline',
-  offline: 'checkmark-circle-outline',
-  online: 'cloud-outline',
-  profile: 'person-outline',
-  more: 'ellipsis-horizontal',
-  menu: 'ellipsis-vertical',
-  qr: 'qr-code-outline',
-  exit: 'exit-outline',
-  sync: 'sync-outline',
-  stop: 'stop-circle-outline',
-  radio: 'radio-outline',
-  back: 'chevron-back',
-  chevron: 'chevron-forward',
-  layers: 'layers-outline',
-  locate: 'locate-outline',
-  follow: 'navigate',
-  plus: 'add',
-  check: 'checkmark',
-  close: 'close',
-  flag: 'flag-outline',
-  mesh: 'git-network-outline',
-  settings: 'settings-outline',
-  pin: 'location-outline',
-  trail: 'trail-sign-outline',
-  trophy: 'trophy-outline',
-  walk: 'walk-outline',
-  help: 'help-circle-outline',
-  share: 'share-outline',
-  bearing: 'compass-outline',
-  download: 'download-outline',
-  search: 'search-outline',
-  bluetooth: 'bluetooth',
-  grip: 'reorder-two-outline',
-  up: 'chevron-up',
-  down: 'chevron-down',
-  flower: 'flower-outline',
-  camera: 'camera-outline',
-  image: 'image-outline',
-  list: 'list-outline',
-  send: 'send-outline',
-  time: 'time-outline',
-  info: 'information-circle-outline',
-  lock: 'lock-closed-outline',
-  circle: 'ellipse-outline',
-  done: 'checkmark-circle',
-  region: 'scan-outline',
-  rules: 'document-text-outline',
-  ribbon: 'ribbon-outline',
-  arrowUp: 'arrow-up',
-  arrowRight: 'arrow-forward',
-  edit: 'create-outline',
-  move: 'move-outline',
-  trash: 'trash-outline',
-  calendar: 'calendar-outline',
-  person: 'person-circle-outline',
-  warning: 'alert-circle-outline',
-} as const;
-export type IconName = keyof typeof GLYPHS;
-
 export function Icon({
   name,
   size = 20,
@@ -116,18 +58,34 @@ export function Icon({
   name: IconName;
   size?: number;
   color?: string;
-  /** Solid variant, used for the selected tab. */
+  /** Solid variant, used for the selected tab and the meeting flag. */
   filled?: boolean;
 }) {
   const { c } = useTheme();
-  const glyph = GLYPHS[name];
-  return (
+  const g: { sf: string; sfFilled?: string; ion: string; ionFilled?: string } = GLYPHS[name];
+  const tint = color ?? c.text;
+  const ion = (
     <Ionicons
       accessibilityElementsHidden
       importantForAccessibility="no"
-      name={(filled ? glyph.replace('-outline', '') : glyph) as never}
+      name={((filled && g.ionFilled) || g.ion) as never}
       size={size}
-      color={color ?? c.text}
+      color={tint}
+    />
+  );
+  if (Platform.OS !== 'ios') {
+    return ion;
+  }
+  return (
+    <SymbolView
+      name={((filled && g.sfFilled) || g.sf) as never}
+      size={size}
+      tintColor={tint}
+      weight="regular"
+      type="monochrome"
+      fallback={ion}
+      accessibilityElementsHidden
+      importantForAccessibility="no"
     />
   );
 }
@@ -157,6 +115,10 @@ export function Text({
   );
 }
 
+/**
+ * Root tabs: a large title on the left, actions on the right. Detail screens (with `onBack`): a
+ * centred title between two equal 44pt slots, so the title sits in the middle of the screen.
+ */
 export function ScreenHeader({
   title,
   right,
@@ -166,9 +128,19 @@ export function ScreenHeader({
   right?: React.ReactNode;
   onBack?: () => void;
 }) {
+  if (!onBack) {
+    return (
+      <View style={styles.header}>
+        <Text variant="title" style={{ flex: 1 }} accessibilityRole="header" numberOfLines={1}>
+          {title}
+        </Text>
+        {right}
+      </View>
+    );
+  }
   return (
     <View style={styles.header}>
-      {onBack ? (
+      <View style={styles.headerSide}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Back"
@@ -176,16 +148,43 @@ export function ScreenHeader({
           hitSlop={8}
           style={styles.back}
         >
-          <Icon name="back" size={30} />
+          <Icon name="back" size={22} />
         </Pressable>
-      ) : null}
-      <Text variant="title" style={{ flex: 1 }} accessibilityRole="header" numberOfLines={1}>
+      </View>
+      <Text
+        variant="heading"
+        style={styles.headerTitle}
+        accessibilityRole="header"
+        numberOfLines={1}
+      >
         {title}
       </Text>
-      {right}
+      <View style={[styles.headerSide, { alignItems: 'flex-end' }]}>{right}</View>
     </View>
   );
 }
+
+/** A full-pill text field (multi-line notes get the large container radius). */
+export const Input = React.forwardRef<TextInput, TextInputProps>(function Input(
+  { style, multiline, ...rest },
+  ref,
+) {
+  const { c } = useTheme();
+  return (
+    <TextInput
+      ref={ref}
+      placeholderTextColor={c.textMuted}
+      multiline={multiline}
+      {...rest}
+      style={[
+        styles.input,
+        multiline && styles.inputMulti,
+        { color: c.text, borderColor: c.border, backgroundColor: c.surface },
+        style,
+      ]}
+    />
+  );
+});
 
 /** Detail screens pass `onBack`; main tabs omit it. */
 export function Screen({
@@ -405,7 +404,7 @@ export function StatusPill({
       style={[
         styles.pill,
         dark
-          ? [{ backgroundColor: c.ink, borderColor: c.ink }, floating(c)]
+          ? { backgroundColor: c.ink, borderColor: c.ink }
           : { backgroundColor: c.surface, borderColor: c.border },
         style,
       ]}
@@ -418,32 +417,34 @@ export function StatusPill({
   );
 }
 
-/** Soft-green rounded square for feature rows and special actions only. */
+/**
+ * A leading icon for rows and headers. No box behind it: the icon alone, in the primary colour
+ * (or the meeting orange for meeting points), centred in a fixed slot so rows line up.
+ */
 export function IconTile({
   name,
   color,
-  bg,
-  size: s = 36,
+  size: s = 28,
   tone,
 }: {
   name: IconName;
   color?: string;
+  /** Kept for older callers; there is no background any more. */
   bg?: string;
   size?: number;
-  /** meeting: orange flag tile. */
+  /** meeting: the orange flag. */
   tone?: 'primary' | 'meeting';
 }) {
   const { c } = useTheme();
   const fg = color ?? (tone === 'meeting' ? c.meetingStroke : c.primary);
-  const back = bg ?? (tone === 'meeting' ? c.meetingSoft : c.primarySoft);
   return (
-    <View
-      style={[
-        styles.tile,
-        { width: s, height: s, borderRadius: s >= 44 ? 14 : radius.tile, backgroundColor: back },
-      ]}
-    >
-      <Icon name={name} size={Math.round(s * 0.55)} color={fg} />
+    <View style={[styles.tile, { width: Math.max(28, s), height: Math.max(28, s) }]}>
+      <Icon
+        name={name}
+        size={Math.round(Math.min(26, s * 0.75))}
+        color={fg}
+        filled={tone === 'meeting'}
+      />
     </View>
   );
 }
@@ -696,7 +697,6 @@ export function IconButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.iconButton,
-        floating(c),
         {
           backgroundColor: active ? c.primary : c.surface,
           borderColor: active ? c.primary : c.border,
@@ -749,7 +749,6 @@ export function Menu({
           accessibilityRole="menu"
           style={[
             styles.menu,
-            floating(c),
             { top: insets.top + 56, backgroundColor: c.surface, borderColor: c.border },
           ]}
         >
@@ -794,22 +793,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: space.gutter,
-    paddingTop: space.md,
+    paddingTop: space.sm,
     paddingBottom: space.md,
-    minHeight: 56,
+    minHeight: 60,
     gap: space.sm,
   },
+  headerSide: { width: sizes.touch, justifyContent: 'center' },
+  headerTitle: { flex: 1, textAlign: 'center' },
   back: {
-    width: 44,
-    height: 44,
-    marginLeft: -space.sm,
+    width: sizes.touch,
+    height: sizes.touch,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  input: {
+    minHeight: sizes.input,
+    paddingHorizontal: space.gutter,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    fontSize: 16,
+  },
+  inputMulti: {
+    minHeight: 96,
+    paddingTop: space.md,
+    paddingBottom: space.md,
+    borderRadius: radius.card,
+    textAlignVertical: 'top',
+  },
   button: {
     minHeight: sizes.button,
-    paddingHorizontal: space.gutter,
-    borderRadius: radius.button,
+    paddingHorizontal: space.xl,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -817,11 +832,10 @@ const styles = StyleSheet.create({
   buttonSmall: {
     minHeight: sizes.buttonSmall,
     paddingHorizontal: space.lg,
-    borderRadius: radius.md,
   },
   buttonLabel: { fontSize: 16, lineHeight: 20, fontWeight: '700' },
   buttonLabelSmall: { fontSize: 15, lineHeight: 20, fontWeight: '700' },
-  card: { borderRadius: radius.card, borderWidth: 1, padding: space.lg },
+  card: { borderRadius: radius.card, borderWidth: 1, padding: space.gutter },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -832,59 +846,61 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: 1,
   },
-  dot: { width: 8, height: 8, borderRadius: 4 },
+  dot: { width: 8, height: 8, borderRadius: radius.pill },
   tile: { alignItems: 'center', justifyContent: 'center' },
-  rowLeading: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  rowLeading: { width: 28, alignItems: 'center', justifyContent: 'center' },
   listRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    minHeight: 60,
-    paddingVertical: space.sm,
+    minHeight: 56,
+    paddingVertical: space.md,
   },
-  segTrack: { flexDirection: 'row', padding: 4, gap: 4, borderRadius: radius.md },
+  segTrack: { flexDirection: 'row', padding: 4, gap: 4, borderRadius: radius.pill },
   segment: {
     paddingHorizontal: space.lg,
     minHeight: 40,
     justifyContent: 'center',
-    borderRadius: 11,
+    borderRadius: radius.pill,
     borderWidth: 1,
   },
   segmentOn: {},
   menu: {
     position: 'absolute',
     right: space.gutter,
-    minWidth: 200,
-    borderRadius: radius.lg,
+    minWidth: 220,
+    borderRadius: radius.card,
     borderWidth: 1,
-    paddingVertical: space.xs,
+    paddingVertical: space.sm,
+    overflow: 'hidden',
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    paddingHorizontal: space.lg,
-    minHeight: 44,
+    paddingHorizontal: space.gutter,
+    minHeight: sizes.touch,
   },
   segmentFill: { flex: 1, paddingHorizontal: space.xs, alignItems: 'center' },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    minHeight: 26,
+    gap: 6,
+    paddingHorizontal: space.md,
+    minHeight: 28,
     borderRadius: radius.pill,
     alignSelf: 'flex-start',
     flexShrink: 1,
   },
   badgeText: { fontWeight: '700', flexShrink: 1 },
-  track: { height: 10, borderRadius: radius.pill, overflow: 'hidden' },
+  track: { height: 8, borderRadius: radius.pill, overflow: 'hidden' },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
-    padding: space.md,
-    borderRadius: radius.lg,
+    paddingVertical: space.md,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.card,
     borderWidth: 1,
   },
   empty: {
@@ -897,7 +913,7 @@ const styles = StyleSheet.create({
   iconButton: {
     width: 48,
     height: 48,
-    borderRadius: radius.md,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,

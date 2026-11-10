@@ -125,7 +125,7 @@ export function Slider({
 }
 
 /** The illustrated stand-in for an activity's cover photo. */
-export function CoverArt({ size = 64, round = radius.md }: { size?: number; round?: number }) {
+export function CoverArt({ size = 64, round = radius.card }: { size?: number; round?: number }) {
   const { c } = useTheme();
   return (
     <View

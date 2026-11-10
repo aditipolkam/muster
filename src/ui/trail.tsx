@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Button, Icon, SegmentedTabs, Text } from './components';
-import { floating, radius, space, tabular, useTheme } from './theme';
+import { radius, space, tabular, useTheme } from './theme';
 
 /**
  * Pieces of the trail redesign shared by the map and compass views (features never import each
@@ -65,7 +65,6 @@ export function FlagPin({
       <View
         style={[
           styles.drop,
-          floating(c),
           {
             width: s,
             height: s,
@@ -81,13 +80,7 @@ export function FlagPin({
         </View>
       </View>
       {label ? (
-        <View
-          style={[
-            styles.pinLabel,
-            floating(c),
-            { backgroundColor: c.surface, borderColor: c.border },
-          ]}
-        >
+        <View style={[styles.pinLabel, { backgroundColor: c.surface, borderColor: c.border }]}>
           <Text variant="label" numberOfLines={1} style={{ fontWeight: '800' }}>
             {label}
           </Text>
@@ -113,12 +106,9 @@ export function HintChip({ text, testID }: { text: string; testID?: string }) {
 export function DirectionTile({ deg, dark }: { deg: number | null; dark?: boolean }) {
   const { c } = useTheme();
   return (
-    <View
-      style={[styles.dirTile, { backgroundColor: dark ? c.meeting : c.meetingSoft }]}
-      accessibilityElementsHidden
-    >
+    <View style={styles.dirTile} accessibilityElementsHidden>
       <View style={{ transform: [{ rotate: `${deg ?? 0}deg` }] }}>
-        <Icon name="arrowUp" size={30} color={dark ? c.onInk : c.meetingStroke} />
+        <Icon name="arrowUp" size={34} color={dark ? c.meeting : c.meetingStroke} />
       </View>
     </View>
   );
@@ -147,7 +137,7 @@ export function NavControls({
   return (
     <View style={{ gap: space.md }}>
       <View style={styles.destRow}>
-        <View style={[styles.destTile, { backgroundColor: c.meetingSoft }]}>
+        <View style={styles.destTile}>
           <Icon name="flag" size={20} color={c.meetingStroke} />
         </View>
         <View style={{ flex: 1 }}>
@@ -192,7 +182,7 @@ const styles = StyleSheet.create({
   strip: {
     flexDirection: 'row',
     borderWidth: 1,
-    borderRadius: radius.md,
+    borderRadius: radius.card,
     paddingVertical: space.md,
   },
   metric: { flex: 1, paddingHorizontal: space.md, gap: 2 },
@@ -218,20 +208,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: radius.pill,
   },
-  dirTile: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  dirTile: { width: 44, height: 56, alignItems: 'center', justifyContent: 'center' },
   destRow: { flexDirection: 'row', alignItems: 'center', gap: space.md },
-  destTile: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.tile,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  destTile: { width: 28, alignItems: 'center', justifyContent: 'center' },
   link: { minHeight: 44, justifyContent: 'center' },
 });

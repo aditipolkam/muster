@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import { TextStyle, useColorScheme, ViewStyle } from 'react-native';
+import { TextStyle, useColorScheme } from 'react-native';
 
 /**
  * The one place colours, radii, spacing, type and elevation are defined (the "trail" redesign).
@@ -154,19 +154,25 @@ export const space = {
   huge: 40,
 } as const;
 
+/**
+ * Corners. Every control (button, input, search, selector, segmented tab, chip, tab indicator,
+ * icon button) is a full pill. Only containers (cards, banners, sheets) use a large fixed radius;
+ * nothing is square or slightly rounded. The older names map onto these two rules.
+ */
 export const radius = {
-  sm: 8,
-  /** Icon tiles. */
-  tile: 12,
-  input: 14,
-  md: 14,
-  button: 16,
-  /** Cards. */
-  card: 20,
-  lg: 20,
-  /** Bottom sheets (top corners). */
-  sheet: 28,
   pill: 999,
+  /** Cards, banners, menus, panels. */
+  card: 24,
+  /** Bottom sheets (top corners). */
+  sheet: 32,
+  // Controls: all pills.
+  sm: 999,
+  tile: 999,
+  input: 999,
+  md: 999,
+  button: 999,
+  // Containers.
+  lg: 24,
 } as const;
 
 /** Control sizes. Touch targets are never below 44. */
@@ -189,14 +195,12 @@ export const fontFamily: string | undefined = undefined;
 /** Tabular figures for distances, bearings and times so numbers do not jitter. */
 export const tabular: TextStyle = { fontVariant: ['tabular-nums'] };
 
-/** The only shadow: floating map controls and sheets over the map. Cards use a border instead. */
-export const floating = (c: Palette): ViewStyle => ({
-  shadowColor: c.shadow,
-  shadowOpacity: 0.1,
-  shadowRadius: 10,
-  shadowOffset: { width: 0, height: 2 },
-  elevation: 3,
-});
+/**
+ * No shadows anywhere: surfaces separate by a hairline border or background contrast.
+ */
+
+/** Icon sizes: one scale for the whole app. */
+export const iconSize = { sm: 16, md: 20, lg: 24, xl: 28 } as const;
 
 export type Theme = { dark: boolean; c: Palette };
 

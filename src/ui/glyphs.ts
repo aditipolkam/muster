@@ -1,0 +1,72 @@
+import type { SFSymbol } from 'sf-symbols-typescript';
+
+/**
+ * One icon vocabulary for the whole app. iOS draws Apple's SF Symbols; Android (and tests) draw
+ * the matching Ionicons outline. Names are app concepts, so screens never name a glyph family.
+ * `filled` picks the solid form (selected tab, the meeting flag).
+ */
+type Glyph = { sf: SFSymbol; sfFilled?: SFSymbol; ion: string; ionFilled?: string };
+
+export const GLYPHS = {
+  map: { sf: 'map', sfFilled: 'map.fill', ion: 'map-outline', ionFilled: 'map' },
+  group: { sf: 'person.2', sfFilled: 'person.2.fill', ion: 'people-outline', ionFilled: 'people' },
+  navigate: { sf: 'location.north', sfFilled: 'location.north.fill', ion: 'navigate-outline' },
+  compass: { sf: 'safari', sfFilled: 'safari.fill', ion: 'compass-outline', ionFilled: 'compass' },
+  offline: { sf: 'checkmark.circle', ion: 'checkmark-circle-outline' },
+  online: { sf: 'icloud', ion: 'cloud-outline' },
+  profile: { sf: 'person', sfFilled: 'person.fill', ion: 'person-outline', ionFilled: 'person' },
+  more: { sf: 'ellipsis', ion: 'ellipsis-horizontal' },
+  menu: { sf: 'ellipsis', ion: 'ellipsis-horizontal' },
+  qr: { sf: 'qrcode', ion: 'qr-code-outline' },
+  exit: { sf: 'rectangle.portrait.and.arrow.right', ion: 'exit-outline' },
+  sync: { sf: 'arrow.triangle.2.circlepath', ion: 'sync-outline' },
+  stop: { sf: 'stop.circle', ion: 'stop-circle-outline' },
+  radio: { sf: 'dot.radiowaves.left.and.right', ion: 'radio-outline' },
+  back: { sf: 'chevron.left', ion: 'chevron-back' },
+  chevron: { sf: 'chevron.right', ion: 'chevron-forward' },
+  layers: { sf: 'square.3.layers.3d', ion: 'layers-outline' },
+  locate: { sf: 'location', sfFilled: 'location.fill', ion: 'locate-outline' },
+  follow: { sf: 'location.fill', ion: 'navigate' },
+  plus: { sf: 'plus', ion: 'add' },
+  check: { sf: 'checkmark', ion: 'checkmark' },
+  close: { sf: 'xmark', ion: 'close' },
+  flag: { sf: 'flag', sfFilled: 'flag.fill', ion: 'flag-outline', ionFilled: 'flag' },
+  mesh: { sf: 'point.3.connected.trianglepath.dotted', ion: 'git-network-outline' },
+  settings: { sf: 'gearshape', ion: 'settings-outline' },
+  pin: { sf: 'mappin', ion: 'location-outline' },
+  trail: { sf: 'figure.hiking', ion: 'trail-sign-outline', ionFilled: 'trail-sign' },
+  trophy: { sf: 'trophy', ion: 'trophy-outline' },
+  walk: { sf: 'figure.walk', ion: 'walk-outline' },
+  help: { sf: 'questionmark.circle', ion: 'help-circle-outline' },
+  share: { sf: 'square.and.arrow.up', ion: 'share-outline' },
+  bearing: { sf: 'safari', ion: 'compass-outline' },
+  download: { sf: 'arrow.down.circle', ion: 'download-outline' },
+  search: { sf: 'magnifyingglass', ion: 'search-outline' },
+  bluetooth: { sf: 'antenna.radiowaves.left.and.right', ion: 'bluetooth' },
+  grip: { sf: 'line.3.horizontal', ion: 'reorder-two-outline' },
+  up: { sf: 'chevron.up', ion: 'chevron-up' },
+  down: { sf: 'chevron.down', ion: 'chevron-down' },
+  flower: { sf: 'leaf', ion: 'flower-outline' },
+  camera: { sf: 'camera', ion: 'camera-outline' },
+  image: { sf: 'photo', ion: 'image-outline' },
+  list: { sf: 'list.bullet', ion: 'list-outline' },
+  send: { sf: 'paperplane', ion: 'send-outline' },
+  time: { sf: 'clock', ion: 'time-outline' },
+  info: { sf: 'info.circle', ion: 'information-circle-outline' },
+  lock: { sf: 'lock', ion: 'lock-closed-outline' },
+  circle: { sf: 'circle', ion: 'ellipse-outline' },
+  done: { sf: 'checkmark.circle.fill', ion: 'checkmark-circle' },
+  region: { sf: 'viewfinder', ion: 'scan-outline' },
+  rules: { sf: 'doc.text', ion: 'document-text-outline' },
+  ribbon: { sf: 'rosette', ion: 'ribbon-outline' },
+  arrowUp: { sf: 'arrow.up', ion: 'arrow-up' },
+  arrowRight: { sf: 'arrow.right', ion: 'arrow-forward' },
+  edit: { sf: 'pencil', ion: 'create-outline' },
+  move: { sf: 'arrow.up.and.down.and.arrow.left.and.right', ion: 'move-outline' },
+  trash: { sf: 'trash', ion: 'trash-outline' },
+  calendar: { sf: 'calendar', ion: 'calendar-outline' },
+  person: { sf: 'person.crop.circle', ion: 'person-circle-outline' },
+  warning: { sf: 'exclamationmark.triangle', ion: 'alert-circle-outline' },
+} satisfies Record<string, Glyph>;
+
+export type IconName = keyof typeof GLYPHS;
