@@ -79,3 +79,7 @@ yarn-error.log
 /build-*.log
 /tools/region-builder/out/
 /tools/region-builder/hosted/
+
+# Local screenshot runs (the contact sheet is committed)
+/docs/screens/pill-system/before/
+/docs/screens/pill-system/after/
