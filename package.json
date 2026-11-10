@@ -31,6 +31,7 @@
     "expo-image-picker": "~17.0.10",
     "expo-keep-awake": "~15.0.8",
     "expo-location": "~19.0.8",
+    "expo-symbols": "~1.0.8",
     "fflate": "^0.8.3",
     "qrcode-generator": "^1.5.2",
     "react": "19.1.0",
