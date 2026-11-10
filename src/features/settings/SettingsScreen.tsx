@@ -294,7 +294,7 @@ function Kv({ k, v }: { k: string; v: string }) {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: space.lg, paddingTop: space.sm, gap: space.md },
+  content: { padding: space.gutter, paddingTop: space.sm, gap: space.md },
   input: {
     borderWidth: 1,
     borderRadius: radius.input,

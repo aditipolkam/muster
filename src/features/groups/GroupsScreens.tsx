@@ -734,13 +734,13 @@ export function JoinGroupScreen({ navigation, route }: Nav<'JoinGroup'>) {
 
             <Text variant="heading">Open nearby</Text>
             <Text variant="caption" muted>
-              Leaders can open their group to phones in range. They still approve each person.
+              Leaders can open their group to phones in range.
             </Text>
             {rt.discovered.length === 0 ? (
               <Row>
                 <ActivityIndicator />
                 <Text muted testID="nearby-empty">
-                  Looking for groups nearby… none found yet.
+                  Looking for groups nearby…
                 </Text>
               </Row>
             ) : (
