@@ -73,9 +73,6 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
     <Screen title="Settings" onBack={navigation && (() => navigation.goBack())}>
       <ScrollView contentContainerStyle={styles.content}>
         <Card style={{ gap: space.sm }}>
-          <Text variant="label" muted>
-            Location permission
-          </Text>
           <Row>
             <Text variant="heading" style={{ flex: 1 }}>
               {PERMISSION_COPY[permission].title}
@@ -98,14 +95,12 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
             />
           ) : null}
           <Text variant="caption" muted>
-            Muster only reads your location while the app is open. It is never sent anywhere.
+            Used only while the app is open. Never sent anywhere.
           </Text>
         </Card>
 
         <Card style={{ gap: space.sm }} testID="nav-prefs">
-          <Text variant="label" muted>
-            Navigation
-          </Text>
+          <Text variant="cardTitle">Navigation</Text>
           <SegmentedTabs
             value={units}
             onChange={setUnits}
@@ -134,14 +129,12 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
             />
           </Row>
           <Text variant="caption" muted>
-            Used for the time estimate on the Navigate screen. It assumes flat ground.
+            For time estimates, on flat ground.
           </Text>
         </Card>
 
         <Card style={{ gap: space.sm }} testID="adventure-prefs">
-          <Text variant="label" muted>
-            Adventures
-          </Text>
+          <Text variant="cardTitle">Adventures</Text>
           <Row>
             <Text style={{ flex: 1 }}>{`Arrival radius: ${radiusM} m`}</Text>
             <Button
@@ -162,15 +155,12 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
             />
           </Row>
           <Text variant="caption" muted>
-            How close you must be to a checkpoint to be marked as arrived. A GPS fix less precise
-            than this never marks an arrival; you can always mark it yourself.
+            How close counts as arrived. You can always mark it yourself.
           </Text>
         </Card>
 
         <Card style={{ gap: space.xs }}>
-          <Text variant="label" muted>
-            Offline maps
-          </Text>
+          <Text variant="cardTitle">Offline maps</Text>
           <Text variant="heading">
             {usage ? formatBytes(usage.regionsBytes + usage.partialBytes + usage.styleBytes) : '…'}{' '}
             used
@@ -185,9 +175,7 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
         </Card>
 
         <Card style={{ gap: space.sm }}>
-          <Text variant="label" muted>
-            Diagnostics
-          </Text>
+          <Text variant="cardTitle">Diagnostics</Text>
           <Kv k="GPS" v={gps} />
           <Kv k="Last fix accuracy" v={fix ? describeAccuracy(fix.accM) : '-'} />
           <Kv
@@ -222,14 +210,12 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
             />
           </Row>
           <Text variant="caption" muted>
-            Off by default. When off, coordinates are redacted from logs.
+            When off, logs never contain coordinates.
           </Text>
         </Card>
 
         <Card style={{ gap: space.sm }}>
-          <Text variant="label" muted>
-            Map catalog address
-          </Text>
+          <Text variant="cardTitle">Map catalog address</Text>
           <TextInput
             value={catalogUrl}
             onChangeText={setCatalogUrl}
@@ -273,9 +259,7 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
         </Card>
 
         <Card style={{ gap: space.sm }} testID="about">
-          <Text variant="label" muted>
-            About
-          </Text>
+          <Text variant="cardTitle">About</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <AppLogo size={44} />
             <Text variant="heading">Muster {APP_VERSION}</Text>

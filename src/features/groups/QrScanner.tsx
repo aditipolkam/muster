@@ -50,5 +50,5 @@ export function QrScanner({
 }
 
 const styles = StyleSheet.create({
-  frame: { height: 300, borderRadius: radius.md, overflow: 'hidden', backgroundColor: '#000' },
+  frame: { height: 300, borderRadius: radius.card, overflow: 'hidden', backgroundColor: '#000' },
 });

@@ -10,7 +10,7 @@ import {
 } from '../../domain/geo/pace';
 import { Fix, usableHeading } from '../../domain/location/fix';
 import { Badge, Text } from '../../ui/components';
-import { floating, radius, space, tabular, useTheme } from '../../ui/theme';
+import { radius, space, tabular, useTheme } from '../../ui/theme';
 import { DirectionTile, NavControls, NavView } from '../../ui/trail';
 import type { RouteFailure } from '../../domain/routing/router';
 
@@ -75,10 +75,7 @@ export function NavigationBar({
   return (
     <>
       <View style={[styles.top, { top }]} pointerEvents="box-none">
-        <View
-          style={[styles.card, floating(c), { backgroundColor: c.ink }]}
-          testID="nav-instruction"
-        >
+        <View style={[styles.card, { backgroundColor: c.ink }]} testID="nav-instruction">
           <DirectionTile dark deg={brg === null ? null : h === undefined ? brg : brg - h} />
           <View style={{ flex: 1 }}>
             <Text variant="metric" color={c.onInk} style={tabular} testID="navigation-distance">
@@ -115,7 +112,6 @@ export function NavigationBar({
       <View
         style={[
           styles.panel,
-          floating(c),
           { backgroundColor: c.surface, borderColor: c.border, paddingBottom: bottom + space.lg },
         ]}
         testID="navigation-bar"
@@ -152,8 +148,8 @@ const styles = StyleSheet.create({
   reason: {
     alignSelf: 'flex-start',
     paddingHorizontal: space.md,
-    paddingVertical: space.xs,
-    borderRadius: radius.md,
+    paddingVertical: space.sm,
+    borderRadius: radius.card,
     borderWidth: 1,
   },
   panel: {

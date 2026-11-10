@@ -4,7 +4,7 @@ import { bearingDeg, distanceM, formatCoord } from '../../domain/geo';
 import { formatDistanceIn, Units } from '../../domain/geo/pace';
 import { Fix } from '../../domain/location/fix';
 import { Button, Row, Text } from '../../ui/components';
-import { floating, radius, space, useTheme } from '../../ui/theme';
+import { radius, space, useTheme } from '../../ui/theme';
 
 type Props = {
   pin: { lat: number; lon: number };
@@ -22,7 +22,7 @@ export function PinSheet({ pin, fix, units, onNavigate, onSave, onClose }: Props
   const brg = fix ? bearingDeg(fix, pin) : null;
   return (
     <View
-      style={[styles.sheet, floating(c), { backgroundColor: c.surface, borderColor: c.border }]}
+      style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}
       testID="pin-sheet"
     >
       <Row>

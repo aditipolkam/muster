@@ -45,7 +45,7 @@ export function TripMapCard({
             {area
               ? `${area.name} · ${dl.sizeText}`
               : editable
-              ? 'Choose the area people should download. They get it when they join, so set it before inviting anyone.'
+              ? 'Set it before inviting anyone.'
               : 'No trip map. It can only be set before anyone joins.'}
           </Text>
         </View>

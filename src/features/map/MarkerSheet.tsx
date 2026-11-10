@@ -4,7 +4,7 @@ import { bearingDeg, distanceM, formatCoord, formatDistance } from '../../domain
 import { Fix, GpsStatus } from '../../domain/location/fix';
 import { Marker, MARKER_NAME_MAX } from '../../domain/markers/marker';
 import { Button, Row, Text } from '../../ui/components';
-import { floating, radius, space, useTheme } from '../../ui/theme';
+import { radius, space, useTheme } from '../../ui/theme';
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 const compassPoint = (deg: number) => COMPASS[Math.round(deg / 45) % 8] ?? 'N';
@@ -39,7 +39,7 @@ export function MarkerSheet({
 
   return (
     <View
-      style={[styles.sheet, floating(c), { backgroundColor: c.surface, borderColor: c.border }]}
+      style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}
       testID="marker-sheet"
     >
       <Row>

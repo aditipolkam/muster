@@ -901,7 +901,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space.md,
     padding: space.md,
-    borderRadius: radius.md,
+    borderRadius: radius.card,
   },
   railCol: { alignItems: 'center', alignSelf: 'stretch', width: 28 },
   dot: {

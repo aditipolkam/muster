@@ -4,7 +4,7 @@ import { boxSideKm, MAX_REGION_SIDE_KM, MIN_REGION_SIDE_KM } from '../../domain/
 import { formatBytesShort } from '../../domain/adventures/phases';
 import { formatCoord } from '../../domain/geo';
 import { Button, Icon, IconButton, Text } from '../../ui/components';
-import { floating, radius, size, space, useTheme } from '../../ui/theme';
+import { radius, size, space, useTheme } from '../../ui/theme';
 import { FlagPin, HintChip } from '../../ui/trail';
 
 export type PickStep = 'pin' | 'region';
@@ -64,13 +64,7 @@ export function PickLocationOverlay({
   return (
     <>
       <View style={[styles.top, { top }]} pointerEvents="box-none">
-        <View
-          style={[
-            styles.header,
-            floating(c),
-            { backgroundColor: c.surface, borderColor: c.border },
-          ]}
-        >
+        <View style={[styles.header, { backgroundColor: c.surface, borderColor: c.border }]}>
           <Pressable
             testID="pick-back"
             accessibilityRole="button"
@@ -98,11 +92,7 @@ export function PickLocationOverlay({
             accessibilityRole="search"
             accessibilityLabel="Search for a place"
             onPress={onSearch}
-            style={[
-              styles.search,
-              floating(c),
-              { backgroundColor: c.surface, borderColor: c.border },
-            ]}
+            style={[styles.search, { backgroundColor: c.surface, borderColor: c.border }]}
           >
             <Icon name="search" size={20} color={c.textMuted} />
             <Text muted style={{ flex: 1 }} numberOfLines={1}>
@@ -151,9 +141,7 @@ export function PickLocationOverlay({
         </View>
       ) : null}
 
-      <View
-        style={[styles.card, floating(c), { backgroundColor: c.surface, borderColor: c.border }]}
-      >
+      <View style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}>
         <View style={[styles.grabber, { backgroundColor: c.border }]} />
         {step === 'pin' && meeting ? (
           <>

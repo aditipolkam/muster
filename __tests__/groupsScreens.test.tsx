@@ -411,9 +411,7 @@ describe('Group page (updates)', () => {
     expect(screen.getByText('Meeting point shared')).toBeTruthy();
     expect(screen.getByText('Other joined')).toBeTruthy();
     expect(typeof screen.getByTestId('group-status').props.children).toBe('string');
-    expect(
-      screen.getByText("Only you can post here. Followers get your updates when they're in range."),
-    ).toBeTruthy();
+    expect(screen.getByText('Only you can post. Followers get updates in range.')).toBeTruthy();
     expect(screen.queryByText('Members (2)')).toBeNull();
     expect(screen.queryByTestId('invite-create')).toBeNull();
     expect(p.ok).toBe(true);
@@ -708,7 +706,6 @@ describe('Share location (group page)', () => {
     fireEvent.press(await screen.findByTestId('group-share-location'));
     expect(screen.getByTestId('share-location-sheet')).toBeTruthy();
     expect(screen.getByText('Name and share')).toBeTruthy();
-    expect(screen.getByText('STEP 2 OF 2')).toBeTruthy();
     expect(screen.getByText('Share with Ridge walk')).toBeTruthy();
     // Change goes back to the choices, which offer where you are.
     fireEvent.press(screen.getByTestId('share-back'));
@@ -924,7 +921,7 @@ describe('Trip map', () => {
       </Harness>,
     );
     expect(await screen.findByTestId('trip-map-summary')).toHaveTextContent(
-      /set it before inviting anyone/,
+      /Set it before inviting anyone/,
     );
     fireEvent.press(screen.getByTestId('trip-map-choose'));
     expect(calls.at(-1)).toEqual([

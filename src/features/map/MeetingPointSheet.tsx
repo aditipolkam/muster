@@ -13,7 +13,7 @@ import {
 } from '../../domain/geo/pace';
 import { useGroupMembers } from '../../runtime/hooks';
 import { Button, Icon, IconTile, Row, Text } from '../../ui/components';
-import { floating, radius, space, useTheme } from '../../ui/theme';
+import { radius, space, useTheme } from '../../ui/theme';
 import { MetricStrip } from '../../ui/trail';
 
 type Props = {
@@ -69,7 +69,7 @@ export function MeetingPointSheet(p: Props) {
 
   return (
     <View
-      style={[styles.sheet, floating(c), { backgroundColor: c.surface, borderColor: c.border }]}
+      style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}
       testID="meeting-sheet"
     >
       <View style={[styles.grabber, { backgroundColor: c.border }]} />
