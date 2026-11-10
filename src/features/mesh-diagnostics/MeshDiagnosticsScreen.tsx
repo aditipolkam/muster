@@ -435,6 +435,6 @@ function ReceivedRow({ r, now }: { r: ReceivedRecord; now: number }) {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: space.lg, gap: space.md, paddingBottom: space.xxl },
+  content: { padding: space.gutter, gap: space.md, paddingBottom: space.xxl },
   peer: { paddingVertical: space.sm, gap: space.xs },
 });

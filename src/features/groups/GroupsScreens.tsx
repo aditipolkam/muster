@@ -57,7 +57,7 @@ import { useNow } from '../../ui/useNow';
 import { QrCode } from '../../ui/QrCode';
 import { isEnabled } from '../../shared/features';
 import { ToggleRow } from '../../ui/activity';
-import { radius, size, space, tabular, useTheme } from '../../ui/theme';
+import { iconSize, radius, size, space, tabular, useTheme } from '../../ui/theme';
 import { FlagPin } from '../../ui/trail';
 import { QrScanner } from './QrScanner';
 import { SharePlace, ShareLocationSheet } from './ShareLocationSheet';
@@ -882,7 +882,7 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
           hitSlop={8}
           style={styles.headerBtn}
         >
-          <Icon name="back" size={28} />
+          <Icon name="back" size={iconSize.lg} />
         </Pressable>
         <Pressable
           testID="group-title"
@@ -1793,7 +1793,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.xs,
-    paddingHorizontal: space.md,
+    paddingHorizontal: space.gutter,
     paddingVertical: space.sm,
   },
   pageTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md },
