@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { View } from 'react-native';
 import { projectToBox } from '../../domain/adventures/route';
-import { useTheme } from '../../ui/theme';
+import { radius, useTheme } from '../../ui/theme';
 
 /**
  * A quiet sketch of the recorded route and its checkpoints, drawn from plain views so it works with
@@ -32,7 +32,7 @@ export function RouteSketch({
       style={{
         width,
         height,
-        borderRadius: 12,
+        borderRadius: radius.card,
         backgroundColor: c.surfaceAlt,
         overflow: 'hidden',
       }}

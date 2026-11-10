@@ -19,6 +19,7 @@ import {
   Banner,
   Button,
   Card,
+  Chip,
   Icon,
   IconButton,
   IconTile,
@@ -183,28 +184,15 @@ export function ShareLocationSheet({
                   autoFocus
                 />
                 <View style={styles.chips}>
-                  {QUICK_NAMES.map(q => {
-                    const on = name.trim() === q;
-                    return (
-                      <Pressable
-                        key={q}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: on }}
-                        onPress={() => setName(q)}
-                        testID={`share-chip-${q}`}
-                        style={[
-                          styles.chip,
-                          on
-                            ? { backgroundColor: c.primary, borderColor: c.primary }
-                            : { backgroundColor: c.surface, borderColor: c.border },
-                        ]}
-                      >
-                        <Text variant="caption" color={on ? c.onPrimary : c.text}>
-                          {q}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
+                  {QUICK_NAMES.map(q => (
+                    <Chip
+                      key={q}
+                      label={q}
+                      selected={name.trim() === q}
+                      onPress={() => setName(q)}
+                      testID={`share-chip-${q}`}
+                    />
+                  ))}
                 </View>
               </View>
               <View style={{ gap: space.sm }}>
@@ -318,11 +306,4 @@ const styles = StyleSheet.create({
   },
   link: { minHeight: size.touch, justifyContent: 'center' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  chip: {
-    minHeight: 36,
-    paddingHorizontal: space.md,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    justifyContent: 'center',
-  },
 });

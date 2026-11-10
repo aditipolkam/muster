@@ -628,6 +628,7 @@ export function PhaseScreen({ navigation, route }: Nav<'CheckpointDetails'>) {
                   accessibilityRole="button"
                   accessibilityLabel="Remove photo"
                   onPress={() => void removePhoto()}
+                  hitSlop={6}
                   style={[styles.photoX, { backgroundColor: c.surface }]}
                 >
                   <Icon name="close" size={18} />
