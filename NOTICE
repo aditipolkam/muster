@@ -1,0 +1,44 @@
+Muster
+Copyright (C) 2025-2026 Aditi Polkam and Muster contributors
+Licensed under the GNU Affero General Public License v3.0 only (see LICENSE).
+
+This product includes or uses third-party material under the following terms.
+
+Offline Protocol SDK (@offline-protocol/mesh-sdk)
+  Copyright (C) 2025-2026 Offline Protocol, Inc.
+  Dual-licensed: AGPL-3.0-only or a commercial licence. Muster uses it under AGPL-3.0-only.
+  https://github.com/Offline-Protocol/offline-protocol-sdk
+
+OpenStreetMap data
+  Map data (C) OpenStreetMap contributors, available under the Open Database License (ODbL) 1.0.
+  https://www.openstreetmap.org/copyright
+  The attribution "(C) OpenStreetMap contributors" is shown on every map in the app.
+  This covers downloaded regions, the streamed planet file in development builds, and the
+  bundled low-zoom world map in src/assets/generated/worldBase.ts (built from a Protomaps
+  basemap build of OpenStreetMap data by scripts/gen-style-assets.mjs).
+
+Protomaps basemap style and assets
+  @protomaps/basemaps (map style layers): BSD-3-Clause.
+  Map glyphs and sprites bundled in src/assets/generated/styleAssets.ts come from
+  https://github.com/protomaps/basemaps-assets. See that repository for the licence of each
+  file; the glyphs are rendered from Noto Sans (below).
+
+Noto Sans
+  Copyright Google LLC. SIL Open Font License, Version 1.1.
+  https://fonts.google.com/noto/specimen/Noto+Sans
+
+Ionicons (via @expo/vector-icons)
+  Copyright (c) 2015-present Ionic. MIT License.
+  https://github.com/ionic-team/ionicons
+
+SF Symbols
+  On iOS, icons are drawn by the system through expo-symbols. No SF Symbols artwork is
+  bundled in this repository. SF Symbols are provided by Apple under the Xcode and Apple SDKs
+  agreement.
+
+Muster brand assets
+  The Muster name, icon and mark (assets/brand, src/assets/brand) are original work by the
+  Muster authors. Forks should use their own name and icon.
+
+Other dependencies are listed in package.json and package-lock.json with their own licences
+(MIT, Apache-2.0, BSD and ISC).
