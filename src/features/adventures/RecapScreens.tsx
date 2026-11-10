@@ -1,6 +1,6 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
+import { Alert, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { AchievementCategory, achievementById } from '../../domain/adventures/achievements';
 import { completedAt } from '../../domain/adventures/lifecycle';
 import { placeOf } from '../../domain/adventures/model';
@@ -24,13 +24,14 @@ import {
   Button,
   Card,
   EmptyState,
+  Input,
   ListRow,
   Screen,
   Text,
 } from '../../ui/components';
 import { BadgeMark } from '../../ui/BadgeMark';
 import { AnimatedProgress, Reveal } from '../../ui/motion';
-import { radius, space, useTheme } from '../../ui/theme';
+import { space, useTheme } from '../../ui/theme';
 import { formatDate, formatTime } from './format';
 import { RouteSketch } from './RouteSketch';
 
@@ -43,7 +44,6 @@ const noteKey = (id: string) => `adventure.note.${id}`;
 
 export function AdventureSummaryScreen({ navigation, route }: Nav<'AdventureSummary'>) {
   const { adventureId, celebrate } = route.params;
-  const { c } = useTheme();
   const { kv, adventures: service } = useServices();
   const { units } = useNavPrefs();
   const { width } = useWindowDimensions();
@@ -276,12 +276,8 @@ export function AdventureSummaryScreen({ navigation, route }: Nav<'AdventureSumm
 
         <Reveal delay={step * 6}>
           <Text variant="heading">Notes</Text>
-          <TextInput
+          <Input
             testID="recap-note"
-            style={[
-              styles.input,
-              { color: c.text, borderColor: c.border, backgroundColor: c.surface },
-            ]}
             value={note}
             onChangeText={setNote}
             onBlur={() => void kv.set(noteKey(adventureId), note)}
@@ -416,14 +412,6 @@ const styles = StyleSheet.create({
   list: { padding: space.gutter, paddingTop: 0, gap: space.md, paddingBottom: space.xxl },
   flat: { paddingVertical: space.xs },
   stats: { flexDirection: 'row', gap: space.md, marginBottom: space.md },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.input,
-    padding: space.lg,
-    minHeight: 96,
-    fontSize: 15,
-    textAlignVertical: 'top',
-  },
   badge: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   badgeTitle: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
 });

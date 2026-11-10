@@ -1,6 +1,6 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { achievementById } from '../../domain/adventures/achievements';
 import {
   AdventureAction,
@@ -49,6 +49,7 @@ import {
   Icon,
   IconButton,
   IconTile,
+  Input,
   ListRow,
   Row,
   Screen,
@@ -59,7 +60,7 @@ import { isEnabled } from '../../shared/features';
 import { CoverArt } from '../../ui/activity';
 import { isActivity } from './activityFlag';
 import { AnimatedProgress } from '../../ui/motion';
-import { radius, space, useTheme } from '../../ui/theme';
+import { space, useTheme } from '../../ui/theme';
 import { useNow } from '../../ui/useNow';
 import { ActivityHome, clockText } from './ActivityRunScreens';
 import { EditActivity } from './ActivityScreens';
@@ -77,14 +78,6 @@ type Nav<T extends keyof ActivityStackParamList> = NativeStackScreenProps<
   ActivityStackParamList,
   T
 >;
-
-function useInput() {
-  const { c } = useTheme();
-  return useMemo(
-    () => [styles.input, { color: c.text, borderColor: c.border, backgroundColor: c.surface }],
-    [c],
-  );
-}
 
 // ---- Adventures list and journal ----------------------------------------------------------------
 
@@ -267,7 +260,6 @@ export function AdventuresScreen({ navigation }: Nav<'Adventures'>) {
 
 export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEditor'>) {
   const { adventures: service, adventuresRepo } = useServices();
-  const input = useInput();
   const groups = useGroups().filter(g => g.role === 'organizer' && g.status === 'active');
   const editingId = route.params?.adventureId;
   const [name, setName] = useState('');
@@ -341,9 +333,8 @@ export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEdito
         <Text variant="label" muted>
           Name
         </Text>
-        <TextInput
+        <Input
           testID="adventure-name"
-          style={input}
           value={name}
           onChangeText={setName}
           maxLength={ADVENTURE_NAME_MAX}
@@ -353,9 +344,8 @@ export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEdito
         <Text variant="label" muted>
           Description (optional)
         </Text>
-        <TextInput
+        <Input
           testID="adventure-description"
-          style={[input, styles.multiline]}
           value={description}
           onChangeText={setDescription}
           maxLength={ADVENTURE_DESC_MAX}
@@ -374,9 +364,8 @@ export function AdventureEditorScreen({ navigation, route }: Nav<'AdventureEdito
             </Text>
           </Card>
         ) : null}
-        <TextInput
+        <Input
           testID="adventure-start-label"
-          style={input}
           value={label}
           onChangeText={setLabel}
           maxLength={60}
@@ -1035,14 +1024,6 @@ const styles = StyleSheet.create({
   historyFacts: { flexDirection: 'row', alignItems: 'center', gap: space.xs, flexWrap: 'wrap' },
   list: { padding: space.gutter, paddingTop: 0, gap: space.md, paddingBottom: space.xxl },
   flatCard: { paddingVertical: space.xs },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.input,
-    paddingHorizontal: space.lg,
-    minHeight: 52,
-    fontSize: 15,
-  },
-  multiline: { minHeight: 88, paddingTop: space.md, textAlignVertical: 'top' },
   rowGap: { flexDirection: 'row', gap: space.sm, alignItems: 'center', flexWrap: 'wrap' },
   metrics: { flexDirection: 'row', gap: space.md, marginVertical: space.sm },
   actions: { gap: space.sm },

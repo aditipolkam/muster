@@ -1,12 +1,22 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import type { PublishedRecord, ReceivedRecord } from '../../mesh/PubSub';
 import { DIAG_SERVICE_ID, DIAG_SERVICE_VERSION, diagTopics } from '../../mesh/topics';
 import type { SubscriptionMode } from '../../mesh/types';
 import { useMesh, usePubSub } from '../../runtime/hooks';
 import { useServices } from '../../runtime/services';
-import { Badge, Banner, Button, Card, Divider, Row, Screen, Text } from '../../ui/components';
-import { radius, space, useTheme } from '../../ui/theme';
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  Divider,
+  Input,
+  Row,
+  Screen,
+  Text,
+} from '../../ui/components';
+import { space, useTheme } from '../../ui/theme';
 import { useNow } from '../../ui/useNow';
 import { ago, lifecycleLabel, peerStatus, shortAddress } from './format';
 import { ScanPulse } from './ScanPulse';
@@ -230,17 +240,7 @@ export function MeshDiagnosticsScreen({
               {ps.subscribers.map(s => `${shortAddress(s.subscriber)} (${s.state})`).join(', ')}
             </Text>
           ) : null}
-          <TextInput
-            testID="pub-text"
-            value={text}
-            onChangeText={setText}
-            placeholder="Message"
-            placeholderTextColor={c.textMuted}
-            style={[
-              styles.input,
-              { color: c.text, borderColor: c.border, backgroundColor: c.surfaceAlt },
-            ]}
-          />
+          <Input testID="pub-text" value={text} onChangeText={setText} placeholder="Message" />
           <Row>
             <Button
               testID="pub-event"
@@ -269,18 +269,13 @@ export function MeshDiagnosticsScreen({
           Subscriptions ({ps.subscriptions.length})
         </Text>
         <Card>
-          <TextInput
+          <Input
             testID="sub-address"
             value={provider}
             onChangeText={setProvider}
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="Provider address (off1…)"
-            placeholderTextColor={c.textMuted}
-            style={[
-              styles.input,
-              { color: c.text, borderColor: c.border, backgroundColor: c.surfaceAlt },
-            ]}
           />
           <Row>
             <Button
@@ -442,11 +437,4 @@ function ReceivedRow({ r, now }: { r: ReceivedRecord; now: number }) {
 const styles = StyleSheet.create({
   content: { padding: space.lg, gap: space.md, paddingBottom: space.xxl },
   peer: { paddingVertical: space.sm, gap: space.xs },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.sm,
-    paddingHorizontal: space.md,
-    paddingVertical: space.sm,
-    fontSize: 16,
-  },
 });

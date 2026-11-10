@@ -1,6 +1,6 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   boxSideKm,
   DEFAULT_AREA_MAX_ZOOM,
@@ -36,6 +36,7 @@ import {
   Card,
   Icon,
   IconTile,
+  Input,
   ListRow,
   Screen,
   SegmentedTabs,
@@ -51,11 +52,6 @@ type Nav<T extends keyof ActivityStackParamList> = NativeStackScreenProps<
 
 const DEFAULT_RADIUS_M = 50;
 
-const useField = () => {
-  const { c } = useTheme();
-  return [styles.input, { color: c.text, borderColor: c.border, backgroundColor: c.surface }];
-};
-
 // ---- Edit Activity (the organizer's private draft) -------------------------------------------
 
 type DraftTab = 'details' | 'phases' | 'settings';
@@ -68,7 +64,6 @@ export function EditActivity({
   navigation: Nav<'AdventureDetails'>['navigation'];
 }) {
   const { adventures: service } = useServices();
-  const field = useField();
   const { c } = useTheme();
   const group = useGroups().find(g => g.id === detail.adventure.groupId) ?? null;
   const a = detail.adventure;
@@ -175,30 +170,26 @@ export function EditActivity({
               <Text variant="label" muted>
                 Activity name
               </Text>
-              <TextInput
+              <Input
                 testID="activity-name"
-                style={field}
                 value={name}
                 onChangeText={setName}
                 onEndEditing={() => void save()}
                 maxLength={ADVENTURE_NAME_MAX}
                 placeholder="Valley Nature Quest"
-                placeholderTextColor={c.textMuted}
                 accessibilityLabel="Activity name"
               />
               <Text variant="label" muted>
                 Description (optional)
               </Text>
-              <TextInput
+              <Input
                 testID="activity-description"
-                style={[field, styles.multiline]}
                 value={description}
                 onChangeText={setDescription}
                 onEndEditing={() => void save()}
                 maxLength={ADVENTURE_DESC_MAX}
                 multiline
                 placeholder="A fun nature walk with exploration and small challenges."
-                placeholderTextColor={c.textMuted}
                 accessibilityLabel="Description"
               />
               <Text variant="caption" muted>
@@ -444,7 +435,6 @@ export function PhaseEditor({ navigation, route }: Nav<'CheckpointEditor'>) {
   const { adventureId, checkpointId } = route.params;
   const { adventures: service, adventuresRepo } = useServices();
   const { c } = useTheme();
-  const field = useField();
   const [type, setType] = useState<PhaseType>(route.params.type ?? 'checkpoint');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -570,9 +560,8 @@ export function PhaseEditor({ navigation, route }: Nav<'CheckpointEditor'>) {
           <Text variant="label" muted>
             {type === 'checkpoint' ? 'Checkpoint Name *' : 'Phase Name *'}
           </Text>
-          <TextInput
+          <Input
             testID="checkpoint-name"
-            style={field}
             value={name}
             onChangeText={setName}
             maxLength={CHECKPOINT_NAME_MAX}
@@ -585,21 +574,18 @@ export function PhaseEditor({ navigation, route }: Nav<'CheckpointEditor'>) {
                 ? 'Lakeside Photo'
                 : 'Name this task'
             }
-            placeholderTextColor={c.textMuted}
             accessibilityLabel="Phase name"
           />
           <Text variant="label" muted>
             Description (optional)
           </Text>
-          <TextInput
+          <Input
             testID="checkpoint-description"
-            style={[field, styles.multiline]}
             value={description}
             onChangeText={setDescription}
             maxLength={CHECKPOINT_DESC_MAX}
             multiline
             placeholder="What should people do here?"
-            placeholderTextColor={c.textMuted}
             accessibilityLabel="Description"
           />
 
@@ -798,15 +784,6 @@ export function PhaseAddedScreen({ navigation, route }: Nav<'PhaseAdded'>) {
 
 const styles = StyleSheet.create({
   list: { padding: space.gutter, paddingTop: space.sm, gap: space.lg, paddingBottom: space.xxl },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.input,
-    paddingHorizontal: space.lg,
-    paddingVertical: space.md,
-    minHeight: 48,
-    fontSize: 15,
-  },
-  multiline: { minHeight: 72, textAlignVertical: 'top' },
   summary: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   flatCard: { paddingVertical: space.xs },

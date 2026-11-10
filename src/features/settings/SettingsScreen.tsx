@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Linking, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { formatBytes } from '../../domain/geo';
 import { describeAccuracy, gpsStatus } from '../../domain/location/fix';
 import {
@@ -21,20 +21,20 @@ import {
   Button,
   Card,
   Divider,
+  Input,
   Row,
   Screen,
   SegmentedTabs,
   Text,
 } from '../../ui/components';
 import { MAX_PACE_KMH, MIN_PACE_KMH } from '../../domain/geo/pace';
-import { radius, space, useTheme } from '../../ui/theme';
+import { space } from '../../ui/theme';
 import { useNow } from '../../ui/useNow';
 import { OSM_ATTRIBUTION } from '../../shared/attribution';
 
 const APP_VERSION = '0.1.0 (phase 1)';
 
 export function SettingsScreen({ navigation }: { navigation?: { goBack: () => void } } = {}) {
-  const { c } = useTheme();
   const { location, packs, kv, db } = useServices();
   const regions = useRegions();
   const markers = useMarkers();
@@ -216,15 +216,13 @@ export function SettingsScreen({ navigation }: { navigation?: { goBack: () => vo
 
         <Card style={{ gap: space.sm }}>
           <Text variant="cardTitle">Map catalog address</Text>
-          <TextInput
+          <Input
             value={catalogUrl}
             onChangeText={setCatalogUrl}
             autoCapitalize="none"
             autoCorrect={false}
             placeholder="https://… (none configured)"
-            placeholderTextColor={c.textMuted}
             accessibilityLabel="Map catalog address"
-            style={[styles.input, { color: c.text, borderColor: c.border }]}
           />
           <Row>
             <Button
@@ -295,11 +293,4 @@ function Kv({ k, v }: { k: string; v: string }) {
 
 const styles = StyleSheet.create({
   content: { padding: space.gutter, paddingTop: space.sm, gap: space.md },
-  input: {
-    borderWidth: 1,
-    borderRadius: radius.input,
-    padding: space.md,
-    minHeight: 52,
-    fontSize: 15,
-  },
 });

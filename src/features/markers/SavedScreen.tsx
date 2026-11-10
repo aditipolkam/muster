@@ -1,19 +1,18 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
-import { Alert, FlatList, StyleSheet, TextInput } from 'react-native';
+import { Alert, FlatList, StyleSheet } from 'react-native';
 import { bearingDeg, distanceM, formatCoord, formatDistance } from '../../domain/geo';
 import { Marker } from '../../domain/markers/marker';
 import { useLocationStore } from '../../platform/locationStore';
 import { useMarkers } from '../../runtime/hooks';
 import { ProfileStackParamList } from '../../runtime/navigation';
 import { useServices } from '../../runtime/services';
-import { Button, Card, EmptyState, Row, Screen, Text } from '../../ui/components';
-import { space, useTheme } from '../../ui/theme';
+import { Button, Card, EmptyState, Input, Row, Screen, Text } from '../../ui/components';
+import { space } from '../../ui/theme';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'Saved'>;
 
 export function SavedScreen({ navigation }: Props) {
-  const { c } = useTheme();
   const { points } = useServices();
   const markers = useMarkers();
   const fix = useLocationStore(s => s.fix);
@@ -49,7 +48,7 @@ export function SavedScreen({ navigation }: Props) {
         renderItem={({ item: m }) => (
           <Card style={{ marginBottom: space.md, gap: space.xs }}>
             {editing?.id === m.id ? (
-              <TextInput
+              <Input
                 autoFocus
                 value={editing.name}
                 onChangeText={name => setEditing({ id: m.id, name })}
@@ -57,13 +56,6 @@ export function SavedScreen({ navigation }: Props) {
                 onEndEditing={() => void commitRename()}
                 maxLength={80}
                 accessibilityLabel="Marker name"
-                style={{
-                  color: c.text,
-                  fontSize: 18,
-                  fontWeight: '600',
-                  borderBottomWidth: 1,
-                  borderColor: c.border,
-                }}
               />
             ) : (
               <Text variant="heading">{m.name}</Text>
