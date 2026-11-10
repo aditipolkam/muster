@@ -41,7 +41,7 @@ The iOS Simulator and the Android emulator have no Bluetooth, so the mesh can't 
 ### Maps
 
 - **Debug builds** stream the public [Protomaps](https://protomaps.com) planet file to show a map while no region is downloaded (labelled "Online map · not saved"). They also read a region catalog from your computer at `http://localhost:8787`.
-- **Release builds** have no hosted map source yet. Host your own region catalog and set its URL in Settings.
+- **Release builds** have no map source built in. Muster doesn't host maps, so host your own region catalog and set its URL in Settings.
 
 To build and serve regions locally:
 
@@ -96,7 +96,7 @@ If you ship your own build, change these so your app doesn't share a mesh networ
 - iOS has been tested more than Android.
 - SDK `0.32.0` lacks a session-probe back-off fix that is in the SDK's unreleased code, so mesh sessions can retry more often than needed until the next SDK release.
 - Group activities (checkpoints, phases) are built but switched off (`src/shared/features.ts`).
-- Release builds need a self-hosted map catalog (see Maps).
+- Muster isn't published to the app stores and doesn't host maps. Build it from source; release builds need your own map catalog (see Maps).
 
 ## Contributing
 
@@ -104,4 +104,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md), the [code of conduct](CODE_OF_CONDUCT.md
 
 ## Licence
 
-Muster is licensed under the [GNU Affero General Public License v3.0 only](LICENSE), because the Offline Protocol SDK it uses is AGPL-3.0 (the SDK is also available under a commercial licence). App Store distribution is still under consideration. Third-party notices, including map data © OpenStreetMap contributors ([ODbL](https://www.openstreetmap.org/copyright)), are in [NOTICE](NOTICE).
+Muster is licensed under the [GNU Affero General Public License v3.0 only](LICENSE), because the Offline Protocol SDK it uses is AGPL-3.0 (the SDK is also available under a commercial licence). Muster is not distributed through app stores. Third-party notices, including map data © OpenStreetMap contributors ([ODbL](https://www.openstreetmap.org/copyright)), are in [NOTICE](NOTICE).

@@ -20,4 +20,4 @@ The first public version.
 
 ### Notes
 - Uses `@offline-protocol/mesh-sdk` 0.32.0, which lacks an unreleased session-probe back-off fix.
-- Release builds need a self-hosted map catalog.
+- Not distributed through app stores, and no hosted maps: release builds need your own map catalog.
