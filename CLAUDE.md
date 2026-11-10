@@ -1,23 +1,25 @@
 # CLAUDE.md
 
-Guidance for Claude Code working in this repository.
+The working guide for contributors and AI coding agents (Claude Code reads this file). People new to the project should start with [README.md](README.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Project
 
 Muster: a fully offline group navigation app (React Native) for hiking and outdoor events. Offline maps, GPS, meeting points, and live group positions shared over Bluetooth mesh using the Offline Protocol SDK. **No backend. No internet needed for core features.**
 
-Status: architecture and plan complete (Phase 0). See `docs/PROGRESS.md` for what exists. **Do not start a phase unless asked.**
+Status: see `docs/PROGRESS.md` for what is built and what has been tested on devices. **Do not start a new phase unless asked.**
 
-## Workspace
+## The SDK
+
+The app needs only this repository: the SDK comes from npm. A local SDK checkout is optional, for working on the SDK and the app together:
 
 ```
 workspace/
-  offline-protocol-sdk/   existing SDK. READ-ONLY. Never edit, commit to, or reformat it
-  trailmesh/              this app
+  offline-protocol-sdk/   optional SDK checkout. Never edit, commit to, or reformat it from here
+  muster/                 this app (the maintainer's folder is still called trailmesh)
 ```
 
 - The SDK is consumed as the **published npm package `@offline-protocol/mesh-sdk`**, pinned exactly (ADR 0012), never copied into this repo. It is pinned to `0.32.0`, which lacks the session-probe back-off fix; move to the first release that has it. In npm mode `node_modules/@offline-protocol/mesh-sdk` must be a real directory, not a symlink. Switch with `scripts/sdk-source.sh` only. See `docs/SDK_INTEGRATION.md` §2.
-- Building SDK natives writes artifacts into the SDK tree. That is allowed; editing SDK source is not. Check `git status` in the SDK before and after.
+- With a local checkout (`scripts/sdk-source.sh local`): building SDK natives writes artifacts into the SDK tree. That is allowed; editing SDK source is not. Check `git status` in the SDK before and after.
 - Only `src/mesh/sdk.ts` may import `@offline-protocol/mesh-sdk`. Everything else uses `MeshPort`. This keeps the local->npm switch a config change (`scripts/sdk-source.sh`).
 
 ## Read before changing behaviour
@@ -47,19 +49,19 @@ workspace/
 11. **Do not claim device behaviour that has not been tested.** Mark assumptions `[ASSUMPTION A-nn]` and close them in `PROGRESS.md` with evidence.
 12. **Simulators cannot test BLE.** Use physical devices for any mesh claim.
 
-## Commands (once Phase 1 scaffolding exists)
+## Commands
 
 ```bash
-npm install
+npm install --legacy-peer-deps && (cd ios && pod install)
 npm run typecheck      # tsc --noEmit
 npm run lint           # includes import-boundary rules
 npm test               # jest
 npm run ios | npm run android
-scripts/sdk-source.sh local            # use ../offline-protocol-sdk/bindings/react-native
+scripts/sdk-source.sh local            # optional: use ../offline-protocol-sdk/bindings/react-native
 scripts/sdk-source.sh npm <version>    # use the published package
 ```
 
-Building the SDK natives (heavy; check `df -h` first, run one repo at a time):
+Only with a local SDK checkout, building its natives (heavy; check `df -h` first, run one repo at a time):
 
 ```bash
 cd ../offline-protocol-sdk/bindings/react-native && npm install && npm run build:all
