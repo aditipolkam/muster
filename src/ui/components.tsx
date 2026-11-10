@@ -56,6 +56,15 @@ const textStyles: Record<TextVariant, TextStyle> = {
 };
 
 /**
+ * SF Symbols only when the native module is in the installed build. A build made before
+ * expo-symbols was added renders SymbolView as an "Unimplemented component" box, so it falls
+ * back to Ionicons (bundled with the app) until the next native rebuild.
+ */
+const hasSymbols =
+  Platform.OS === 'ios' &&
+  !!(globalThis as { expo?: { modules?: Record<string, unknown> } }).expo?.modules?.SymbolModule;
+
+/**
  * Apple-style icons: SF Symbols on iOS (thin, regular weight, sized like the text around them),
  * the matching Ionicons outline elsewhere. No icon ever sits in a coloured box.
  */
@@ -83,7 +92,7 @@ export function Icon({
       color={tint}
     />
   );
-  if (Platform.OS !== 'ios') {
+  if (!hasSymbols) {
     return ion;
   }
   return (
