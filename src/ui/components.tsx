@@ -17,7 +17,17 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GLYPHS, IconName } from './glyphs';
-import { fontFamily, radius, size as sizes, space, tabular, useTheme } from './theme';
+import {
+  fontFamily,
+  iconSize,
+  iconWeight,
+  radius,
+  size as sizes,
+  space,
+  tabular,
+  type,
+  useTheme,
+} from './theme';
 
 export type { IconName };
 
@@ -32,15 +42,15 @@ type TextVariant =
   | 'label'
   | 'metric';
 
-/** Type scale (design tokens): screen titles 24-30/800, card titles 16-19/800, captions 12-13/600. */
+/** Text variants read the type scale in theme.tsx. */
 const textStyles: Record<TextVariant, TextStyle> = {
-  hero: { fontSize: 30, lineHeight: 36, fontWeight: '800', letterSpacing: -0.4 },
-  title: { fontSize: 26, lineHeight: 32, fontWeight: '800', letterSpacing: -0.3 },
-  heading: { fontSize: 19, lineHeight: 25, fontWeight: '800' },
-  cardTitle: { fontSize: 16, lineHeight: 22, fontWeight: '800' },
-  body: { fontSize: 15, lineHeight: 22 },
-  caption: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
-  label: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  hero: type.hero,
+  title: type.title,
+  heading: type.heading,
+  cardTitle: type.cardTitle,
+  body: type.body,
+  caption: type.caption,
+  label: type.label,
   mono: { fontSize: 13, lineHeight: 18, ...tabular },
   metric: { fontSize: 34, lineHeight: 40, fontWeight: '800', ...tabular },
 };
@@ -51,7 +61,7 @@ const textStyles: Record<TextVariant, TextStyle> = {
  */
 export function Icon({
   name,
-  size = 20,
+  size = iconSize.md,
   color,
   filled,
 }: {
@@ -81,7 +91,7 @@ export function Icon({
       name={((filled && g.sfFilled) || g.sf) as never}
       size={size}
       tintColor={tint}
-      weight="regular"
+      weight={iconWeight}
       type="monochrome"
       fallback={ion}
       accessibilityElementsHidden
@@ -148,7 +158,7 @@ export function ScreenHeader({
           hitSlop={8}
           style={styles.back}
         >
-          <Icon name="back" size={22} />
+          <Icon name="back" size={iconSize.lg} />
         </Pressable>
       </View>
       <Text
@@ -183,6 +193,47 @@ export const Input = React.forwardRef<TextInput, TextInputProps>(function Input(
         style,
       ]}
     />
+  );
+});
+
+/** A pill search field: leading magnifier, and a clear button once there is text. */
+export const SearchField = React.forwardRef<
+  TextInput,
+  TextInputProps & { onClear?: () => void; containerStyle?: StyleProp<ViewStyle> }
+>(function SearchField({ style, containerStyle, value, onClear, onChangeText, ...rest }, ref) {
+  const { c } = useTheme();
+  const clear = onClear ?? (onChangeText ? () => onChangeText('') : undefined);
+  return (
+    <View
+      style={[
+        styles.search,
+        { borderColor: c.border, backgroundColor: c.surface },
+        containerStyle,
+      ]}
+    >
+      <Icon name="search" size={iconSize.md} color={c.textMuted} />
+      <TextInput
+        ref={ref}
+        placeholderTextColor={c.textMuted}
+        returnKeyType="search"
+        autoCorrect={false}
+        value={value}
+        onChangeText={onChangeText}
+        {...rest}
+        style={[styles.searchInput, { color: c.text }, style]}
+      />
+      {value && clear ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Clear search"
+          onPress={clear}
+          hitSlop={8}
+          style={styles.searchClear}
+        >
+          <Icon name="close" size={iconSize.sm} color={c.textMuted} />
+        </Pressable>
+      ) : null}
+    </View>
   );
 });
 
@@ -371,8 +422,54 @@ export function Badge({
   );
 }
 
-/** Alias: the design calls these chips. */
-export const Chip = Badge;
+/**
+ * A selectable pill (filters, kinds, quick picks). Without `onPress` it is a static badge.
+ * 36pt tall with hit slop, so the touch target is 44.
+ */
+export function Chip({
+  label,
+  selected,
+  onPress,
+  icon,
+  tone,
+  testID,
+}: {
+  label: string;
+  selected?: boolean;
+  onPress?: () => void;
+  icon?: IconName;
+  tone?: ChipTone;
+  testID?: string;
+}) {
+  const { c } = useTheme();
+  if (!onPress) {
+    return <Badge label={label} icon={icon} tone={tone} testID={testID} />;
+  }
+  const fg = selected ? c.onPrimary : c.text;
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!selected }}
+      accessibilityLabel={label}
+      onPress={onPress}
+      hitSlop={4}
+      style={({ pressed }) => [
+        styles.chip,
+        {
+          backgroundColor: selected ? c.primary : c.surface,
+          borderColor: selected ? c.primary : c.border,
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      {icon ? <Icon name={icon} size={iconSize.sm} color={fg} /> : null}
+      <Text variant="caption" color={fg} numberOfLines={1} style={styles.badgeText}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
 
 export function StatusPill({
   label,
@@ -705,7 +802,7 @@ export function IconButton({
       ]}
     >
       {icon ? (
-        <Icon name={icon} size={22} color={active ? c.onPrimary : c.text} />
+        <Icon name={icon} size={iconSize.lg} color={active ? c.onPrimary : c.text} />
       ) : (
         <Text variant="heading" color={active ? c.onPrimary : c.text}>
           {glyph}
@@ -812,7 +909,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.gutter,
     borderRadius: radius.pill,
     borderWidth: 1,
-    fontSize: 16,
+    ...type.input,
+  },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    minHeight: sizes.search,
+    paddingLeft: space.lg,
+    paddingRight: space.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  searchInput: { flex: 1, minHeight: sizes.search, ...type.input },
+  searchClear: {
+    width: sizes.touch - space.sm,
+    height: sizes.touch - space.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    minHeight: sizes.chip,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.pill,
+    borderWidth: 1,
   },
   inputMulti: {
     minHeight: 96,
@@ -833,8 +957,8 @@ const styles = StyleSheet.create({
     minHeight: sizes.buttonSmall,
     paddingHorizontal: space.lg,
   },
-  buttonLabel: { fontSize: 16, lineHeight: 20, fontWeight: '700' },
-  buttonLabelSmall: { fontSize: 15, lineHeight: 20, fontWeight: '700' },
+  buttonLabel: type.button,
+  buttonLabelSmall: { ...type.button, fontSize: 15 },
   card: { borderRadius: radius.card, borderWidth: 1, padding: space.gutter },
   pill: {
     flexDirection: 'row',
@@ -848,7 +972,7 @@ const styles = StyleSheet.create({
   },
   dot: { width: 8, height: 8, borderRadius: radius.pill },
   tile: { alignItems: 'center', justifyContent: 'center' },
-  rowLeading: { width: 28, alignItems: 'center', justifyContent: 'center' },
+  rowLeading: { width: sizes.iconSlot, alignItems: 'center', justifyContent: 'center' },
   listRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -859,7 +983,7 @@ const styles = StyleSheet.create({
   segTrack: { flexDirection: 'row', padding: 4, gap: 4, borderRadius: radius.pill },
   segment: {
     paddingHorizontal: space.lg,
-    minHeight: 40,
+    minHeight: sizes.segment,
     justifyContent: 'center',
     borderRadius: radius.pill,
     borderWidth: 1,
@@ -911,8 +1035,8 @@ const styles = StyleSheet.create({
     gap: space.md,
   },
   iconButton: {
-    width: 48,
-    height: 48,
+    width: sizes.iconButton,
+    height: sizes.iconButton,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
