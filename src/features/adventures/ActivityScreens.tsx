@@ -558,7 +558,7 @@ export function PhaseEditor({ navigation, route }: Nav<'CheckpointEditor'>) {
       <View style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
           <Text variant="label" muted>
-            {type === 'checkpoint' ? 'Checkpoint Name *' : 'Phase Name *'}
+            {type === 'checkpoint' ? 'Checkpoint name' : 'Phase name'}
           </Text>
           <Input
             testID="checkpoint-name"

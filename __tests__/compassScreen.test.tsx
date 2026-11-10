@@ -119,8 +119,8 @@ describe('Compass screen', () => {
 
     fireEvent.press(await screen.findByTestId('target-select'));
     const picker = await screen.findByTestId('target-picker');
-    await waitFor(() => expect(within(picker).getByText('RIDGE WALK')).toBeTruthy());
-    expect(within(picker).getByText('MY PLACES')).toBeTruthy();
+    await waitFor(() => expect(within(picker).getByText('Ridge walk')).toBeTruthy());
+    expect(within(picker).getByText('My places')).toBeTruthy();
     expect(within(picker).getByText('Cairn')).toBeTruthy();
 
     fireEvent.press(within(picker).getByText('Lake junction'));

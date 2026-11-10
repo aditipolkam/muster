@@ -997,7 +997,7 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
       {organizer && group.status === 'active' ? (
         <View style={[styles.composer, { backgroundColor: c.surface, borderColor: c.border }]}>
           <Text variant="caption" muted style={{ textAlign: 'center' }}>
-            Only you can post. Followers get updates in range.
+            Only you can post.
           </Text>
           <Row style={{ gap: space.sm }}>
             <Pressable
@@ -1436,9 +1436,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
             <Text variant="heading">Meeting points ({points.length})</Text>
             {points.length === 0 ? (
               <Text muted>
-                {organizer
-                  ? 'None yet. Set one from the group page with the flag button.'
-                  : 'None yet. Meeting points the organizer shares appear here and on your map.'}
+                {organizer ? 'None yet. Use the flag on the group page.' : 'None yet.'}
               </Text>
             ) : (
               <Card style={{ paddingVertical: space.xs }}>

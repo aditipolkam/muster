@@ -411,7 +411,7 @@ describe('Group page (updates)', () => {
     expect(screen.getByText('Meeting point shared')).toBeTruthy();
     expect(screen.getByText('Other joined')).toBeTruthy();
     expect(typeof screen.getByTestId('group-status').props.children).toBe('string');
-    expect(screen.getByText('Only you can post. Followers get updates in range.')).toBeTruthy();
+    expect(screen.getByText('Only you can post.')).toBeTruthy();
     expect(screen.queryByText('Members (2)')).toBeNull();
     expect(screen.queryByTestId('invite-create')).toBeNull();
     expect(p.ok).toBe(true);

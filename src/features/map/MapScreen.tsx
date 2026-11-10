@@ -783,8 +783,8 @@ export function MapScreen({ navigation, route }: Props) {
       : Alert.alert(
           offlineLabel,
           useOnline
-            ? 'This map is streamed and is not available without internet. Download the area to keep it.'
-            : 'Download this area to use the map without internet.',
+            ? 'Streamed, not saved. Download the area to use it offline.'
+            : 'Download this area to use it offline.',
           [
             { text: 'Not now', style: 'cancel' },
             { text: 'Download this area', onPress: openArea },
