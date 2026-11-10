@@ -873,7 +873,7 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
   const pinnedBrg = pinned && fix ? bearingDeg(fix, pinned) : null;
 
   return (
-    <Screen onBack={() => navigation.navigate('GroupsList')} edges={['top', 'bottom']}>
+    <Screen onBack={() => navigation.navigate('GroupsList')}>
       <View style={styles.pageHeader}>
         <Pressable
           accessibilityRole="button"
