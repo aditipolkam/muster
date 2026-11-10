@@ -85,10 +85,10 @@ Architecture and decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/
 
 If you ship your own build, change these so your app doesn't share a mesh network or store IDs with Muster:
 
-- The mesh `appId` in `src/mesh/SdkMeshAdapter.ts` (`app.muster`)
+- `meshAppId` in `src/shared/config.ts` (`app.muster`)
 - The bundle ID `app.muster` in the Xcode project and in `android/app/build.gradle`
 - The Apple `DEVELOPMENT_TEAM` in the Xcode project
-- The place-search `User-Agent` in `src/features/maps-manager/PlaceSearch.ts`
+- `userAgent` in `src/shared/config.ts` (sent to the place-search service)
 
 ## Limitations
 
@@ -98,6 +98,10 @@ If you ship your own build, change these so your app doesn't share a mesh networ
 - Group activities (checkpoints, phases) are built but switched off (`src/shared/features.ts`).
 - Release builds need a self-hosted map catalog (see Maps).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), the [code of conduct](CODE_OF_CONDUCT.md) and the [security policy](SECURITY.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md). [docs/README.md](docs/README.md) indexes the docs.
+
 ## Licence
 
-A licence will be added before the public release. The Offline Protocol SDK the app uses is AGPL-3.0. Map data is © OpenStreetMap contributors, available under the [ODbL](https://www.openstreetmap.org/copyright).
+Muster is licensed under the [GNU Affero General Public License v3.0 only](LICENSE), because the Offline Protocol SDK it uses is AGPL-3.0 (the SDK is also available under a commercial licence). App Store distribution is still under consideration. Third-party notices, including map data © OpenStreetMap contributors ([ODbL](https://www.openstreetmap.org/copyright)), are in [NOTICE](NOTICE).
