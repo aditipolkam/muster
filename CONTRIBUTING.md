@@ -4,7 +4,7 @@ Thanks for helping. Muster is an offline group navigation app. Its core features
 
 ## Setup
 
-Follow [Getting started](README.md#getting-started) in the README. In short:
+Follow [Getting started](README.md#getting-started) in the README. You need Node 22.13 or later (see `.nvmrc`), because the tests run the database layer on Node's built-in `node:sqlite`. In short:
 
 ```bash
 npm install --legacy-peer-deps
@@ -16,7 +16,7 @@ The app uses the published `@offline-protocol/mesh-sdk`, pinned to an exact vers
 
 ## Checks
 
-Run these before you open a pull request. CI runs them too.
+Run these before you open a pull request. CI runs them too, plus `npm run format:check`.
 
 ```bash
 npm run typecheck
