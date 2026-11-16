@@ -11,6 +11,8 @@ Group navigation for hikes and outdoor events that works with no internet and no
 
 Muster gives a group offline maps, GPS, meeting points and live positions of everyone nearby. Phones talk to each other directly over a Bluetooth mesh, using the [Offline Protocol SDK](https://github.com/Offline-Protocol/offline-protocol-sdk). There is no backend and no account.
 
+See Muster in action: [the announcement on X](https://x.com/aditipolkam/status/2120154374936903917).
+
 ## What it does
 
 - **Offline maps.** Download a region, or cut a custom area on the map, and use it with no connection. Map data is © OpenStreetMap contributors.
