@@ -35,7 +35,7 @@ cd ios && pod install && cd ..
 npm run ios          # or: npm run android
 ```
 
-> **SDK note.** The app pins the published `@offline-protocol/mesh-sdk@0.32.0` (AGPL-3.0). To build against a local SDK checkout at `../offline-protocol-sdk` instead, run `scripts/sdk-source.sh local`, and `scripts/sdk-source.sh npm <version>` to go back.
+> **SDK note.** The app pins the published `@offline-protocol/mesh-sdk@0.33.0` (AGPL-3.0). To build against a local SDK checkout at `../offline-protocol-sdk` instead, run `scripts/sdk-source.sh local`, and `scripts/sdk-source.sh npm <version>` to go back.
 
 ### Mesh features need real phones
 
@@ -97,7 +97,6 @@ If you ship your own build, change these so your app doesn't share a mesh networ
 
 - Location updates only while the app is in the foreground.
 - iOS has been tested more than Android.
-- SDK `0.32.0` lacks a session-probe back-off fix that is in the SDK's unreleased code, so mesh sessions can retry more often than needed until the next SDK release.
 - Group activities (checkpoints, phases) are built but switched off (`src/shared/features.ts`).
 - Muster isn't published to the app stores and doesn't host maps. Build it from source; release builds need your own map catalog (see Maps).
 

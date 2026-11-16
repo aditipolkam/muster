@@ -19,5 +19,5 @@ The first public version.
 - Pill design system: shared tokens and components, SF Symbols on iOS, no shadows.
 
 ### Notes
-- Uses `@offline-protocol/mesh-sdk` 0.32.0, which lacks an unreleased session-probe back-off fix.
+- Uses `@offline-protocol/mesh-sdk` 0.33.0, which adds the session-probe back-off, mesh fan-out slot and mesh delivery fixes.
 - Not distributed through app stores, and no hosted maps: release builds need your own map catalog.
