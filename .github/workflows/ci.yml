@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # Jest runs the SQLite layer on Node's built-in node:sqlite (Node 22.13 or later).
           node-version-file: .nvmrc
