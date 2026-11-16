@@ -2,6 +2,11 @@
 
 # Muster
 
+<p align="center">
+  <a href="https://github.com/aditipolkam/muster/actions/workflows/ci.yml"><img src="https://github.com/aditipolkam/muster/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0"></a>
+</p>
+
 Group navigation for hikes and outdoor events that works with no internet and no cell signal.
 
 Muster gives a group offline maps, GPS, meeting points and live positions of everyone nearby. Phones talk to each other directly over a Bluetooth mesh, using the [Offline Protocol SDK](https://github.com/Offline-Protocol/offline-protocol-sdk). There is no backend and no account.
@@ -20,7 +25,7 @@ Each phone runs the Offline Protocol SDK over Bluetooth Low Energy. Every member
 
 ## Getting started
 
-You need Node 20 or later. For iOS: macOS, Xcode and CocoaPods (iOS 15.1 or later). For Android: Android Studio (Android 7.0, API 24, or later). See the [React Native environment setup](https://reactnative.dev/docs/set-up-your-environment).
+You need Node 22.13 or later (`.nvmrc`). For iOS: macOS, Xcode and CocoaPods (iOS 15.1 or later). For Android: Android Studio (Android 7.0, API 24, or later). See the [React Native environment setup](https://reactnative.dev/docs/set-up-your-environment).
 
 ```bash
 git clone https://github.com/aditipolkam/muster.git

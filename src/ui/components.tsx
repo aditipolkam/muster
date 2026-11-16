@@ -214,11 +214,7 @@ export const SearchField = React.forwardRef<
   const clear = onClear ?? (onChangeText ? () => onChangeText('') : undefined);
   return (
     <View
-      style={[
-        styles.search,
-        { borderColor: c.border, backgroundColor: c.surface },
-        containerStyle,
-      ]}
+      style={[styles.search, { borderColor: c.border, backgroundColor: c.surface }, containerStyle]}
     >
       <Icon name="search" size={iconSize.md} color={c.textMuted} />
       <TextInput

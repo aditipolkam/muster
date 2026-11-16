@@ -8,16 +8,23 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Jest runs the SQLite layer on Node's built-in node:sqlite (Node 22.13 or later).
+          node-version-file: .nvmrc
           cache: npm
       - run: npm ci --legacy-peer-deps
       - run: npm run typecheck
       - run: npm run lint
+      - run: npm run format:check
       - run: npm test -- --ci

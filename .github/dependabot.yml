@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      # Pinned exactly on purpose (ADR 0012); updated by hand with scripts/sdk-source.sh.
+      - dependency-name: "@offline-protocol/mesh-sdk"
+      # React Native and Expo move together; upgrade them deliberately, not one package at a time.
+      - dependency-name: "react-native"
+      - dependency-name: "react"
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@react-native/*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
