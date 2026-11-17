@@ -1,4 +1,11 @@
-import { Group, GroupMember, GroupRole, GroupStatus, MemberState } from '../../domain/groups/model';
+import {
+  Group,
+  GroupMember,
+  GroupRole,
+  GroupStatus,
+  MemberRole,
+  MemberState,
+} from '../../domain/groups/model';
 import { MapArea, parseMapArea, toMapAreaWire } from '../../domain/maps/mapArea';
 import { mergeMember } from '../../domain/groups/merge';
 import type { InviteRecord } from '../../domain/groups/invite';
@@ -60,7 +67,7 @@ const toMember = (r: MemberRow): GroupMember => ({
   groupId: r.group_id,
   address: r.address,
   name: r.name,
-  role: r.role as GroupRole,
+  role: r.role as MemberRole,
   state: r.state as MemberState,
   rev: r.rev,
   updatedAt: r.updated_at,
@@ -126,7 +133,7 @@ export class GroupsRepo {
   async members(groupId: string, db: DbReader = this.db): Promise<GroupMember[]> {
     const rows = await db.all<MemberRow>(
       `SELECT * FROM group_members WHERE group_id = ?
-       ORDER BY CASE role WHEN 'organizer' THEN 0 ELSE 1 END, updated_at, address`,
+       ORDER BY CASE role WHEN 'organizer' THEN 0 WHEN 'leader' THEN 1 ELSE 2 END, updated_at, address`,
       [groupId],
     );
     return rows.map(toMember);

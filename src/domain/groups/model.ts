@@ -15,6 +15,13 @@ export const MAX_SYNC_POINTS = 15;
 export const APP_PROTOCOL = 1;
 
 export type GroupRole = 'organizer' | 'member';
+/**
+ * A person's role in the roster. `leader` is a co-leader: an existing member the organizer
+ * promoted, who may edit the group's plan (meeting points, adventure checkpoints). The organizer
+ * stays the hub that relays their edits (ADR 0016). On the wire a leader is `role: 'member'` plus
+ * `lead: true`, so builds without co-leaders still accept the roster event.
+ */
+export type MemberRole = GroupRole | 'leader';
 /** `joining`: invite sent, welcome not yet received. `closed`: the organizer ended the group. */
 export type GroupStatus = 'joining' | 'active' | 'closed';
 export type MemberState = 'active' | 'left' | 'removed';
@@ -40,7 +47,7 @@ export type GroupMember = {
   groupId: string;
   address: string;
   name: string;
-  role: GroupRole;
+  role: MemberRole;
   state: MemberState;
   rev: number;
   updatedAt: number;
@@ -86,9 +93,27 @@ export const MemberEventSchema = z.object({
   addr,
   name: z.string().trim().min(1).max(MEMBER_NAME_MAX),
   role: z.enum(['organizer', 'member']),
+  /** Co-leader (ADR 0016). Optional so older builds, which drop unknown keys, still accept it. */
+  lead: z.boolean().optional(),
   rev,
 });
 export type MemberEvent = z.infer<typeof MemberEventSchema>;
+
+/** The roster role a member event describes. */
+export const memberRoleOf = (e: Pick<MemberEvent, 'role' | 'lead'>): MemberRole =>
+  e.role === 'member' && e.lead === true ? 'leader' : e.role;
+
+/** A roster role as it is sent: a leader travels as a member with `lead: true`. */
+export const memberRoleWire = (role: MemberRole): { role: GroupRole; lead?: true } =>
+  role === 'leader' ? { role: 'member', lead: true } : { role };
+
+/** Is this address an active co-leader of the group (not the organizer)? */
+export function isCoLeader(members: GroupMember[], address: string | null): boolean {
+  return (
+    !!address &&
+    members.some(m => m.address === address && m.state === 'active' && m.role === 'leader')
+  );
+}
 
 export const ClosedEventSchema = z.object({ rev });
 

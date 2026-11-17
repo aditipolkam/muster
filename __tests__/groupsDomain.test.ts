@@ -1,6 +1,7 @@
 import {
   authorizeInbound,
   authorizeSubscription,
+  canEditPlan,
   canPublishPoints,
 } from '../src/domain/groups/authorize';
 import {
@@ -15,7 +16,11 @@ import { compareVersions, mergePoint, nextRev, pointsToResend } from '../src/dom
 import {
   Group,
   GroupMember,
+  isCoLeader,
   MeetingPoint,
+  MemberEventSchema,
+  memberRoleOf,
+  memberRoleWire,
   PointPayloadSchema,
   POINT_NOTE_MAX,
   POINT_NAME_MAX,
@@ -243,6 +248,90 @@ describe('authorization', () => {
     expect(ask(group(), 'ack', 'off1org')).toBe(true);
     expect(ask(group(), 'ack', 'off1bob')).toBe(false);
     expect(ask(group(), 'point', 'off1org')).toBe(false);
+  });
+});
+
+describe('co-leaders (ADR 0016)', () => {
+  const org = group({ role: 'organizer' });
+  const lead = member('off1lea', { role: 'leader' });
+  const bob = member('off1bob');
+
+  it('a leader travels as a member with lead: true, and older parsers still accept it', () => {
+    expect(memberRoleWire('leader')).toEqual({ role: 'member', lead: true });
+    expect(memberRoleWire('member')).toEqual({ role: 'member' });
+    expect(memberRoleWire('organizer')).toEqual({ role: 'organizer' });
+    const wire = { addr: 'off1lea', name: 'Lea', rev: 3, ...memberRoleWire('leader') };
+    const e = MemberEventSchema.parse(wire);
+    expect(memberRoleOf(e)).toBe('leader');
+    // An organizer can never be turned into a leader by a stray flag.
+    expect(memberRoleOf({ role: 'organizer', lead: true })).toBe('organizer');
+    // What a build without co-leaders sees: the old schema has no `lead` and strips it.
+    const old = MemberEventSchema.omit({ lead: true }).parse(wire);
+    expect(old).toEqual({ addr: 'off1lea', name: 'Lea', role: 'member', rev: 3 });
+  });
+
+  it('only active co-leaders and the organizer may edit the plan', () => {
+    expect(canEditPlan(org, [], 'off1org')).toBe(true);
+    expect(canEditPlan(group(), [lead, bob], 'off1lea')).toBe(true);
+    expect(canEditPlan(group(), [lead, bob], 'off1bob')).toBe(false);
+    expect(canEditPlan(group(), [{ ...lead, state: 'left' }], 'off1lea')).toBe(false);
+    expect(canEditPlan(group({ status: 'closed' }), [lead], 'off1lea')).toBe(false);
+    expect(canEditPlan(null, [lead], 'off1lea')).toBe(false);
+    expect(isCoLeader([lead, bob], 'off1lea')).toBe(true);
+    expect(isCoLeader([lead, bob], 'off1bob')).toBe(false);
+  });
+
+  it('the organizer accepts proposed edits only from a co-leader naming themselves', () => {
+    const ask = (from: string, actor: string, members = [lead, bob]) =>
+      authorizeInbound({
+        kind: 'point_edit',
+        group: org,
+        members,
+        from,
+        claimedAuthor: from,
+        actor,
+      }).ok;
+    expect(ask('off1lea', 'off1lea')).toBe(true);
+    expect(ask('off1bob', 'off1bob')).toBe(false);
+    expect(ask('off1lea', 'off1bob')).toBe(false);
+    expect(ask('off1lea', 'off1lea', [{ ...lead, state: 'removed' }])).toBe(false);
+    // A member never takes proposals.
+    expect(
+      authorizeInbound({
+        kind: 'point_edit',
+        group: group(),
+        members: [lead],
+        from: 'off1lea',
+        claimedAuthor: 'off1lea',
+        actor: 'off1lea',
+      }).ok,
+    ).toBe(false);
+  });
+
+  it('members accept a point the organizer relays for a co-leader, never one sent by them', () => {
+    const relayed = (actor: string, members: GroupMember[]) =>
+      authorizeInbound({
+        kind: 'point',
+        group: group(),
+        members,
+        from: 'off1org',
+        claimedAuthor: 'off1org',
+        actor,
+      }).ok;
+    expect(relayed('off1lea', [lead])).toBe(true);
+    // Still valid after they were demoted or left: the version they wrote stays theirs.
+    expect(relayed('off1lea', [{ ...lead, role: 'member', state: 'left' }])).toBe(true);
+    expect(relayed('off1eve', [lead])).toBe(false);
+    expect(
+      authorizeInbound({
+        kind: 'point',
+        group: group(),
+        members: [lead],
+        from: 'off1lea',
+        claimedAuthor: 'off1lea',
+        actor: 'off1lea',
+      }).ok,
+    ).toBe(false);
   });
 });
 

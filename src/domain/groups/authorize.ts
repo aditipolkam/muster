@@ -10,7 +10,9 @@ export type InboundKind =
   | 'hello'
   | 'leave'
   | 'ack'
-  | 'sync';
+  | 'sync'
+  /** co-leader -> organizer: a proposed meeting point change (ADR 0016) */
+  | 'point_edit';
 
 export type Decision = { ok: true } | { ok: false; reason: string };
 
@@ -28,6 +30,10 @@ const allow: Decision = { ok: true };
  *   as recorded when this device created or joined the group.
  * - Member messages (hello, leave, ack, sync) are accepted only by the organizer, only from an
  *   active roster member.
+ * - A meeting point may name a co-leader as its author (`by`): the organizer relayed their edit.
+ *   It still has to come from the organizer, and the author has to be in the roster.
+ * - A proposed point edit is accepted only by the organizer, only from an active co-leader who
+ *   names themselves as the author.
  */
 export function authorizeInbound(input: {
   kind: InboundKind;
@@ -60,8 +66,12 @@ export function authorizeInbound(input: {
     if (group.status !== 'active') {
       return deny(`group is ${group.status}`);
     }
-    if ((kind === 'point' || kind === 'point_removed') && actor !== undefined && actor !== from) {
-      return deny('meeting point author is not the organizer');
+    if (
+      (kind === 'point' || kind === 'point_removed') &&
+      actor !== undefined &&
+      !isPlanAuthor(group, members, actor)
+    ) {
+      return deny('meeting point author is not the organizer or a group leader');
     }
     return allow;
   }
@@ -78,7 +88,24 @@ export function authorizeInbound(input: {
   if ((kind === 'hello' || kind === 'leave') && actor !== undefined && actor !== from) {
     return deny('member message names someone else');
   }
+  if (kind === 'point_edit') {
+    if (member.role !== 'leader') {
+      return deny('sender is not a group leader');
+    }
+    if (actor !== from) {
+      return deny('proposed edit names someone else as its author');
+    }
+  }
   return allow;
+}
+
+/**
+ * May `address` be named as the author of a meeting point version this device received from the
+ * organizer? The organizer itself, or anyone in the roster: a co-leader can be demoted or leave
+ * later, and the versions they wrote stay valid.
+ */
+export function isPlanAuthor(group: Group, members: GroupMember[], address: string): boolean {
+  return address === group.organizer || members.some(m => m.address === address);
 }
 
 /** May this device publish meeting points for the group? Only the organizer. */
@@ -89,6 +116,26 @@ export function canPublishPoints(group: Group | null, localAddress: string | nul
     group.role === 'organizer' &&
     group.status === 'active' &&
     group.organizer === localAddress
+  );
+}
+
+/**
+ * May this device edit the group's plan (meeting points, adventure checkpoints)? The organizer,
+ * or an active co-leader (ADR 0016), whose edits go to the organizer to be shared.
+ */
+export function canEditPlan(
+  group: Group | null,
+  members: GroupMember[],
+  localAddress: string | null,
+): boolean {
+  if (canPublishPoints(group, localAddress)) {
+    return true;
+  }
+  return (
+    !!group &&
+    group.role === 'member' &&
+    group.status === 'active' &&
+    members.some(m => m.address === localAddress && m.state === 'active' && m.role === 'leader')
   );
 }
 
