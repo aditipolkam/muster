@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-11-10 (pill design system)
+Last updated: 2026-11-17 (co-leaders)
 
 ## Status
 
@@ -235,6 +235,7 @@ Run `docs/GROUPS_VERIFICATION.md`, record A-19 to A-24 and fill the device log. 
 
 | Date | Entry |
 |---|---|
+| 2026-11-17 | Co-leaders (ADR 0016), branch `feat/co-leaders`. The organizer can make a member a leader, or take it back, from Group info > Members > Manage. Leaders add, edit and remove meeting points and the checkpoints of the organizer's group adventure; their edits go to the organizer, who shares them (no new subscriptions or SDK calls). Starting, cancelling, renaming, inviting, removing people, the trip map and activity drafts stay the organizer's; a published activity stays fixed. Builds without co-leaders drop meeting points a co-leader wrote. Group activities re-checked: the 102 activity tests pass with the flag on; still behind `groupActivities`, still never run on a device. typecheck, lint (0 errors), 685 Jest tests pass (20 new). **Not checked in a simulator or on a device** |
 | 2026-10-30 | Phase 0 complete. Inspected `offline-protocol-sdk` 0.31.0 (read-only). Key findings: no group-scoped pub/sub in the SDK (ADR 0036 unimplemented), service subscriptions exist but ADR 0035 is "Proposed", DataStore CRDT documents are the best fit for shared state, SDK licence is AGPL-3.0/commercial. Researched MapLibre RN v11.5.1, PMTiles, OSM tile policies. Nothing built or installed. `offline-protocol-sdk` not modified |
 
 | 2026-11-10 | Pill design system, second pass (code only, no simulator): theme gains `type`, `size` (segment 44, chip 36, icon button 48, icon slot 28), `space.section`, `iconWeight`; `shadow` token removed. New `SearchField` and selectable `Chip`. All 21 raw `TextInput`s now use `Input`/`SearchField`; quick-name and checkpoint-kind pickers use `Chip`; group page header on the 20pt gutter. Shorter route fallback reasons, map-not-saved alert, leader-only note ("Only you can post."); compass picker drops uppercase section eyebrows and subtitles that repeat the section. typecheck, lint (0 errors), 665 Jest tests pass. **Not checked in a simulator or on a device.** Manrope still not bundled (needs a native rebuild) |

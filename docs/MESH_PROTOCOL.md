@@ -120,6 +120,15 @@ sequenceDiagram
 - **Nearby discovery.** The organizer can open the group for 10 minutes. Every subscription to a device's `tm/1/beacon` is accepted, but a beacon `{g, n, o, until}` is published only while a group is open, so a follower learns nothing until then and hears it the moment the group opens. A joiner follows the beacon of each nearby peer (up to 8) once, lists open groups, and can ask to join with the reserved token `open`; this **always needs approval**. When the window closes the organizer publishes a beacon with `until` in the past and refuses further `open` requests.
 - Leaving: a member sends `leave` and deletes the group locally; the organizer marks it `left`, drops its follows and tells the others. The organizer "leaving" ends the group (`closed`); members keep the group read-only, its points leave the map. The organizer can remove a member (`removed`); the removed device purges the group.
 
+**Co-leaders (ADR 0016).** The organizer can make an active member a leader (`joined` roster event with `lead: true`, `role` stays `member` on the wire) and take it back. A co-leader edits meeting points and the checkpoints of the organizer's group adventure, but never publishes group state: it sends its edit to the organizer on topics the organizer already follows, and the organizer merges it and publishes the winner as usual.
+
+| Topic | Publisher | Key | Types | Payload |
+|---|---|---|---|---|
+| `tm/1/<g>/member` | co-leader | `e-<pointId>` | `point_edit`, `point_remove_edit` | as `point` / `point_removed`, `by` = the co-leader |
+| `tm/1/<g>/adv` | co-leader | `e-<checkpointId>` | `checkpoint_edit` | as `checkpoint` |
+
+The organizer accepts these only from an active co-leader who names themselves as `by` (checkpoints: for its own open, non-activity group adventure). Members accept a relayed point whose `by` / `createdBy` is the organizer or anyone in the roster; the sender must still be the organizer. On a checkpoint conflict at the same `rev` the organizer republishes its own version at `rev + 1`. A co-leader re-sends its edits when the organizer follows it again.
+
 **Reconnection.** Subscriptions are not persisted by the SDK, so on every mesh start, on mesh state changes and every 30 s the app re-checks that each group has its subscriptions (retries per provider limited to once a minute because a pending subscription times out after 120 s). When a follower becomes active the provider re-publishes current state for that topic; a member also sends `sync_request` when it becomes active. An acknowledgment that could not be delivered is kept (`ack_published = 0`) and sent when the organizer follows the member again.
 
 ### Scoping: who can read a topic?
@@ -289,7 +298,9 @@ Enforced by `domain/adventures/authorize.ts`, on top of the group rules (envelop
 | `adv_sync` | Organizer, from an active roster member |
 | subscription to `adv` | Same as the other channels: the organizer accepts active members; a member accepts only its organizer |
 
-Only the group organizer can *create* a group adventure or change its status or checkpoints; members plan their own solo adventures, which never touch the mesh. Anything else is dropped and logged without coordinates.
+| `checkpoint_edit` | Organizer, from an active co-leader (ADR 0016); the adventure is the organizer's, in this group, not a draft, not final and not an activity |
+
+Only the group organizer can *create* a group adventure or change its status; the organizer and co-leaders change its checkpoints (a co-leader through the organizer). Members plan their own solo adventures, which never touch the mesh. Anything else is dropped and logged without coordinates.
 
 ### 10.3 Ordering, conflicts and deduplication
 
