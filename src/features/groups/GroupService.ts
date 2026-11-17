@@ -4,8 +4,10 @@ import type { MeetingPointsRepo } from '../../data/repositories/MeetingPointsRep
 import {
   authorizeInbound,
   authorizeSubscription,
+  canEditPlan,
   canPublishPoints,
   InboundKind,
+  isPlanAuthor,
 } from '../../domain/groups/authorize';
 import {
   buildInviteLink,
@@ -40,6 +42,8 @@ import {
   MeetingPoint,
   MemberEventSchema,
   MemberNameSchema,
+  memberRoleOf,
+  memberRoleWire,
   PointInput,
   PointInputSchema,
   PointPayloadSchema,
@@ -671,6 +675,37 @@ export class GroupService {
     return ok(undefined);
   }
 
+  /**
+   * Organizer: make an existing member a co-leader, or a co-leader a member again (ADR 0016). A
+   * co-leader edits the plan; their edits come to this device and are shared from here.
+   */
+  async setLeader(groupId: string, address: string, leader: boolean): Promise<Result<void>> {
+    const group = await this.d.groups.get(groupId);
+    if (!group || group.role !== 'organizer' || group.status !== 'active' || address === this.me) {
+      return err(appError('groups.not_organizer', 'Only the organizer can choose leaders.'));
+    }
+    const cur = await this.d.groups.member(groupId, address);
+    if (!cur || cur.state !== 'active' || cur.role === 'organizer') {
+      return err(appError('groups.no_member', 'That person is no longer in the group.'));
+    }
+    const role = leader ? 'leader' : 'member';
+    if (cur.role === role) {
+      return ok(undefined);
+    }
+    await this.enqueue(async () => {
+      const m: GroupMember = {
+        ...cur,
+        role,
+        rev: await this.d.groups.nextMemberRev(groupId),
+        updatedAt: this.d.clock.now(),
+      };
+      await this.d.groups.applyMember(m);
+      await this.publishMember(m);
+      this.notice(leader ? `${cur.name} is now a leader` : `${cur.name} is no longer a leader`);
+    });
+    return ok(undefined);
+  }
+
   private async teardown(groupId: string): Promise<void> {
     const ps = this.d.pubsub.getSnapshot();
     for (const s of ps.subscriptions) {
@@ -705,20 +740,35 @@ export class GroupService {
     }
   }
 
-  // ---- meeting points (organizer) ------------------------------------------------------------
+  // ---- meeting points (organizer and co-leaders) ---------------------------------------------
+
+  /** May this device edit the group's plan, and is it the organizer (the hub) or a co-leader? */
+  private async planRole(groupId: string): Promise<{ me: string; organizer: boolean } | null> {
+    const group = await this.d.groups.get(groupId);
+    const me = this.me;
+    if (!group || !me) {
+      return null;
+    }
+    if (canPublishPoints(group, me)) {
+      return { me, organizer: true };
+    }
+    return canEditPlan(group, await this.d.groups.members(groupId), me)
+      ? { me, organizer: false }
+      : null;
+  }
 
   async publishPoint(
     groupId: string,
     input: PointInput,
     existingId?: string,
   ): Promise<Result<PublishOutcome>> {
-    const group = await this.d.groups.get(groupId);
-    const me = this.me;
-    if (!me || !canPublishPoints(group, me)) {
+    const role = await this.planRole(groupId);
+    if (!role) {
       return err(
-        appError('groups.not_organizer', 'Only the group organizer can share meeting points.'),
+        appError('groups.not_organizer', 'Only the group leaders can share meeting points.'),
       );
     }
+    const { me } = role;
     const parsed = PointInputSchema.safeParse(input);
     if (!parsed.success) {
       return err(appError('groups.invalid_point', 'Check the name, note and position.'));
@@ -755,18 +805,21 @@ export class GroupService {
       return err(appError('groups.point_too_large', 'The name and note are too long to send.'));
     }
     const { point } = await this.d.points.apply(version, now);
-    const delivered = (await this.enqueue(() => this.publishPointVersion(point))) ?? false;
+    const delivered =
+      (await this.enqueue(() =>
+        role.organizer ? this.publishPointVersion(point) : this.proposePoint(point),
+      )) ?? false;
     return ok({ point, delivered });
   }
 
   async removePoint(groupId: string, pointId: string): Promise<Result<PublishOutcome>> {
-    const group = await this.d.groups.get(groupId);
-    const me = this.me;
-    if (!me || !canPublishPoints(group, me)) {
+    const role = await this.planRole(groupId);
+    if (!role) {
       return err(
-        appError('groups.not_organizer', 'Only the group organizer can remove meeting points.'),
+        appError('groups.not_organizer', 'Only the group leaders can remove meeting points.'),
       );
     }
+    const { me } = role;
     const cur = await this.d.points.get(groupId, pointId);
     if (!cur || cur.deleted) {
       return err(appError('groups.no_point', 'That meeting point no longer exists.'));
@@ -776,8 +829,40 @@ export class GroupService {
       versionFromRemoval(groupId, { id: pointId, rev: nextRev(cur), by: me, ts: now }, cur),
       now,
     );
-    const delivered = (await this.enqueue(() => this.publishPointVersion(point))) ?? false;
+    const delivered =
+      (await this.enqueue(() =>
+        role.organizer ? this.publishPointVersion(point) : this.proposePoint(point),
+      )) ?? false;
     return ok({ point, delivered });
+  }
+
+  /**
+   * Co-leader: send an edit made here to the organizer, who merges it and shares it with everyone
+   * (this device included). Keyed per point, so only the latest proposal per point is kept.
+   */
+  private proposePoint(p: MeetingPoint): Promise<boolean> {
+    const topic = groupTopic(p.groupId, GroupChannel.member);
+    return p.deleted
+      ? this.publish(topic, 'point_remove_edit', `e-${p.id}`, {
+          id: p.id,
+          rev: p.rev,
+          by: p.updatedBy,
+          ts: p.updatedAt,
+        })
+      : this.publish(topic, 'point_edit', `e-${p.id}`, this.pointPayload(p));
+  }
+
+  /** Co-leader: re-send this device's own edits when the organizer starts following it again. */
+  private async reproposeOwn(groupId: string): Promise<void> {
+    const me = this.me;
+    if (!me || !(await this.planRole(groupId))) {
+      return;
+    }
+    for (const p of await this.d.points.listAll(groupId)) {
+      if (p.updatedBy === me) {
+        await this.proposePoint(p);
+      }
+    }
   }
 
   private pointPayload(p: {
@@ -897,7 +982,7 @@ export class GroupService {
       groupTopic(m.groupId, GroupChannel.member),
       m.state === 'active' ? 'joined' : m.state,
       m.address,
-      { addr: m.address, name: m.name, role: m.role, rev: m.rev },
+      { addr: m.address, name: m.name, ...memberRoleWire(m.role), rev: m.rev },
     );
   }
 
@@ -968,7 +1053,7 @@ export class GroupService {
         if (env.t !== 'point' || !p.success) {
           return reject('malformed point');
         }
-        if (!gate('point', p.data.by) || p.data.createdBy !== from) {
+        if (!gate('point', p.data.by) || !isPlanAuthor(group, members, p.data.createdBy)) {
           return;
         }
         const { changed, point } = await this.d.points.apply(
@@ -1070,7 +1155,7 @@ export class GroupService {
       groupId: group.id,
       address: e.data.addr,
       name: e.data.name,
-      role: e.data.role,
+      role: memberRoleOf(e.data),
       state,
       rev: e.data.rev,
       updatedAt: now,
@@ -1138,6 +1223,65 @@ export class GroupService {
       await this.publishMember(m);
       await this.dropMemberSubs(group.id, from);
       this.notice(`${cur.name} left "${group.name}"`);
+      return;
+    }
+    if (env.t === 'point_edit' || env.t === 'point_remove_edit') {
+      await this.onProposal(env, group, from, gate, cur?.name ?? shortAddress(from));
+    }
+  }
+
+  /**
+   * Organizer: a co-leader's edit. Merged by the same rule as any version (highest `rev`, then
+   * author), so a repeat is a no-op and two leaders editing at once settle the same way on every
+   * phone. The winner is shared from here; a losing proposal is simply not shared, and the
+   * co-leader gets the winning version on the point topic it follows.
+   */
+  private async onProposal(
+    env: Envelope,
+    group: Group,
+    from: string,
+    gate: (k: InboundKind, actor?: string) => boolean,
+    who: string,
+  ): Promise<void> {
+    const now = this.d.clock.now();
+    if (env.t === 'point_remove_edit') {
+      const r = PointRemovedSchema.safeParse(env.p);
+      if (!r.success || !gate('point_edit', r.data.by)) {
+        return;
+      }
+      const cur = await this.d.points.get(group.id, r.data.id);
+      if (!cur) {
+        return; // nothing of ours to remove
+      }
+      const { changed, point } = await this.d.points.apply(
+        versionFromRemoval(group.id, r.data, cur),
+        now,
+      );
+      if (changed) {
+        await this.publishPointVersion(point);
+        this.notice(`${who} removed meeting point "${cur.name}"`);
+      }
+      return;
+    }
+    const p = PointPayloadSchema.safeParse(env.p);
+    if (!p.success || !gate('point_edit', p.data.by)) {
+      return;
+    }
+    const cur = await this.d.points.get(group.id, p.data.id);
+    if (!cur && p.data.createdBy !== from) {
+      return;
+    }
+    if (!cur && (await this.d.points.list(group.id)).length >= MAX_POINTS_PER_GROUP) {
+      return;
+    }
+    const { changed, point } = await this.d.points.apply(
+      // Who created a point is fixed by its first version, whatever a later edit claims.
+      versionFromUpdate(group.id, { ...p.data, createdBy: cur?.createdBy ?? from }),
+      now,
+    );
+    if (changed && !point.deleted) {
+      await this.publishPointVersion(point);
+      this.notice(`${who} ${cur ? 'updated' : 'shared'} meeting point "${point.name}"`);
     }
   }
 
@@ -1389,6 +1533,7 @@ export class GroupService {
         name: await this.d.displayName(),
         appV: APP_PROTOCOL,
       });
+      await this.reproposeOwn(group.id);
     } else if (parsed.channel === GroupChannel.ack) {
       for (const p of await this.d.points.unpublishedAcks(group.id)) {
         await this.publishAck(group.id, p.id);

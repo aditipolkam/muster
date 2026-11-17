@@ -96,11 +96,13 @@ describe('unauthorized updates are never applied', () => {
     expect(await members[0]!.points.get(g.id, 'P1')).toBeNull();
   });
 
-  it('a point whose author field names someone other than the organizer is dropped', async () => {
+  it('a point whose author is not in the roster is dropped', async () => {
+    // Since co-leaders (ADR 0016) the organizer relays points written by a roster member, so the
+    // author may be someone else; a name outside the roster is still refused.
     const net = new FakeNetwork();
     const { org, g, members, all } = await formGroup(net);
     const topic = groupTopic(g.id, GroupChannel.point);
-    await raw(org, topic, envelope('point', 'off1org', pointPayload('P1', 1, 'off1cat')), 'P1');
+    await raw(org, topic, envelope('point', 'off1org', pointPayload('P1', 1, 'off1eve')), 'P1');
     await settle(all);
     expect(await members[0]!.points.get(g.id, 'P1')).toBeNull();
   });
