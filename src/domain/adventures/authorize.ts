@@ -1,3 +1,4 @@
+import { canEditPlan } from '../groups/authorize';
 import type { Group, GroupMember } from '../groups/model';
 import type { AdventureStatus, ParticipantState } from './model';
 import { isPhaseUnlocked } from './phases';
@@ -12,7 +13,9 @@ export type AdventureInboundKind =
   /** member -> owner */
   | 'reached'
   | 'participant'
-  | 'adv_sync';
+  | 'adv_sync'
+  /** co-leader -> owner: a proposed checkpoint change (ADR 0016) */
+  | 'checkpoint_edit';
 
 export type Decision = { ok: true } | { ok: false; reason: string };
 
@@ -41,6 +44,8 @@ export type KnownAdventure = {
   /** Ordered activity: phases are live, in order, as the organizer published them. */
   ordered?: boolean;
   liveCheckpoints?: { id: string; ord: number }[];
+  /** An activity: its phases are fixed once published (ADR 0011). */
+  activity?: boolean;
 };
 
 /**
@@ -100,6 +105,15 @@ export function authorizeAdventureInbound(input: {
   if (!adventure || adventure.groupId !== group.id || adventure.owner !== group.organizer) {
     return deny('unknown adventure for this group');
   }
+  if (kind === 'checkpoint_edit') {
+    if (member.role !== 'leader') {
+      return deny('sender is not a group leader');
+    }
+    if (adventure.status === 'draft' || isFinalStatus(adventure.status)) {
+      return deny(`adventure is ${adventure.status}`);
+    }
+    return adventure.activity ? deny('a published activity cannot be changed') : allow;
+  }
   if (kind === 'participant') {
     return adventure.status === 'draft' ||
       adventure.status === 'cancelled' ||
@@ -145,6 +159,32 @@ export function canPlanGroupAdventure(group: Group | null, me: string | null): b
     group.role === 'organizer' &&
     group.status === 'active' &&
     group.organizer === me
+  );
+}
+
+const isFinalStatus = (s: AdventureStatus): boolean => s === 'completed' || s === 'cancelled';
+
+/**
+ * May this device change the checkpoints of the adventure? Whoever may edit it, and for the
+ * group organizer's shared adventure also an active co-leader (ADR 0016), whose changes go to the
+ * organizer. The lifecycle and the header stay the organizer's (`canEditAdventure`).
+ */
+export function canEditCheckpoints(
+  adv: { groupId: string | null; owner: string | null; status?: AdventureStatus },
+  group: Group | null,
+  members: GroupMember[],
+  me: string | null,
+): boolean {
+  if (canEditAdventure(adv, group, me)) {
+    return true;
+  }
+  return (
+    adv.groupId !== null &&
+    !!group &&
+    adv.groupId === group.id &&
+    adv.owner === group.organizer &&
+    adv.status !== 'draft' &&
+    canEditPlan(group, members, me)
   );
 }
 

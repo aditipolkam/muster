@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   authorizeAdventureInbound,
   canEditAdventure,
+  canEditCheckpoints,
   canPlanGroupAdventure,
   AdventureInboundKind,
   KnownAdventure,
@@ -405,6 +406,32 @@ export class AdventureService {
     return canEditAdventure(adv, group, this.me);
   }
 
+  /**
+   * Who changes this adventure's checkpoints from this device: `owner` (shared from here), a
+   * co-leader of the organizer's group adventure (`leader`, sent to the organizer), or nobody.
+   */
+  private async checkpointEditor(adv: Adventure): Promise<'owner' | 'leader' | null> {
+    if (await this.canEdit(adv)) {
+      return 'owner';
+    }
+    const group = adv.groupId ? await this.d.groups.get(adv.groupId) : null;
+    const members = group ? await this.d.groups.members(group.id) : [];
+    return canEditCheckpoints(adv, group, members, this.me) ? 'leader' : null;
+  }
+
+  /** Share a checkpoint change: published by the owner, proposed to the organizer by a leader. */
+  private shareCheckpoint(adv: Adventure, cp: Checkpoint, editor: 'owner' | 'leader'): void {
+    if (!this.isShared(adv)) {
+      return;
+    }
+    const groupId = adv.groupId as string;
+    void this.enqueue(() =>
+      editor === 'owner'
+        ? this.publishCheckpoint(groupId, cp)
+        : this.proposeCheckpoint(groupId, cp),
+    );
+  }
+
   async deleteAdventure(id: string): Promise<Result<void>> {
     const adv = await this.d.repo.get(id);
     if (!adv) {
@@ -428,8 +455,11 @@ export class AdventureService {
     if (!parsed.success) {
       return err(appError('adventures.invalid_checkpoint', 'Check the name and position.'));
     }
-    if (!(await this.canEdit(adv))) {
-      return err(appError('adventures.not_organizer', 'Only the organizer can add checkpoints.'));
+    const editor = await this.checkpointEditor(adv);
+    if (!editor) {
+      return err(
+        appError('adventures.not_organizer', 'Only the group leaders can add checkpoints.'),
+      );
     }
     if (this.isLockedActivity(adv)) {
       return err(this.lockedError());
@@ -457,9 +487,7 @@ export class AdventureService {
       deleted: false,
     };
     await this.d.repo.applyCheckpoint(cp);
-    if (this.isShared(adv)) {
-      void this.enqueue(() => this.publishCheckpoint(adv.groupId as string, cp));
-    }
+    this.shareCheckpoint(adv, cp, editor);
     return ok(cp);
   }
 
@@ -496,9 +524,10 @@ export class AdventureService {
     if (!parsed.success) {
       return err(appError('adventures.invalid_checkpoint', 'Check the name and position.'));
     }
-    if (!(await this.canEdit(adv))) {
+    const editor = await this.checkpointEditor(adv);
+    if (!editor) {
       return err(
-        appError('adventures.not_organizer', 'Only the organizer can change checkpoints.'),
+        appError('adventures.not_organizer', 'Only the group leaders can change checkpoints.'),
       );
     }
     if (this.isLockedActivity(adv)) {
@@ -516,9 +545,7 @@ export class AdventureService {
       ...this.phaseOptions(parsed.data),
     };
     await this.d.repo.applyCheckpoint(next);
-    if (this.isShared(adv)) {
-      void this.enqueue(() => this.publishCheckpoint(adv.groupId as string, next));
-    }
+    this.shareCheckpoint(adv, next, editor);
     return ok(next);
   }
 
@@ -549,9 +576,10 @@ export class AdventureService {
     if (!adv || !cur || cur.deleted || isFinal(adv.status)) {
       return err(appError('adventures.closed', 'This checkpoint can no longer be changed.'));
     }
-    if (!(await this.canEdit(adv))) {
+    const editor = await this.checkpointEditor(adv);
+    if (!editor) {
       return err(
-        appError('adventures.not_organizer', 'Only the organizer can remove checkpoints.'),
+        appError('adventures.not_organizer', 'Only the group leaders can remove checkpoints.'),
       );
     }
     if (this.isLockedActivity(adv)) {
@@ -559,9 +587,7 @@ export class AdventureService {
     }
     const next = { ...cur, rev: cur.rev + 1, deleted: true };
     await this.d.repo.applyCheckpoint(next);
-    if (this.isShared(adv)) {
-      void this.enqueue(() => this.publishCheckpoint(adv.groupId as string, next));
-    }
+    this.shareCheckpoint(adv, next, editor);
     return ok(undefined);
   }
 
@@ -1023,6 +1049,31 @@ export class AdventureService {
     return this.send(groupId, 'checkpoint', `c-${cp.id}`, this.checkpointPayload(cp));
   }
 
+  /** Co-leader: a checkpoint change to the organizer, who shares it (ADR 0016). */
+  private async proposeCheckpoint(groupId: string, cp: Checkpoint): Promise<boolean> {
+    return this.send(groupId, 'checkpoint_edit', `e-${cp.id}`, this.checkpointPayload(cp));
+  }
+
+  /**
+   * Co-leader: re-send the checkpoints of the organizer's open adventures when the organizer starts
+   * following this device again, so a change made out of range is not lost. The organizer ignores
+   * any it already has.
+   */
+  private async reproposeCheckpoints(groupId: string): Promise<void> {
+    for (const a of await this.d.repo.list()) {
+      if (
+        a.groupId !== groupId ||
+        isFinal(a.status) ||
+        (await this.checkpointEditor(a)) !== 'leader'
+      ) {
+        continue;
+      }
+      for (const cp of await this.d.repo.checkpoints(a.id, true)) {
+        await this.proposeCheckpoint(groupId, cp);
+      }
+    }
+  }
+
   private checkpointPayload(cp: Checkpoint): Record<string, unknown> {
     return {
       adv: cp.adventureId,
@@ -1224,6 +1275,7 @@ export class AdventureService {
     } else if (c.role === 'provider' && group.role === 'member') {
       // The organizer started following us: send what they have not confirmed.
       await this.resendOwn(group.id);
+      await this.reproposeCheckpoints(group.id);
     } else if (c.role === 'consumer' && group.role === 'member') {
       await this.requestSync(group.id);
     }
@@ -1497,8 +1549,48 @@ export class AdventureService {
         await this.answerSync(groupId, s.data.advs);
         return;
       }
+      case 'checkpoint_edit': {
+        const w = CheckpointWireSchema.safeParse(env.p);
+        if (!w.success || !keyIs(`e-${w.data.id}`)) {
+          return;
+        }
+        const known = await this.known(w.data.adv, from);
+        if (!gate('checkpoint_edit', { adventure: known })) {
+          return;
+        }
+        await this.onCheckpointProposal(groupId, from, toCheckpoint(w.data));
+        return;
+      }
       default:
         return;
+    }
+  }
+
+  /**
+   * Organizer: a co-leader's checkpoint change. A higher revision wins and is shared from here. At
+   * the same revision two different versions exist (two people edited the same one at once): the
+   * organizer keeps its own and shares it one revision higher, so every phone ends on it.
+   */
+  private async onCheckpointProposal(groupId: string, from: string, cp: Checkpoint): Promise<void> {
+    const cur = await this.d.repo.checkpoint(cp.adventureId, cp.id);
+    if (!cur && (await this.d.repo.checkpoints(cp.adventureId)).length >= MAX_CHECKPOINTS) {
+      return;
+    }
+    const who = (await this.d.groups.member(groupId, from))?.name ?? shortAddress(from);
+    if (!cur || cp.rev > cur.rev) {
+      // The organizer's draft-only map region is never sent; keep the one we have.
+      const next = { ...cp, region: cur?.region ?? null };
+      await this.d.repo.applyCheckpoint(next);
+      await this.publishCheckpoint(groupId, next);
+      this.notice(
+        `${who} ${cp.deleted ? 'removed' : cur ? 'changed' : 'added'} checkpoint ${cp.name}`,
+      );
+      return;
+    }
+    if (cp.rev === cur.rev && !sameCheckpoint(cp, cur)) {
+      const bumped = { ...cur, rev: cur.rev + 1 };
+      await this.d.repo.applyCheckpoint(bumped);
+      await this.publishCheckpoint(groupId, bumped);
     }
   }
 
@@ -1515,6 +1607,7 @@ export class AdventureService {
       liveCheckpointIds: live.map(c => c.id),
       senderState: (await this.d.repo.participant(adventureId, sender))?.state ?? null,
       ordered: a.ordered === true,
+      activity: a.activity === true,
       liveCheckpoints: live.map(c => ({ id: c.id, ord: c.ord })),
       senderDoneCheckpointIds: (await this.d.repo.completions(adventureId))
         .filter(c => c.address === sender)
@@ -1646,6 +1739,24 @@ export class AdventureService {
       }
     }
   }
+}
+
+/** Do two versions of a checkpoint say the same thing (everything that is sent)? */
+function sameCheckpoint(a: Checkpoint, b: Checkpoint): boolean {
+  const keys: (keyof Checkpoint)[] = [
+    'ord',
+    'name',
+    'description',
+    'kind',
+    'lat',
+    'lon',
+    'task',
+    'type',
+    'radiusM',
+    'requirePhoto',
+    'deleted',
+  ];
+  return keys.every(k => a[k] === b[k]);
 }
 
 function toCheckpoint(w: CheckpointWire): Checkpoint {
