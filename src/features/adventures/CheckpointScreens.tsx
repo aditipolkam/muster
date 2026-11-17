@@ -2,7 +2,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { proximity } from '../../domain/adventures/arrival';
-import { canEditAdventure } from '../../domain/adventures/authorize';
+import { canEditCheckpoints } from '../../domain/adventures/authorize';
 import { isPhaseUnlocked } from '../../domain/adventures/phases';
 import { isFinal } from '../../domain/adventures/lifecycle';
 import {
@@ -20,6 +20,7 @@ import {
   useAdventureDetail,
   useAdventureRuntime,
   useCheckpointRadius,
+  useGroupMembers,
   useGroups,
   useMesh,
   useNavPrefs,
@@ -229,6 +230,7 @@ function CheckpointPage({ navigation, route }: Nav<'CheckpointDetails'>) {
   const { adventures: service } = useServices();
   const detail = useAdventureDetail(adventureId);
   const groups = useGroups();
+  const members = useGroupMembers(detail?.adventure.groupId ?? '');
   const mesh = useMesh();
   const fix = useLocationStore(s => s.fix);
   const now = useNow();
@@ -255,7 +257,7 @@ function CheckpointPage({ navigation, route }: Nav<'CheckpointDetails'>) {
   const group = groups.find(g => g.id === a.groupId) ?? null;
   // A published activity is fixed; only its draft can be edited.
   const canEdit =
-    canEditAdventure(a, group, mesh.localAddress) &&
+    canEditCheckpoints(a, group, members, mesh.localAddress) &&
     !isFinal(a.status) &&
     !(a.activity && a.status !== 'draft');
   const mine = completions.find(x => x.checkpointId === cp.id && x.address === self) ?? null;

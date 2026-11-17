@@ -1,6 +1,7 @@
 import React from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { bearingDeg, distanceM } from '../../domain/geo';
+import { canEditPlan } from '../../domain/groups/authorize';
 import type { Group, MeetingPoint } from '../../domain/groups/model';
 import { shortAddress } from '../../domain/groups/model';
 import { Fix } from '../../domain/location/fix';
@@ -37,14 +38,15 @@ const clock = (at: number) =>
 
 /**
  * Bottom sheet for a meeting point on the map: who shared it, how far and which way, then
- * Navigate. Only the organizer can edit, move or remove it (Move and Remove sit under More).
+ * Navigate. Only the group's leaders can edit, move or remove it (Move and Remove sit under More).
  */
 export function MeetingPointSheet(p: Props) {
   const { c } = useTheme();
   const members = useGroupMembers(p.point.groupId);
   const nameOf = (a: string) =>
     a === p.me ? 'you' : members.find(m => m.address === a)?.name ?? shortAddress(a);
-  const organizer = p.group?.role === 'organizer';
+  // The organizer and co-leaders can change it (ADR 0016).
+  const organizer = canEditPlan(p.group ?? null, members, p.me ?? null);
   const dist = p.fix ? distanceM(p.fix, p.point) : null;
   const brg = p.fix ? bearingDeg(p.fix, p.point) : null;
   const minutes = etaMinutes(dist, p.paceKmh ?? 4);

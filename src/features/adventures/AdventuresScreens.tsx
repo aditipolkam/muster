@@ -21,7 +21,7 @@ import {
   progressLabel,
 } from '../../domain/adventures/stats';
 import { formatDistanceIn } from '../../domain/geo/pace';
-import { canEditAdventure } from '../../domain/adventures/authorize';
+import { canEditAdventure, canEditCheckpoints } from '../../domain/adventures/authorize';
 import { useLocationStore } from '../../platform/locationStore';
 import {
   AdventureDetail,
@@ -536,6 +536,11 @@ function Details({
   const isDraft = a.status === 'draft';
   // A published activity is fixed: the organizer can only cancel it.
   const editable = canEdit && !isFinal(a.status) && (!activity || isDraft);
+  // A co-leader of the group also adds and changes checkpoints (ADR 0016), not the rest.
+  const checkpointsEditable =
+    canEditCheckpoints(a, group, members, mesh.localAddress) &&
+    !isFinal(a.status) &&
+    (!activity || isDraft);
   const noun = activity ? 'activity' : 'adventure';
   const statuses = checkpointStatuses(checkpoints, completions, participants, self);
   const counts = progressCounts(statuses, self);
@@ -817,7 +822,7 @@ function Details({
 
         <View style={styles.sectionHead}>
           <Text variant="heading">{activity ? 'Phases' : 'Checkpoints'}</Text>
-          {editable ? (
+          {checkpointsEditable ? (
             <Button
               testID="add-checkpoint"
               small

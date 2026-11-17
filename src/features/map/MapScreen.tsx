@@ -17,6 +17,7 @@ import { covers, selectActiveRegions } from '../../domain/maps/coverage';
 import { useLocationStore } from '../../platform/locationStore';
 import {
   useAdventures,
+  useAllGroupMembers,
   useGroups,
   useMarkers,
   useMesh,
@@ -39,7 +40,7 @@ import {
   DEFAULT_REGION_SIDE_KM,
   estimateAreaBytes,
 } from '../../domain/adventures/area';
-import { canEditAdventure } from '../../domain/adventures/authorize';
+import { canEditCheckpoints } from '../../domain/adventures/authorize';
 import { useAdventureMapState } from './AdventureOverlay';
 import { Icon, IconButton, StatusPill, Text } from '../../ui/components';
 import { radius, size, space, useTheme } from '../../ui/theme';
@@ -92,6 +93,7 @@ export function MapScreen({ navigation, route }: Props) {
   const markers = useMarkers();
   const meetingPoints = useVisibleMeetingPoints();
   const groupList = useGroups();
+  const leaderRosters = useAllGroupMembers();
   const meshSnap = useMesh();
   const myAddress = meshSnap.localAddress;
   const nearbyCount = meshSnap.peers.filter(x => x.state === 'nearby').length;
@@ -514,14 +516,19 @@ export function MapScreen({ navigation, route }: Props) {
     const editable = adventureList.filter(
       a =>
         (a.status === 'planned' || a.status === 'active' || a.status === 'paused') &&
-        canEditAdventure(a, groupList.find(g => g.id === a.groupId) ?? null, myAddress),
+        canEditCheckpoints(
+          a,
+          groupList.find(g => g.id === a.groupId) ?? null,
+          leaderRosters[a.groupId ?? ''] ?? [],
+          myAddress,
+        ),
     );
     return (
       editable.find(a => a.id === currentAdventureId) ??
       editable.find(a => a.status === 'planned') ??
       null
     );
-  }, [adventureList, groupList, myAddress, currentAdventureId]);
+  }, [adventureList, groupList, leaderRosters, myAddress, currentAdventureId]);
   const onLongPress = useCallback(
     ([lon, lat]: [number, number]) => {
       if (moving || movingMeeting || pickReq) {

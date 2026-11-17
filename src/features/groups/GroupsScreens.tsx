@@ -16,6 +16,7 @@ import { bearingDeg, distanceM } from '../../domain/geo';
 import { cardinal16Of, etaMinutes, formatDistanceIn, formatEta } from '../../domain/geo/pace';
 import { useLocationStore } from '../../platform/locationStore';
 import { useNavSession } from '../../runtime/navSession';
+import { canEditPlan } from '../../domain/groups/authorize';
 import { buildInviteLink, parseInviteLink } from '../../domain/groups/invite';
 import { presenceText, sortByPresence } from '../../domain/groups/presence';
 import { Group, GroupMember, GROUP_NAME_MAX, shortAddress } from '../../domain/groups/model';
@@ -853,6 +854,8 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
     );
   }
   const organizer = group.role === 'organizer';
+  // The organizer and co-leaders post meeting points (ADR 0016); everyone else reads them.
+  const canPost = canEditPlan(group, members, me);
   const feed = buildFeed(members, points, me, now);
   const pinned = activePoint(points);
   const parent = navigation.getParent() as
@@ -967,7 +970,7 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
         contentContainerStyle={styles.feed}
         ListEmptyComponent={
           <Text muted style={styles.feedEmpty} testID="updates-empty">
-            {organizer
+            {canPost
               ? 'No updates yet. Set a meeting point or share your location with the group.'
               : 'No updates yet. Meeting points and people joining show up here.'}
           </Text>
@@ -994,10 +997,12 @@ export function GroupDetailsScreen({ navigation, route }: Nav<'GroupDetails'>) {
           )
         }
       />
-      {organizer && group.status === 'active' ? (
+      {canPost ? (
         <View style={[styles.composer, { backgroundColor: c.surface, borderColor: c.border }]}>
           <Text variant="caption" muted style={{ textAlign: 'center' }}>
-            Only you can post.
+            {organizer
+              ? 'Only leaders can post.'
+              : 'You are a leader. Your posts go out through the organizer.'}
           </Text>
           <Row style={{ gap: space.sm }}>
             <Pressable
@@ -1223,6 +1228,32 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
     );
 
   const canInvite = organizer && group.status === 'active';
+  const manageMember = (m: GroupMember) =>
+    Alert.alert(m.name, undefined, [
+      m.role === 'leader'
+        ? {
+            text: 'Remove as leader',
+            onPress: () => void service.setLeader(group.id, m.address, false),
+          }
+        : {
+            text: 'Make leader',
+            onPress: () => void service.setLeader(group.id, m.address, true),
+          },
+      {
+        text: 'Remove from group',
+        style: 'destructive',
+        onPress: () =>
+          Alert.alert('Remove member?', `${m.name} will be removed from the group.`, [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Remove',
+              style: 'destructive',
+              onPress: () => void service.removeMember(group.id, m.address),
+            },
+          ]),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   const tabs: { value: InfoTab; label: string }[] = [
     { value: 'members', label: 'Members' },
     { value: 'points', label: 'Points' },
@@ -1472,7 +1503,7 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
             <Card style={{ paddingVertical: space.xs }}>
               {sortedMembers.map((m, i) => {
                 const pres = presenceOfMember.get(m.address);
-                const leader = m.role === 'organizer';
+                const leader = m.role === 'organizer' || m.role === 'leader';
                 const near = m.state === 'active' && m.address !== me && !!pres?.reachable;
                 return (
                   <ListRow
@@ -1493,36 +1524,32 @@ export function GroupInfoScreen({ navigation, route }: Nav<'GroupInfo'>) {
                           ? 'Left the group'
                           : 'Removed'
                         : m.address === me
-                        ? leader
+                        ? m.role === 'organizer'
                           ? 'Leader · shares updates with the group'
+                          : leader
+                          ? 'Leader · edits the plan with the organizer'
                           : 'Follower · this phone'
                         : `${leader ? 'Leader' : 'Follower'} · ${
                             near ? 'nearby now' : presenceText(pres!)
                           }`
                     }
                     trailing={
-                      leader && m.state === 'active' ? (
+                      organizer &&
+                      group.status === 'active' &&
+                      m.state === 'active' &&
+                      m.address !== me ? (
+                        <Row style={{ gap: space.xs }}>
+                          {leader ? <Badge label="Leader" tone="good" /> : null}
+                          <Button
+                            small
+                            variant="ghost"
+                            label="Manage"
+                            testID={`member-manage-${m.address}`}
+                            onPress={() => manageMember(m)}
+                          />
+                        </Row>
+                      ) : leader && m.state === 'active' ? (
                         <Badge label="Leader" tone="good" />
-                      ) : organizer && m.state === 'active' && m.address !== me ? (
-                        <Button
-                          small
-                          variant="ghost"
-                          label="Remove"
-                          onPress={() =>
-                            Alert.alert(
-                              'Remove member?',
-                              `${m.name} will be removed from the group.`,
-                              [
-                                { text: 'Cancel', style: 'cancel' },
-                                {
-                                  text: 'Remove',
-                                  style: 'destructive',
-                                  onPress: () => void service.removeMember(group.id, m.address),
-                                },
-                              ],
-                            )
-                          }
-                        />
                       ) : null
                     }
                   />
@@ -1634,15 +1661,15 @@ export function MeetingPointScreen({ navigation, route }: Nav<'MeetingPoint'>) {
       <Screen title="Meeting point" onBack={() => navigation.goBack()}>
         <EmptyState
           title="Meeting point removed"
-          body="The organizer removed it, or it is not on this device."
+          body="A leader removed it, or it is not on this device."
           actionLabel="Back"
           onAction={() => navigation.goBack()}
         />
       </Screen>
     );
   }
-  // Pub/sub: only the organizer acts on a point; followers read it.
-  const organizer = group.role === 'organizer';
+  // The organizer and co-leaders act on a point (ADR 0016); followers read it.
+  const canEdit = canEditPlan(group, members, me);
 
   return (
     <Screen title={point.name} onBack={() => navigation.goBack()}>
@@ -1683,7 +1710,7 @@ export function MeetingPointScreen({ navigation, route }: Nav<'MeetingPoint'>) {
           }
           testID="point-show"
         />
-        {organizer ? (
+        {canEdit ? (
           <Button
             variant="danger"
             icon="trash"

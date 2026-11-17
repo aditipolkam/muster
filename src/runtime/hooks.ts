@@ -170,6 +170,22 @@ export function useGroupMembers(groupId: string): GroupMember[] {
   );
 }
 
+/** The roster of each group this device is in, by group id (who leads what). */
+export function useAllGroupMembers(): Record<string, GroupMember[]> {
+  const { groupsRepo } = useServices();
+  return useLiveQuery(
+    [groupsRepo.changes as Emitter<unknown>],
+    async () => {
+      const out: Record<string, GroupMember[]> = {};
+      for (const g of await groupsRepo.list()) {
+        out[g.id] = await groupsRepo.members(g.id);
+      }
+      return out;
+    },
+    {} as Record<string, GroupMember[]>,
+  );
+}
+
 export function useGroupPoints(groupId: string): MeetingPoint[] {
   const { meetingPoints } = useServices();
   return useLiveQuery(

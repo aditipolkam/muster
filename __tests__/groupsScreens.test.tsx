@@ -411,7 +411,7 @@ describe('Group page (updates)', () => {
     expect(screen.getByText('Meeting point shared')).toBeTruthy();
     expect(screen.getByText('Other joined')).toBeTruthy();
     expect(typeof screen.getByTestId('group-status').props.children).toBe('string');
-    expect(screen.getByText('Only you can post.')).toBeTruthy();
+    expect(screen.getByText('Only leaders can post.')).toBeTruthy();
     expect(screen.queryByText('Members (2)')).toBeNull();
     expect(screen.queryByTestId('invite-create')).toBeNull();
     expect(p.ok).toBe(true);
@@ -614,6 +614,59 @@ describe('Group info screen', () => {
     });
     expect(await t.services.groupsRepo.get(g.id)).toBeNull();
     expect((await other.groupsRepo.member(g.id, 'off1me'))?.state).toBe('left');
+  });
+});
+
+describe('Leaders (ADR 0016)', () => {
+  it('the organizer makes a member a leader from Members, and can take it back', async () => {
+    const { t, g, all, other } = await twoDevices('organizer');
+    const inv = await t.services.groups.createInvite(g.id, { autoApprove: true });
+    const parsed = inv.ok ? parseInviteLink(inv.value.link) : null;
+    await other.groups.joinFromInvite(parsed && parsed.ok ? parsed.invite : (undefined as never));
+    await settle(all);
+    render(
+      <Harness services={t.services}>
+        <GroupInfoScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    fireEvent.press(await screen.findByTestId('member-manage-off1other'));
+    let buttons = alertSpy.mock.calls.at(-1)![2] as { text: string; onPress?: () => void }[];
+    expect(buttons.map(b => b.text)).toEqual(['Make leader', 'Remove from group', 'Cancel']);
+    await act(async () => {
+      buttons[0]!.onPress!();
+      await settle(all);
+    });
+    expect((await other.groupsRepo.member(g.id, 'off1other'))?.role).toBe('leader');
+    // The organizer's own row and the new leader's.
+    expect(await screen.findAllByText(/^Leader · /)).toHaveLength(2);
+
+    fireEvent.press(screen.getByTestId('member-manage-off1other'));
+    buttons = alertSpy.mock.calls.at(-1)![2] as { text: string; onPress?: () => void }[];
+    expect(buttons[0]!.text).toBe('Remove as leader');
+    await act(async () => {
+      buttons[0]!.onPress!();
+      await settle(all);
+    });
+    expect((await t.services.groupsRepo.member(g.id, 'off1other'))?.role).toBe('member');
+  });
+
+  it('a member made a leader gets the post buttons on the group page', async () => {
+    const { t, g, all, other } = await twoDevices('member');
+    render(
+      <Harness services={t.services}>
+        <GroupDetailsScreen navigation={nav().n} route={{ params: { groupId: g.id } } as never} />
+      </Harness>,
+    );
+    await screen.findByTestId('group-title');
+    expect(screen.queryByTestId('group-open-map')).toBeNull();
+    await act(async () => {
+      await other.groups.setLeader(g.id, 'off1me', true);
+      await settle(all);
+    });
+    expect(await screen.findByTestId('group-open-map')).toBeTruthy();
+    expect(
+      screen.getByText('You are a leader. Your posts go out through the organizer.'),
+    ).toBeTruthy();
   });
 });
 
